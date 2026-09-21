@@ -1,26 +1,116 @@
+@import url("https://fonts.bunny.net/css2?family=Tajawal:wght@400;500;700;800&family=Amiri:wght@400;700&display=swap");
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@layer base {
+  button, 
+  [role="button"], 
+  [role="radio"],
+  [role="checkbox"],
+  [type="button"],
+  [type="submit"],
+  [type="reset"],
+  a,
+  select,
+  summary,
+  label,
+  i.peer {
+    cursor: pointer !important;
+  }
+}
+@layer components {
+  .label { @apply mb-1.5 block text-xs font-medium text-gray-600; }
+  .input { @apply block h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-base text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 sm:h-10 sm:text-sm; }
+  .input[aria-invalid="true"] { @apply border-red-400 focus:border-red-500 focus:ring-red-500/10; }
+  .btn { @apply inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:translate-y-px sm:h-10; }
+  .btn-secondary { @apply bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:text-gray-900 focus-visible:ring-gray-400; }
+  .btn-danger { @apply bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 hover:bg-red-100 focus-visible:ring-red-500; }
+  .btn-success { @apply bg-emerald-600 text-white shadow-sm ring-1 ring-inset ring-emerald-700/20 hover:bg-emerald-500 focus-visible:ring-emerald-500; }
+  .btn-accent { @apply bg-indigo-600 text-white shadow-sm ring-1 ring-inset ring-indigo-700/20 hover:bg-indigo-500 focus-visible:ring-indigo-500; }
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer utilities {
+  .tnum { font-variant-numeric: tabular-nums; }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  .thin-scroll { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+  .barcode { background: repeating-linear-gradient(90deg, #9ca3af 0 2px, transparent 2px 4px, #9ca3af 4px 5px, transparent 5px 8px, #9ca3af 8px 11px, transparent 11px 13px); }
+  
+  .touch-only { display: none; }
+  @media (hover: none) { 
+    .touch-only { display: inline; } 
+    .hover-only { display: none; } 
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--hdr, 5rem) + .75rem); overscroll-behavior-y: none; }
+body { background-color: #f9fafb; color: #111827; }
+
+/* ---------- Navbar flottante ---------- */
+.hdr-wrap {
+  padding: max(.75rem, env(safe-area-inset-top)) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.hdr-nav {
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.hdr-nav:hover, .hdr-nav:focus-within {
+  border-color: #d1d5db;
+  background-color: rgba(255, 255, 255, .98);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -8px rgba(16, 24, 40, .12);
+}
+
+/* Rappel dans la barre : repli fluide puis retrait du DOM visuel */
+.hint-wrap { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .25s ease, opacity .2s ease, margin-top .25s ease; }
+.hint-inner { overflow: hidden; min-height: 0; }
+.hint-wrap.is-hidden { grid-template-rows: 0fr; opacity: 0; }
+.hint-wrap[hidden] { display: none; }
+@media (max-width: 1279px) { .hint-wrap.is-hidden { margin-top: -.75rem; } }
+
+/* Dropzone */
+.dz.is-over { border-color: #6366f1 !important; background: #eef2ff !important; box-shadow: 0 0 0 4px rgba(99, 102, 241, .12); }
+
+/* Révélation du formulaire après sélection du fichier */
+.reveal { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows .35s cubic-bezier(.2, .8, .2, 1), opacity .25s ease, visibility 0s linear .35s; }
+.reveal.is-open { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.reveal-inner { overflow: hidden; min-height: 0; margin: -4px; padding: 4px; }
+
+/* Modale */
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+[data-state="open"] .modal-backdrop { animation: fade .18s ease-out both; }
+[data-state="open"] .modal-panel { animation: pop .22s cubic-bezier(.2, .8, .2, 1) both; }
+[data-state="closing"] .modal-backdrop { animation: fade .14s ease-in reverse both; }
+[data-state="closing"] .modal-panel { animation: pop .14s ease-in reverse both; }
+
+/* Tooltip de traçabilité */
+.tip { opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s; }
+.tip.is-on, .group:hover .tip, .group:focus-within .tip { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+
+/* Cartes : sortie optimiste / apparition d'un nouveau reçu */
+@keyframes card-out { to { opacity: 0; transform: scale(.96); } }
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(-8px) scale(.98); box-shadow: 0 0 0 3px rgba(99, 102, 241, .35); }
+  to { opacity: 1; transform: none; }
+}
+.card-leaving { animation: card-out .22s ease-in forwards; pointer-events: none; }
+.card-new { animation: card-in .45s cubic-bezier(.2, .8, .2, 1) both; }
+
+/* Rappel : sélection de l'utilisateur requise */
+@keyframes attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  35% { box-shadow: 0 0 0 6px rgba(245, 158, 11, .28); }
+}
+.attention { animation: attention .8s ease-out 2; border-radius: 9999px; }
+
+/* Toasts */
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.toast { animation: toast-in .2s cubic-bezier(.2, .8, .2, 1) both; }
+.toast.is-out { opacity: 0; transform: translateY(4px); transition: opacity .18s ease, transform .18s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0s !important; }
 }
