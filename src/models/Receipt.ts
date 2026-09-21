@@ -20,6 +20,7 @@ export interface IReceipt extends Document {
   paymentMode?: string;
   paymentDetails?: string;
   paymentDate?: Date;
+  amount?: number;
   notes: INote[];
   gDriveFileId: string;
   gDriveViewUrl: string;
@@ -66,6 +67,10 @@ const ReceiptSchema = new Schema<IReceipt>({
   },
   paymentDate: {
     type: Date,
+    required: false,
+  },
+  amount: {
+    type: Number,
     required: false,
   },
   notes: {

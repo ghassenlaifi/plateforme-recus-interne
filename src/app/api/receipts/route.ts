@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
     const paymentMode = formData.get('paymentMode') as string | null;
     const paymentDetails = formData.get('paymentDetails') as string | null;
     const paymentDate = formData.get('paymentDate') as string | null;
+    const amountStr = formData.get('amount') as string | null;
+    const amount = amountStr ? parseFloat(amountStr) : undefined;
     const note = formData.get('note') as string | null;
 
     const notes: any[] = [];
@@ -54,8 +56,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Validation rigoureuse (classe n'est plus obligatoire)
-    if (!operatorName || !nom || !telephone) {
-      return NextResponse.json({ error: 'Les champs obligatoires (opérateur, nom, téléphone) sont manquants' }, { status: 400 });
+    if (!operatorName || !nom || !telephone || !paymentMode || !paymentDetails || amount === undefined || isNaN(amount)) {
+      return NextResponse.json({ error: 'Les champs obligatoires (opérateur, nom, téléphone, mode de paiement, détails et montant) sont manquants ou invalides' }, { status: 400 });
     }
 
     // 2. Convertir le fichier en Buffer
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest) {
       ...(paymentMode && { paymentMode }),
       ...(paymentDetails && { paymentDetails }),
       ...(paymentDate && { paymentDate: new Date(paymentDate) }),
+      amount,
       notes,
       gDriveFileId: fileId,
       gDriveViewUrl: webViewLink,

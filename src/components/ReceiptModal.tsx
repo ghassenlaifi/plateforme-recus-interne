@@ -31,7 +31,8 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
     familyGroup: '',
     paymentMode: '',
     paymentDetails: '',
-    paymentDate: ''
+    paymentDate: '',
+    amount: ''
   });
 
   useEffect(() => {
@@ -44,7 +45,8 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
         familyGroup: receipt.clientDetails?.familyGroup || '',
         paymentMode: receipt.paymentMode || '',
         paymentDetails: receipt.paymentDetails || '',
-        paymentDate: receipt.paymentDate ? new Date(receipt.paymentDate).toISOString().split('T')[0] : ''
+        paymentDate: receipt.paymentDate ? new Date(receipt.paymentDate).toISOString().split('T')[0] : '',
+        amount: receipt.amount !== undefined ? receipt.amount.toString() : ''
       });
     }
   }, [receipt]);
@@ -120,7 +122,8 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
       editData.familyGroup === (current.familyGroup || '') &&
       editData.paymentMode === (receipt.paymentMode || '') &&
       editData.paymentDetails === (receipt.paymentDetails || '') &&
-      editData.paymentDate === d
+      editData.paymentDate === d &&
+      editData.amount === (receipt.amount !== undefined ? receipt.amount.toString() : '')
     ) {
       return;
     }
@@ -133,7 +136,8 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
           clientDetails: { ...current, nom: editData.nom, telephone: editData.telephone, email: editData.email, classe: editData.classe, familyGroup: editData.familyGroup },
           paymentMode: editData.paymentMode,
           paymentDetails: editData.paymentDetails,
-          paymentDate: editData.paymentDate ? new Date(editData.paymentDate).toISOString() : undefined
+          paymentDate: editData.paymentDate ? new Date(editData.paymentDate).toISOString() : undefined,
+          amount: editData.amount !== '' && !isNaN(parseFloat(editData.amount)) ? parseFloat(editData.amount) : undefined
         })
       });
       // Optionally mutate to keep cache in sync
@@ -379,7 +383,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
               <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
                   <div className="sm:col-span-2 md:col-span-1 lg:col-span-2">
-                    <label className="label">Élève(s)</label>
+                    <label className="label">Nom et Prénom</label>
                     <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.nom} onChange={e => setEditData({...editData, nom: e.target.value})} onBlur={handleBlurSave} />
                   </div>
                   <div>
@@ -398,7 +402,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                     <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.classe} onChange={e => setEditData({...editData, classe: e.target.value})} onBlur={handleBlurSave} />
                   </div>
                   <div>
-                    <label className="label">Family Group</label>
+                    <label className="label">Élève(s)</label>
                     <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.familyGroup} onChange={e => setEditData({...editData, familyGroup: e.target.value})} onBlur={handleBlurSave} />
                   </div>
                   <div>
@@ -432,22 +436,60 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                         {editData.paymentMode === 'Poste' && 'Destinataire'}
                         {editData.paymentMode === 'D17' && 'Titulaire de la carte'}
                       </label>
-                      <input 
-                        type="text" 
-                        className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-                        readOnly={receipt?.status === 'PROCESSED'}
-                        placeholder={
-                          editData.paymentMode === 'Espèces' ? 'ex. Bab Saadoun' :
-                          editData.paymentMode === 'Virement Bancaire' ? 'ex. ATB' :
-                          editData.paymentMode === 'Poste' ? 'ex. Elyes Laabidi' :
-                          'ex. Soumaya'
-                        }
-                        value={editData.paymentDetails}
-                        onChange={e => setEditData({...editData, paymentDetails: e.target.value})}
-                        onBlur={handleBlurSave}
-                      />
+                      {editData.paymentMode === 'Espèces' ? (
+                        <div className="relative">
+                          <select 
+                            className={`input appearance-none pr-10 ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                            disabled={receipt?.status === 'PROCESSED'}
+                            value={editData.paymentDetails}
+                            onChange={e => setEditData({...editData, paymentDetails: e.target.value})}
+                            onBlur={handleBlurSave}
+                          >
+                            <option value="" disabled>Sélectionner un local</option>
+                            <option value="Bab Saadoun">Bab Saadoun</option>
+                            <option value="Douar Hicher">Douar Hicher</option>
+                            <option value="Soumaya">Soumaya</option>
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                      ) : (
+                        <input 
+                          type="text" 
+                          className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                          readOnly={receipt?.status === 'PROCESSED'}
+                          placeholder={
+                            editData.paymentMode === 'Virement Bancaire' ? 'ex. ATB' :
+                            editData.paymentMode === 'Poste' ? 'ex. Elyes Laabidi' :
+                            'ex. Soumaya'
+                          }
+                          value={editData.paymentDetails}
+                          onChange={e => setEditData({...editData, paymentDetails: e.target.value})}
+                          onBlur={handleBlurSave}
+                        />
+                      )}
                     </div>
                   )}
+                  <div>
+                    <label className="label">Montant</label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        min="0"
+                        className={`input tnum pr-12 ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                        readOnly={receipt?.status === 'PROCESSED'}
+                        placeholder="0.00"
+                        value={editData.amount}
+                        onChange={e => setEditData({...editData, amount: e.target.value})}
+                        onBlur={handleBlurSave}
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-medium text-gray-500">DT</span>
+                    </div>
+                  </div>
                   <div className="sm:col-span-2 md:col-span-1 lg:col-span-2">
                     <label className="label">Date du paiement</label>
                     <input type="text" className="input tnum bg-gray-200 text-gray-500 cursor-not-allowed" readOnly value={fmtDate(receipt?.paymentDate as string)} />

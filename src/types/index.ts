@@ -57,6 +57,7 @@ export type Receipt = {
   paymentMode?: string;
   paymentDetails?: string;
   paymentDate?: string;
+  amount?: number;
   notes: Note[];
   gDriveFileId: string;
   gDriveViewUrl: string;

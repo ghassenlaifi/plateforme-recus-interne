@@ -49,18 +49,29 @@ export function ReceiptCard({ receipt, operators, justAddedId, onOpen }: Receipt
             <span className="truncate">{formatPhone(receipt.clientDetails?.telephone || '')}</span>
           </p>
         </div>
-        <span className="shrink-0 text-xs font-medium text-gray-500">{fmtDate(receipt.paymentDate)}</span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className="text-xs font-medium text-gray-500">{fmtDate(receipt.paymentDate)}</span>
+          {receipt.amount !== undefined && (
+            <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-0.5 text-xs font-bold text-green-700 ring-1 ring-inset ring-green-600/20">
+              {receipt.amount} DT
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[13px]">
-        <div className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-700 ring-1 ring-inset ring-gray-100">
-          <span className="block text-[11px] font-medium text-gray-400">Offre</span>
-          <span className="block truncate">{receipt.clientDetails?.classe}</span>
-        </div>
-        <div className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-700 ring-1 ring-inset ring-gray-100">
-          <span className="block text-[11px] font-medium text-gray-400">Paiement</span>
-          <span className="block truncate">{receipt.paymentMode}</span>
-        </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[13px]">
+        {receipt.clientDetails?.classe && (
+          <div className="flex-1 min-w-[100px] rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-700 ring-1 ring-inset ring-gray-100">
+            <span className="block text-[11px] font-medium text-gray-400">Offre</span>
+            <span className="block truncate">{receipt.clientDetails.classe}</span>
+          </div>
+        )}
+        {receipt.clientDetails?.familyGroup && (
+          <div className="flex-1 min-w-[100px] rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-700 ring-1 ring-inset ring-gray-100">
+            <span className="block text-[11px] font-medium text-gray-400">Élève(s)</span>
+            <span className="block truncate">{receipt.clientDetails.familyGroup}</span>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-2 border-t border-gray-100 pt-3">
