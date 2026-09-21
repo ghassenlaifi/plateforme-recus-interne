@@ -114,7 +114,8 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       email: '',
       familyGroup: '',
       mode: 'D17',
-      date: todayFR()
+      date: todayFR(),
+      note: ''
     });
     setErrors({});
   };
@@ -186,7 +187,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
         throw new Error(errData.error || 'Erreur lors de la soumission du reçu');
       }
 
-      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', date: '', note: '', note: '' });
+      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', date: '', note: '' });
       setErrors({});
       clearFile();
       
