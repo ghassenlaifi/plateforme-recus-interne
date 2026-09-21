@@ -58,7 +58,7 @@ export function Header({ activeUser, setActiveUser, attention }: HeaderProps) {
     <>
       <div ref={hdrWrapRef} id="hdrWrap" className="hdr-wrap pointer-events-none fixed inset-x-0 top-0 z-30">
         <div className="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8">
-          <header className="hdr-nav pointer-events-auto relative flex w-full flex-wrap items-center gap-x-5 gap-y-2 rounded-xl bg-white px-4 py-2 md:px-5">
+          <header className="hdr-nav pointer-events-auto relative flex w-full flex-col items-start gap-x-5 gap-y-3 rounded-xl bg-white px-4 py-3 md:flex-row md:flex-wrap md:items-center md:px-5">
             <div className="flex shrink-0 items-center gap-2.5">
               <div className="relative h-8 w-8 overflow-hidden rounded-md border border-gray-100 shadow-sm">
                 <Image 
@@ -82,13 +82,13 @@ export function Header({ activeUser, setActiveUser, attention }: HeaderProps) {
 
             <span className="hidden h-5 w-px bg-gray-200 md:block" aria-hidden="true"></span>
 
-            <div className="flex min-w-0 flex-1 items-center gap-3 pt-0.5">
+            <div className="flex w-full min-w-0 flex-1 items-center gap-2 md:w-auto md:gap-3">
               <span id="whoLabel" className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-black">
                 CONNECTÉ EN TANT QUE :
               </span>
               <div 
                 id="userPillsWrap" 
-                className={`-mx-1 -my-1 min-w-0 px-1 py-1 ${attention ? 'attention' : ''}`}
+                className={`-mx-1 -my-1 min-w-0 flex-1 px-1 py-1 ${attention ? 'attention' : ''}`}
               >
                 <div id="userPills" role="radiogroup" aria-labelledby="whoLabel" className="no-scrollbar flex gap-1.5 overflow-x-auto md:flex-wrap md:overflow-visible">
                   {isLoading ? (
