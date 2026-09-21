@@ -95,7 +95,7 @@ export default function OperatorsAdmin() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="input bg-white"
-                    placeholder="ex: Ghassen"
+                    placeholder="ex: Elios"
                   />
                 </div>
               </div>
