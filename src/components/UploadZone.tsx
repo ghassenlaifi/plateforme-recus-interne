@@ -187,7 +187,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
         throw new Error(errData.error || 'Erreur lors de la soumission du reçu');
       }
 
-      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', paymentDetails: '', date: '', note: '' });
+      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', paymentDetails: '', amount: '', date: '', note: '' });
       setErrors({});
       clearFile();
       
