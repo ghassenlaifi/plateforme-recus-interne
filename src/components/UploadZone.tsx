@@ -27,38 +27,36 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
     email: '',
     familyGroup: '',
     mode: '',
+    paymentDetails: '',
     date: '',
     note: ''
   });
   const [errors, setErrors] = useState<Record<string, boolean>>({});
 
-  const formatPhone = (raw: string) => {
-    let d = raw.replace(/\D/g, '');
-    if (d.length > 8 && d.startsWith('216')) d = d.slice(3);
-    d = d.slice(0, 8);
-    return [d.slice(0, 2), d.slice(2, 5), d.slice(5, 8)].filter(Boolean).join(' ');
+  const digitsOf = (s: string) => s.replace(/\D/g, '');
+  const formatPhone = (val: string) => {
+    const d = digitsOf(val).slice(0, 8);
+    if (d.length <= 2) return d;
+    if (d.length <= 5) return `${d.slice(0,2)} ${d.slice(2)}`;
+    return `${d.slice(0,2)} ${d.slice(2,5)} ${d.slice(5)}`;
   };
-  
-  const digitsOf = (v: string) => formatPhone(v).replace(/\D/g, '');
 
   const formatDateInput = (val: string) => {
-    let v = val.replace(/\D/g, '');
-    if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
-    if (v.length > 5) v = v.slice(0, 5) + '/' + v.slice(5);
-    return v.slice(0, 10);
+    const d = digitsOf(val).slice(0, 8);
+    if (d.length >= 5) return `${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`;
+    if (d.length >= 3) return `${d.slice(0,2)}/${d.slice(2)}`;
+    return d;
   };
 
-  const todayFR = () => { 
-    const d = new Date(); 
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; 
+  const toISO = (dateStr: string) => {
+    const [dd, mm, yyyy] = dateStr.split('/');
+    if (!dd || !mm || !yyyy || yyyy.length !== 4) return '';
+    return `${yyyy}-${mm}-${dd}T12:00:00Z`;
   };
 
-  const toISO = (frDate: string) => {
-    const parts = frDate.split('/');
-    if (parts.length === 3) {
-      return `${parts[2]}-${parts[1]}-${parts[0]}`;
-    }
-    return frDate;
+  const todayFR = () => {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
   };
 
   const fmtSize = (b: number) => (b < 1048576 ? `${Math.max(1, Math.round(b / 1024))} Ko` : `${(b / 1048576).toFixed(1).replace('.', ',')} Mo`);
@@ -114,6 +112,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       email: '',
       familyGroup: '',
       mode: 'D17',
+      paymentDetails: 'Soumaya',
       date: todayFR(),
       note: ''
     });
@@ -141,12 +140,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
     check('name', !formData.name.trim());
     check('phone', digitsOf(formData.phone).length !== 8);
-    check('classeSelect', !formData.classeSelect.trim());
-    if (formData.classeSelect === 'Offre personnalisé') {
-      check('classeCustom', !formData.classeCustom.trim());
-    }
-    check('mode', !formData.mode.trim());
-    check('date', formData.date.length !== 10);
+    // On ne valide plus classeSelect ni mode ni date comme champs obligatoires
 
     setErrors(newErrors);
 
@@ -174,7 +168,8 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       if (formData.familyGroup.trim()) payload.append('familyGroup', formData.familyGroup.trim());
       if (formData.note.trim()) payload.append('note', formData.note.trim());
       payload.append('paymentMode', formData.mode.trim());
-      payload.append('paymentDate', toISO(formData.date));
+      if (formData.paymentDetails.trim()) payload.append('paymentDetails', formData.paymentDetails.trim());
+      if (formData.date.trim()) payload.append('paymentDate', toISO(formData.date));
       payload.append('uploadedBy', activeUser);
 
       const res = await fetch('/api/receipts', {
@@ -187,7 +182,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
         throw new Error(errData.error || 'Erreur lors de la soumission du reçu');
       }
 
-      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', date: '', note: '' });
+      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', paymentDetails: '', date: '', note: '' });
       setErrors({});
       clearFile();
       
@@ -401,20 +396,64 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
               <div>
                 <label className="label" htmlFor="f-mode">Mode de paiement</label>
-                <input 
-                  id="f-mode" 
-                  name="mode" 
-                  type="text" 
-                  list="modes" 
-                  className="input" 
-                  placeholder="ex. Virement" 
-                  autoComplete="off" 
-                  aria-invalid={errors.mode ? 'true' : 'false'}
-                  value={formData.mode}
-                  disabled={isUploading}
-                  onChange={(e) => { setFormData({...formData, mode: e.target.value}); setErrors({...errors, mode: false}); }}
-                />
+                <div className="relative">
+                  <select 
+                    id="f-mode" 
+                    name="mode" 
+                    className="input appearance-none pr-10"
+                    aria-invalid={errors.mode ? 'true' : 'false'}
+                    value={formData.mode}
+                    disabled={isUploading}
+                    onChange={(e) => { setFormData({...formData, mode: e.target.value, paymentDetails: ''}); setErrors({...errors, mode: false}); }}
+                  >
+                    <option value="" disabled>Sélectionner un mode</option>
+                    <option value="Espèces">Espèces</option>
+                    <option value="Virement Bancaire">Virement Bancaire</option>
+                    <option value="Poste">Poste</option>
+                    <option value="D17">D17</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
+
+              {formData.mode && (
+                <div>
+                  <label className="label" htmlFor="f-paymentDetails">
+                    {formData.mode === 'Espèces' && 'Local'}
+                    {formData.mode === 'Virement Bancaire' && 'Banque'}
+                    {formData.mode === 'Poste' && 'Destinataire'}
+                    {formData.mode === 'D17' && 'Titulaire de la carte'}
+                    <span className="text-gray-400 font-normal ml-1">
+                      (
+                      {formData.mode === 'Espèces' && 'ex. Bab Saadoun'}
+                      {formData.mode === 'Virement Bancaire' && 'ex. ATB'}
+                      {formData.mode === 'Poste' && 'ex. Elyes Laabidi'}
+                      {formData.mode === 'D17' && 'ex. Soumaya'}
+                      )
+                    </span>
+                  </label>
+                  <input 
+                    id="f-paymentDetails" 
+                    name="paymentDetails" 
+                    type="text" 
+                    className="input" 
+                    placeholder={
+                      formData.mode === 'Espèces' ? 'ex. Bab Saadoun' :
+                      formData.mode === 'Virement Bancaire' ? 'ex. ATB' :
+                      formData.mode === 'Poste' ? 'ex. Elyes Laabidi' :
+                      'ex. Soumaya'
+                    }
+                    autoComplete="off" 
+                    value={formData.paymentDetails}
+                    disabled={isUploading}
+                    onChange={(e) => setFormData({...formData, paymentDetails: e.target.value})}
+                  />
+                </div>
+              )}
 
               <div className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
                 <label className="label" htmlFor="f-date">Date du paiement (JJ/MM/AAAA)</label>

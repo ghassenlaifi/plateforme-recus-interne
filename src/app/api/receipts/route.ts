@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     const familyGroup = formData.get('familyGroup') as string | null;
     
     const paymentMode = formData.get('paymentMode') as string | null;
+    const paymentDetails = formData.get('paymentDetails') as string | null;
     const paymentDate = formData.get('paymentDate') as string | null;
     const note = formData.get('note') as string | null;
 
@@ -52,9 +53,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 1. Validation rigoureuse
-    if (!operatorName || !nom || !telephone || !classe) {
-      return NextResponse.json({ error: 'Les champs obligatoires (opérateur, nom, téléphone, classe) sont manquants' }, { status: 400 });
+    // 1. Validation rigoureuse (classe n'est plus obligatoire)
+    if (!operatorName || !nom || !telephone) {
+      return NextResponse.json({ error: 'Les champs obligatoires (opérateur, nom, téléphone) sont manquants' }, { status: 400 });
     }
 
     // 2. Convertir le fichier en Buffer
@@ -80,11 +81,12 @@ export async function POST(req: NextRequest) {
       clientDetails: {
         nom,
         telephone,
-        classe,
+        ...(classe && { classe }),
         ...(email && { email }),
         ...(familyGroup && { familyGroup }),
       },
       ...(paymentMode && { paymentMode }),
+      ...(paymentDetails && { paymentDetails }),
       ...(paymentDate && { paymentDate: new Date(paymentDate) }),
       notes,
       gDriveFileId: fileId,

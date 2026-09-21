@@ -74,10 +74,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
     }
 
     // Cas 4 : Mise à jour des détails (Edition dans le popup)
-    if (body.clientDetails || body.paymentMode !== undefined || body.paymentDate !== undefined) {
+    if (body.clientDetails || body.paymentMode !== undefined || body.paymentDetails !== undefined || body.paymentDate !== undefined) {
       const updateData: any = {};
       if (body.clientDetails) updateData.clientDetails = body.clientDetails;
       if (body.paymentMode !== undefined) updateData.paymentMode = body.paymentMode;
+      if (body.paymentDetails !== undefined) updateData.paymentDetails = body.paymentDetails;
       if (body.paymentDate !== undefined) updateData.paymentDate = body.paymentDate;
       
       const updatedReceipt = await Receipt.findByIdAndUpdate(

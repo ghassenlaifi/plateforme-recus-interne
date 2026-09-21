@@ -50,12 +50,13 @@ export type Receipt = {
   clientDetails: {
     nom: string;
     telephone: string;
-    classe: string;
+    classe?: string;
     email?: string;
     familyGroup?: string;
   };
-  paymentMode: string;
-  paymentDate: string; // ISO date string from API
+  paymentMode?: string;
+  paymentDetails?: string;
+  paymentDate?: string;
   notes: Note[];
   gDriveFileId: string;
   gDriveViewUrl: string;

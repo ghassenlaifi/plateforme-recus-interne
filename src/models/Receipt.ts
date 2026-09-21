@@ -13,11 +13,12 @@ export interface IReceipt extends Document {
   clientDetails: {
     nom: string;
     telephone: string;
-    classe: string;
+    classe?: string;
     email?: string;
     familyGroup?: string;
   };
   paymentMode?: string;
+  paymentDetails?: string;
   paymentDate?: Date;
   notes: INote[];
   gDriveFileId: string;
@@ -51,17 +52,21 @@ const ReceiptSchema = new Schema<IReceipt>({
   clientDetails: {
     nom: { type: String, required: true },
     telephone: { type: String, required: true },
-    classe: { type: String, required: true },
+    classe: { type: String, required: false },
     email: { type: String, required: false },
     familyGroup: { type: String, required: false },
   },
   paymentMode: {
     type: String,
-    required: false, // rendu optionnel selon les specs
+    required: false,
+  },
+  paymentDetails: {
+    type: String,
+    required: false,
   },
   paymentDate: {
     type: Date,
-    required: false, // rendu optionnel
+    required: false,
   },
   notes: {
     type: [NoteSchema],

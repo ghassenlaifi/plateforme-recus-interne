@@ -29,6 +29,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
     classe: '',
     familyGroup: '',
     paymentMode: '',
+    paymentDetails: '',
     paymentDate: ''
   });
 
@@ -41,6 +42,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
         classe: receipt.clientDetails?.classe || '',
         familyGroup: receipt.clientDetails?.familyGroup || '',
         paymentMode: receipt.paymentMode || '',
+        paymentDetails: receipt.paymentDetails || '',
         paymentDate: receipt.paymentDate ? new Date(receipt.paymentDate).toISOString().split('T')[0] : ''
       });
     }
@@ -55,7 +57,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
     return [d.slice(0, 2), d.slice(2, 5), d.slice(5, 8)].filter(Boolean).join(' ');
   };
   
-  const fmtDate = (iso: string) => { 
+  const fmtDate = (iso: string | undefined) => { 
     if (!iso) return '—'; 
     try {
       const d = new Date(iso);
@@ -116,6 +118,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
       editData.classe === (current.classe || '') &&
       editData.familyGroup === (current.familyGroup || '') &&
       editData.paymentMode === (receipt.paymentMode || '') &&
+      editData.paymentDetails === (receipt.paymentDetails || '') &&
       editData.paymentDate === d
     ) {
       return;
@@ -128,6 +131,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
         body: JSON.stringify({ 
           clientDetails: { ...current, nom: editData.nom, telephone: editData.telephone, email: editData.email, classe: editData.classe, familyGroup: editData.familyGroup },
           paymentMode: editData.paymentMode,
+          paymentDetails: editData.paymentDetails,
           paymentDate: editData.paymentDate ? new Date(editData.paymentDate).toISOString() : undefined
         })
       });
@@ -377,8 +381,51 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                   </div>
                   <div>
                     <label className="label">Mode de paiement</label>
-                    <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.paymentMode} onChange={e => setEditData({...editData, paymentMode: e.target.value})} onBlur={handleBlurSave} />
+                    <div className="relative">
+                      <select 
+                        className={`input appearance-none pr-10 ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                        disabled={receipt?.status === 'PROCESSED'}
+                        value={editData.paymentMode}
+                        onChange={e => setEditData({...editData, paymentMode: e.target.value, paymentDetails: ''})}
+                        onBlur={handleBlurSave}
+                      >
+                        <option value="" disabled>Sélectionner un mode</option>
+                        <option value="Espèces">Espèces</option>
+                        <option value="Virement Bancaire">Virement Bancaire</option>
+                        <option value="Poste">Poste</option>
+                        <option value="D17">D17</option>
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
+                  {editData.paymentMode && (
+                    <div>
+                      <label className="label">
+                        {editData.paymentMode === 'Espèces' && 'Local'}
+                        {editData.paymentMode === 'Virement Bancaire' && 'Banque'}
+                        {editData.paymentMode === 'Poste' && 'Destinataire'}
+                        {editData.paymentMode === 'D17' && 'Titulaire de la carte'}
+                      </label>
+                      <input 
+                        type="text" 
+                        className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                        readOnly={receipt?.status === 'PROCESSED'}
+                        placeholder={
+                          editData.paymentMode === 'Espèces' ? 'ex. Bab Saadoun' :
+                          editData.paymentMode === 'Virement Bancaire' ? 'ex. ATB' :
+                          editData.paymentMode === 'Poste' ? 'ex. Elyes Laabidi' :
+                          'ex. Soumaya'
+                        }
+                        value={editData.paymentDetails}
+                        onChange={e => setEditData({...editData, paymentDetails: e.target.value})}
+                        onBlur={handleBlurSave}
+                      />
+                    </div>
+                  )}
                   <div className="sm:col-span-2 md:col-span-1 lg:col-span-2">
                     <label className="label">Date du paiement</label>
                     <input type="text" className="input tnum bg-gray-200 text-gray-500 cursor-not-allowed" readOnly value={fmtDate(receipt?.paymentDate as string)} />

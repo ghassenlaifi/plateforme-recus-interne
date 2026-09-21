@@ -22,7 +22,7 @@ export function ReceiptCard({ receipt, operators, justAddedId, onOpen }: Receipt
     return [d.slice(0, 2), d.slice(2, 5), d.slice(5, 8)].filter(Boolean).join(' ');
   };
 
-  const fmtDate = (iso: string) => { 
+  const fmtDate = (iso: string | undefined) => { 
     if (!iso) return '—'; 
     try {
       const d = new Date(iso);
@@ -63,11 +63,16 @@ export function ReceiptCard({ receipt, operators, justAddedId, onOpen }: Receipt
         </div>
       </div>
 
-      <div className="mt-3 flex items-start justify-between border-t border-gray-100 pt-3">
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-2 border-t border-gray-100 pt-3">
         <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" style={{ backgroundColor: u.bg, color: u.fg }}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: u.dot }}></span>
           <span className="truncate">Importé par {u.name}</span>
         </span>
+        {receipt.paymentMode && receipt.paymentDetails && (
+          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-900">
+            <span className="truncate">{receipt.paymentMode}, {receipt.paymentDetails}</span>
+          </span>
+        )}
       </div>
 
       <button 
