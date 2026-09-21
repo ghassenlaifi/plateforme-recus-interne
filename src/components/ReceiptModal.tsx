@@ -5,6 +5,7 @@ import { X, Trash2, Check, Loader2, Download } from 'lucide-react';
 import { useToast } from './Toast';
 import { Receipt, Note } from '@/types';
 import { useSWRConfig } from 'swr';
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 interface ReceiptModalProps {
   receipt: Receipt | null;
@@ -274,11 +275,32 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
             <div className="relative flex flex-col bg-gray-200 md:min-h-0 md:h-full">
               {receipt?.gDriveViewUrl ? (
                 <div className="flex h-[45vh] w-full flex-col md:h-full">
-                  <iframe 
-                    src={`https://drive.google.com/file/d/${receipt.gDriveFileId}/preview`} 
-                    className="w-full flex-1 border-0"
-                    allow="autoplay"
-                  ></iframe>
+                  <div className="flex-1 relative overflow-hidden bg-gray-200 cursor-grab active:cursor-grabbing">
+                    <TransformWrapper
+                      initialScale={1}
+                      minScale={0.1}
+                      maxScale={8}
+                      centerOnInit={true}
+                    >
+                      {({ zoomIn, zoomOut, resetTransform }) => (
+                        <>
+                          <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img 
+                              src={`https://drive.google.com/uc?export=view&id=${receipt.gDriveFileId}`} 
+                              alt="Aperçu du reçu"
+                              className="max-h-full max-w-full object-contain pointer-events-none select-none"
+                            />
+                          </TransformComponent>
+                          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 backdrop-blur-sm z-10 text-white shadow-lg">
+                            <button type="button" onClick={() => zoomOut()} className="p-1.5 hover:bg-white/20 rounded-full transition" title="Dézoomer"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"/></svg></button>
+                            <button type="button" onClick={() => resetTransform()} className="p-1.5 hover:bg-white/20 rounded-full transition text-[11px] font-bold px-3 uppercase tracking-wider" title="Réinitialiser">Ajuster</button>
+                            <button type="button" onClick={() => zoomIn()} className="p-1.5 hover:bg-white/20 rounded-full transition" title="Zoomer"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg></button>
+                          </div>
+                        </>
+                      )}
+                    </TransformWrapper>
+                  </div>
                   <div className="flex items-center justify-end border-t border-gray-200 bg-white px-4 py-2 shadow-sm sm:px-6">
                     <a 
                       href={`https://drive.google.com/uc?export=download&id=${receipt.gDriveFileId}`} 

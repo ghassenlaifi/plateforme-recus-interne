@@ -16,6 +16,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-dropzone": "^19.3.0",
+    "react-zoom-pan-pinch": "^4.2.0",
     "swr": "^2.5.1"
   },
   "devDependencies": {

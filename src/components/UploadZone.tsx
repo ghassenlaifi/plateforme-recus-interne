@@ -427,14 +427,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     {formData.mode === 'Virement Bancaire' && 'Banque'}
                     {formData.mode === 'Poste' && 'Destinataire'}
                     {formData.mode === 'D17' && 'Titulaire de la carte'}
-                    <span className="text-gray-400 font-normal ml-1">
-                      (
-                      {formData.mode === 'Espèces' && 'ex. Bab Saadoun'}
-                      {formData.mode === 'Virement Bancaire' && 'ex. ATB'}
-                      {formData.mode === 'Poste' && 'ex. Elyes Laabidi'}
-                      {formData.mode === 'D17' && 'ex. Soumaya'}
-                      )
-                    </span>
                   </label>
                   <input 
                     id="f-paymentDetails" 
