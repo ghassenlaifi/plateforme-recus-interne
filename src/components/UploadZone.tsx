@@ -110,7 +110,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       classeSelect: 'Zero To Hero',
       classeCustom: '',
       email: '',
-      mode: 'D17',
+      mode: 'Edinar - D17',
       paymentDetails: 'Soumaya',
       amount: '150',
       date: todayFR(),
@@ -397,7 +397,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     <option value="" disabled>Sélectionner un mode</option>
                     <option value="Espèces">Espèces</option>
                     <option value="Virement Bancaire">Virement Bancaire</option>
-                    <option value="D17">D17</option>
+                    <option value="Edinar - D17">Edinar - D17</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -412,7 +412,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                   <label className="label" htmlFor="f-paymentDetails">
                     {formData.mode === 'Espèces' && 'Local'}
                     {formData.mode === 'Virement Bancaire' && 'Banque'}
-                    {formData.mode === 'D17' && 'Titulaire de la carte'}
+                    {formData.mode === 'Edinar - D17' && 'Titulaire de la carte'}
                   </label>
                   <div className="relative">
                     <select 
@@ -432,7 +432,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                           <option value="Soumaya">Soumaya</option>
                         </>
                       )}
-                      {formData.mode === 'D17' && (
+                      {formData.mode === 'Edinar - D17' && (
                         <>
                           <option value="" disabled>Sélectionner un titulaire</option>
                           <option value="Soumaya">Soumaya</option>

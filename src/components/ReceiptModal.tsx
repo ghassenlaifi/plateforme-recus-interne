@@ -411,7 +411,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                         <option value="" disabled>Sélectionner un mode</option>
                         <option value="Espèces">Espèces</option>
                         <option value="Virement Bancaire">Virement Bancaire</option>
-                        <option value="D17">D17</option>
+                        <option value="Edinar - D17">Edinar - D17</option>
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -425,7 +425,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                       <label className="label">
                         {editData.paymentMode === 'Espèces' && 'Local'}
                         {editData.paymentMode === 'Virement Bancaire' && 'Banque'}
-                        {editData.paymentMode === 'D17' && 'Titulaire de la carte'}
+                        {editData.paymentMode === 'Edinar - D17' && 'Titulaire de la carte'}
                       </label>
                       <div className="relative">
                         <select 
@@ -443,7 +443,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                               <option value="Soumaya">Soumaya</option>
                             </>
                           )}
-                          {editData.paymentMode === 'D17' && (
+                          {editData.paymentMode === 'Edinar - D17' && (
                             <>
                               <option value="" disabled>Sélectionner un titulaire</option>
                               <option value="Soumaya">Soumaya</option>

@@ -179,7 +179,7 @@ function ReceiptHubApp() {
         <option value="Espèces"></option>
         <option value="Virement"></option>
         <option value="Chèque"></option>
-        <option value="D17"></option>
+        <option value="Edinar - D17"></option>
         <option value="Flouci"></option>
       </datalist>
 

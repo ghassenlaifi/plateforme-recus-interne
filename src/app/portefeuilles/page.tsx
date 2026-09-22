@@ -186,9 +186,9 @@ export default function PortefeuillesPage() {
       case 'Espèces-Douar Hicher':
         return { bg: 'from-amber-700 to-amber-950', shadow: 'shadow-amber-900/40' }; // Or / Ambre très sombre
       
-      case 'D17-Soumaya':
+      case 'Edinar - D17-Soumaya':
         return { bg: 'from-indigo-800 to-indigo-950', shadow: 'shadow-indigo-900/40' }; // Bleu Indigo très sombre
-      case 'D17-Elyes':
+      case 'Edinar - D17-Elyes':
         return { bg: 'from-cyan-600 to-teal-900', shadow: 'shadow-cyan-900/40' }; // Cyan / Sarcelle
       
       case 'Virement Bancaire-ATB Safa':
