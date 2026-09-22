@@ -41,9 +41,16 @@ export default function PortefeuillesPage() {
   const newPinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    if (!isAuthenticated && pinInputRefs.current[0]) {
-      pinInputRefs.current[0].focus();
+    if (!isAuthenticated) {
+      document.body.style.overflow = 'hidden';
+      if (pinInputRefs.current[0]) {
+        pinInputRefs.current[0].focus();
+      }
+    } else {
+      document.body.style.overflow = '';
     }
+    
+    return () => { document.body.style.overflow = ''; };
   }, [isAuthenticated]);
 
   const handlePinChange = (index: number, value: string, isNewPin = false) => {
@@ -197,11 +204,11 @@ export default function PortefeuillesPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-gray-50 font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-20 relative">
+    <div className="min-h-[100dvh] bg-transparent font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-20 relative">
       <Header activeUser={activeUser} setActiveUser={handleUserChange} attention={!activeUser} />
 
       {!isAuthenticated && (
-        <div className="fixed top-0 left-0 h-[100dvh] w-full z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-xl">
           <div className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-2xl ring-1 ring-gray-900/10">
             <div className="flex justify-center mb-6">
               <div className="h-16 w-16 rounded-full bg-indigo-50 flex items-center justify-center ring-4 ring-indigo-50/50">
@@ -240,7 +247,7 @@ export default function PortefeuillesPage() {
         </div>
       )}
 
-      <main className="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8 mt-6">
+      {isAuthenticated && (<main className="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8 mt-6">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-base font-semibold tracking-tight text-gray-900 flex items-center gap-2">
@@ -252,7 +259,7 @@ export default function PortefeuillesPage() {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsChangePinModalOpen(true)}
-              className="text-xs font-medium text-gray-600 hover:text-gray-900 bg-white ring-1 ring-gray-200 hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+              className="text-xs font-medium text-gray-600 hover:text-gray-900 bg-white ring-1 ring-gray-200 hover:bg-transparent px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
               title="Modifier le code PIN"
             >
               <KeyRound className="h-3.5 w-3.5" />
@@ -360,6 +367,8 @@ export default function PortefeuillesPage() {
         )}
       </main>
 
+      )} {/* End isAuthenticated check for main */}
+
       {/* Change PIN Modal */}
       {isChangePinModalOpen && (
         <div className="relative z-50" role="dialog" aria-modal="true">
@@ -419,7 +428,7 @@ export default function PortefeuillesPage() {
                       type="button"
                       onClick={() => setIsChangePinModalOpen(false)}
                       disabled={isChangingPin || !!changePinSuccess}
-                      className="inline-flex flex-1 justify-center rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                      className="inline-flex flex-1 justify-center rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-transparent"
                     >
                       Annuler
                     </button>
@@ -485,7 +494,7 @@ export default function PortefeuillesPage() {
                     type="button"
                     onClick={() => setResetModal({ isOpen: false, wallet: null })}
                     disabled={isResetting}
-                    className="mt-3 inline-flex w-full justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto disabled:opacity-50"
+                    className="mt-3 inline-flex w-full justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-transparent sm:mt-0 sm:w-auto disabled:opacity-50"
                   >
                     Annuler
                   </button>

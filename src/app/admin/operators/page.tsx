@@ -62,7 +62,7 @@ export default function OperatorsAdmin() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased">
+    <div className="min-h-screen bg-transparent font-sans text-gray-900 antialiased">
       <header className="sticky top-0 z-40 bg-white shadow-sm ring-1 ring-gray-200">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
@@ -104,7 +104,7 @@ export default function OperatorsAdmin() {
                 <label className="label">Thème de couleur</label>
                 <div className="mt-3 flex flex-wrap gap-4">
                   {Object.entries(THEMES).map(([key, t]) => (
-                    <label key={key} className="relative flex cursor-pointer items-center gap-3 rounded-full border border-gray-200 px-3 py-2 hover:bg-gray-50 transition focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2">
+                    <label key={key} className="relative flex cursor-pointer items-center gap-3 rounded-full border border-gray-200 px-3 py-2 hover:bg-transparent transition focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2">
                       <input 
                         type="radio" 
                         name="theme" 

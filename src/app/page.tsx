@@ -72,7 +72,7 @@ function ReceiptHubApp() {
   const openReceipt = visibleReceipts.find(r => r._id === openModalId) || null;
 
   return (
-    <div className="min-h-[100dvh] bg-gray-50 font-sans text-gray-900 antialiased overflow-x-hidden">
+    <div className="min-h-[100dvh] bg-transparent font-sans text-gray-900 antialiased overflow-x-hidden">
       <Header activeUser={activeUser} setActiveUser={handleSetActiveUser} attention={attention} />
       
       <main className="mx-auto grid max-w-[90rem] gap-8 px-4 pb-10 pt-6 sm:px-6 lg:grid-cols-12 lg:gap-10 lg:px-8 lg:pb-12">
@@ -94,7 +94,7 @@ function ReceiptHubApp() {
             <Link 
               href="/admin/operators" 
               title="Paramètres & Opérateurs"
-              className="flex items-center justify-center h-10 w-10 rounded-full bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm ring-1 ring-gray-900/5"
+              className="flex items-center justify-center h-10 w-10 rounded-full bg-white text-gray-500 hover:bg-transparent hover:text-gray-900 transition-colors shadow-sm ring-1 ring-gray-900/5"
             >
               <Settings className="h-[18px] w-[18px]" />
             </Link>
