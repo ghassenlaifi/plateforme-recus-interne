@@ -28,7 +28,6 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
     telephone: '',
     email: '',
     classe: '',
-    familyGroup: '',
     paymentMode: '',
     paymentDetails: '',
     paymentDate: '',
@@ -42,7 +41,6 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
         telephone: receipt.clientDetails?.telephone || '',
         email: receipt.clientDetails?.email || '',
         classe: receipt.clientDetails?.classe || '',
-        familyGroup: receipt.clientDetails?.familyGroup || '',
         paymentMode: receipt.paymentMode || '',
         paymentDetails: receipt.paymentDetails || '',
         paymentDate: receipt.paymentDate ? new Date(receipt.paymentDate).toISOString().split('T')[0] : '',
@@ -119,7 +117,6 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
       editData.telephone === (current.telephone || '') &&
       editData.email === (current.email || '') &&
       editData.classe === (current.classe || '') &&
-      editData.familyGroup === (current.familyGroup || '') &&
       editData.paymentMode === (receipt.paymentMode || '') &&
       editData.paymentDetails === (receipt.paymentDetails || '') &&
       editData.paymentDate === d &&
@@ -133,7 +130,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          clientDetails: { ...current, nom: editData.nom, telephone: editData.telephone, email: editData.email, classe: editData.classe, familyGroup: editData.familyGroup },
+          clientDetails: { ...current, nom: editData.nom, telephone: editData.telephone, email: editData.email, classe: editData.classe },
           paymentMode: editData.paymentMode,
           paymentDetails: editData.paymentDetails,
           paymentDate: editData.paymentDate ? new Date(editData.paymentDate).toISOString() : undefined,
@@ -291,7 +288,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                           <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img 
-                              src={`https://drive.google.com/uc?export=view&id=${receipt.gDriveFileId}`} 
+                              src={`/api/image/${receipt.gDriveFileId}`} 
                               alt="Aperçu du reçu"
                               className="max-h-full max-w-full object-contain pointer-events-none select-none"
                             />
@@ -307,7 +304,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                   </div>
                   <div className="flex items-center justify-end border-t border-gray-200 bg-white px-4 py-2 shadow-sm sm:px-6">
                     <a 
-                      href={`https://drive.google.com/uc?export=download&id=${receipt.gDriveFileId}`} 
+                      href={`/api/image/${receipt.gDriveFileId}`} 
                       download
                       target="_blank"
                       rel="noreferrer"
@@ -383,7 +380,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
               <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
                   <div className="sm:col-span-2 md:col-span-1 lg:col-span-2">
-                    <label className="label">Nom et Prénom</label>
+                    <label className="label">Élève(s)</label>
                     <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.nom} onChange={e => setEditData({...editData, nom: e.target.value})} onBlur={handleBlurSave} />
                   </div>
                   <div>
@@ -402,10 +399,6 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                     <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.classe} onChange={e => setEditData({...editData, classe: e.target.value})} onBlur={handleBlurSave} />
                   </div>
                   <div>
-                    <label className="label">Élève(s)</label>
-                    <input type="text" className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.familyGroup} onChange={e => setEditData({...editData, familyGroup: e.target.value})} onBlur={handleBlurSave} />
-                  </div>
-                  <div>
                     <label className="label">Mode de paiement</label>
                     <div className="relative">
                       <select 
@@ -418,7 +411,6 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                         <option value="" disabled>Sélectionner un mode</option>
                         <option value="Espèces">Espèces</option>
                         <option value="Virement Bancaire">Virement Bancaire</option>
-                        <option value="Poste">Poste</option>
                         <option value="D17">D17</option>
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
@@ -433,44 +425,46 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                       <label className="label">
                         {editData.paymentMode === 'Espèces' && 'Local'}
                         {editData.paymentMode === 'Virement Bancaire' && 'Banque'}
-                        {editData.paymentMode === 'Poste' && 'Destinataire'}
                         {editData.paymentMode === 'D17' && 'Titulaire de la carte'}
                       </label>
-                      {editData.paymentMode === 'Espèces' ? (
-                        <div className="relative">
-                          <select 
-                            className={`input appearance-none pr-10 ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-                            disabled={receipt?.status === 'PROCESSED'}
-                            value={editData.paymentDetails}
-                            onChange={e => setEditData({...editData, paymentDetails: e.target.value})}
-                            onBlur={handleBlurSave}
-                          >
-                            <option value="" disabled>Sélectionner un local</option>
-                            <option value="Bab Saadoun">Bab Saadoun</option>
-                            <option value="Douar Hicher">Douar Hicher</option>
-                            <option value="Soumaya">Soumaya</option>
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </div>
-                      ) : (
-                        <input 
-                          type="text" 
-                          className={`input ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-                          readOnly={receipt?.status === 'PROCESSED'}
-                          placeholder={
-                            editData.paymentMode === 'Virement Bancaire' ? 'ex. ATB' :
-                            editData.paymentMode === 'Poste' ? 'ex. Elyes Laabidi' :
-                            'ex. Soumaya'
-                          }
+                      <div className="relative">
+                        <select 
+                          className={`input appearance-none pr-10 ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                          disabled={receipt?.status === 'PROCESSED'}
                           value={editData.paymentDetails}
                           onChange={e => setEditData({...editData, paymentDetails: e.target.value})}
                           onBlur={handleBlurSave}
-                        />
-                      )}
+                        >
+                          {editData.paymentMode === 'Espèces' && (
+                            <>
+                              <option value="" disabled>Sélectionner un local</option>
+                              <option value="Bab Saadoun">Bab Saadoun</option>
+                              <option value="Douar Hicher">Douar Hicher</option>
+                              <option value="Soumaya">Soumaya</option>
+                            </>
+                          )}
+                          {editData.paymentMode === 'D17' && (
+                            <>
+                              <option value="" disabled>Sélectionner un titulaire</option>
+                              <option value="Soumaya">Soumaya</option>
+                              <option value="Elyes">Elyes</option>
+                            </>
+                          )}
+                          {editData.paymentMode === 'Virement Bancaire' && (
+                            <>
+                              <option value="" disabled>Sélectionner une banque</option>
+                              <option value="ATB Safa">ATB Safa</option>
+                              <option value="ATB Elyes">ATB Elyes</option>
+                              <option value="El Baraka Elios">El Baraka Elios</option>
+                            </>
+                          )}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                   )}
                   <div>

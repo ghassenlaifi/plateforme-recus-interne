@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="antialiased font-sans">
-      <body className="flex flex-col min-h-screen">
+    <html lang="en" className="antialiased font-sans overflow-y-scroll">
+      <body className="flex flex-col min-h-[100dvh]">
         <ToastProvider>
           <WelcomeModal />
           {children}

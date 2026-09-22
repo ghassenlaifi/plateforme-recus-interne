@@ -43,7 +43,7 @@ export function ReceiptCard({ receipt, operators, justAddedId, onOpen }: Receipt
           <FileText className="h-6 w-6" strokeWidth={1.5} />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-gray-900">{receipt.clientDetails?.nom}</h3>
+          <h3 className="truncate text-sm font-semibold text-gray-900">{receipt.clientDetails?.nom || 'Élève non renseigné'}</h3>
           <p className="tnum mt-1 flex items-center gap-1.5 text-sm text-gray-500">
             <Phone className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
             <span className="truncate">{formatPhone(receipt.clientDetails?.telephone || '')}</span>
@@ -64,12 +64,6 @@ export function ReceiptCard({ receipt, operators, justAddedId, onOpen }: Receipt
           <div className="flex-1 min-w-[100px] rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-700 ring-1 ring-inset ring-gray-100">
             <span className="block text-[11px] font-medium text-gray-400">Offre</span>
             <span className="block truncate">{receipt.clientDetails.classe}</span>
-          </div>
-        )}
-        {receipt.clientDetails?.familyGroup && (
-          <div className="flex-1 min-w-[100px] rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-700 ring-1 ring-inset ring-gray-100">
-            <span className="block text-[11px] font-medium text-gray-400">Élève(s)</span>
-            <span className="block truncate">{receipt.clientDetails.familyGroup}</span>
           </div>
         )}
       </div>

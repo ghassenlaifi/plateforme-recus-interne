@@ -48,7 +48,7 @@ export type Receipt = {
   processedBy: string | null;
   processedAt?: string | null;
   clientDetails: {
-    nom: string;
+    nom?: string;
     telephone: string;
     classe?: string;
     email?: string;
@@ -61,7 +61,7 @@ export type Receipt = {
   notes: Note[];
   gDriveFileId: string;
   gDriveViewUrl: string;
-  status: 'PENDING' | 'PROCESSED';
+  status: 'PENDING' | 'PROCESSED' | 'ARCHIVED';
   lockedBy?: string | null;
   lockedAt?: string | null;
   createdAt: string; // ISO date string

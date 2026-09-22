@@ -25,7 +25,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
     classeSelect: '',
     classeCustom: '',
     email: '',
-    familyGroup: '',
     mode: '',
     paymentDetails: '',
     amount: '',
@@ -111,7 +110,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       classeSelect: 'Zero To Hero',
       classeCustom: '',
       email: '',
-      familyGroup: '',
       mode: 'D17',
       paymentDetails: 'Soumaya',
       amount: '150',
@@ -140,7 +138,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
     const finalClasse = formData.classeSelect === 'Offre personnalisé' ? formData.classeCustom : formData.classeSelect;
 
-    check('name', !formData.name.trim());
     check('phone', digitsOf(formData.phone).length !== 8);
     check('mode', !formData.mode);
     check('paymentDetails', !formData.paymentDetails.trim());
@@ -169,7 +166,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       payload.append('telephone', digitsOf(formData.phone));
       payload.append('classe', finalClasse.trim());
       if (formData.email.trim()) payload.append('email', formData.email.trim());
-      if (formData.familyGroup.trim()) payload.append('familyGroup', formData.familyGroup.trim());
       if (formData.note.trim()) payload.append('note', formData.note.trim());
       payload.append('paymentMode', formData.mode.trim());
       payload.append('paymentDetails', formData.paymentDetails.trim());
@@ -187,7 +183,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
         throw new Error(errData.error || 'Erreur lors de la soumission du reçu');
       }
 
-      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', familyGroup: '', mode: '', paymentDetails: '', amount: '', date: '', note: '' });
+      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', mode: '', paymentDetails: '', amount: '', date: '', note: '' });
       setErrors({});
       clearFile();
       
@@ -205,7 +201,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
   };
 
   return (
-    <section id="zoneUpload" className="min-w-0 lg:col-span-5" aria-labelledby="hUpload">
+    <section id="zoneUpload" className="min-w-0" aria-labelledby="hUpload">
       <div className="mb-4">
         <h2 id="hUpload" className="text-base font-semibold tracking-tight">Nouveau reçu</h2>
         <p className="mt-1 text-sm text-gray-500">Déposez l’image du reçu, puis remplir les informations du client.</p>
@@ -288,13 +284,13 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
           <div className="reveal-inner">
             <form id="uploadForm" noValidate onSubmit={handleSubmit} className="mt-5 grid grid-cols-1 gap-4 border-t border-gray-100 pt-5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               <div className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
-                <label className="label" htmlFor="f-name">Nom et Prénom</label>
+                <label className="label" htmlFor="f-name">Élève(s)</label>
                 <input 
                   id="f-name" 
                   name="name" 
                   type="text" 
                   className="input" 
-                  placeholder="Nom et Prénom" 
+                  placeholder="Nom(s) de l'élève..." 
                   autoComplete="off" 
                   aria-invalid={errors.name ? 'true' : 'false'}
                   value={formData.name}
@@ -350,7 +346,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     disabled={isUploading}
                     onChange={(e) => {
                       setFormData({...formData, classeSelect: e.target.value, classeCustom: ''});
-                      setErrors({...errors, classeSelect: false, classeCustom: false});
+                      setErrors({...errors, classeSelect: false});
                     }}
                   >
                     <option value="" disabled>Sélectionner une offre</option>
@@ -361,7 +357,9 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     <option value="Offre personnalisé">Offre personnalisé</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
                 </div>
               </div>
@@ -375,7 +373,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     type="text" 
                     className="input" 
                     placeholder="Précisez l'offre..." 
-                    autoComplete="off" 
+                    autoComplete="off"
                     aria-invalid={errors.classeCustom ? 'true' : 'false'}
                     value={formData.classeCustom}
                     disabled={isUploading}
@@ -383,21 +381,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                   />
                 </div>
               )}
-
-              <div>
-                <label className="label" htmlFor="f-familyGroup">Élève(s) <span className="text-gray-400 font-normal">(Facultatif)</span></label>
-                <input 
-                  id="f-familyGroup" 
-                  name="familyGroup" 
-                  type="text" 
-                  className="input" 
-                  placeholder="Nom(s) de l'élève..." 
-                  autoComplete="off" 
-                  value={formData.familyGroup}
-                  disabled={isUploading}
-                  onChange={(e) => setFormData({...formData, familyGroup: e.target.value})}
-                />
-              </div>
 
               <div>
                 <label className="label" htmlFor="f-mode">Mode de paiement</label>
@@ -414,7 +397,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     <option value="" disabled>Sélectionner un mode</option>
                     <option value="Espèces">Espèces</option>
                     <option value="Virement Bancaire">Virement Bancaire</option>
-                    <option value="Poste">Poste</option>
                     <option value="D17">D17</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
@@ -430,49 +412,48 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                   <label className="label" htmlFor="f-paymentDetails">
                     {formData.mode === 'Espèces' && 'Local'}
                     {formData.mode === 'Virement Bancaire' && 'Banque'}
-                    {formData.mode === 'Poste' && 'Destinataire'}
                     {formData.mode === 'D17' && 'Titulaire de la carte'}
                   </label>
-                  {formData.mode === 'Espèces' ? (
-                    <div className="relative">
-                      <select 
-                        id="f-paymentDetails" 
-                        name="paymentDetails" 
-                        className="input appearance-none pr-10"
-                        aria-invalid={errors.paymentDetails ? 'true' : 'false'}
-                        value={formData.paymentDetails}
-                        disabled={isUploading}
-                        onChange={(e) => { setFormData({...formData, paymentDetails: e.target.value}); setErrors({...errors, paymentDetails: false}); }}
-                      >
-                        <option value="" disabled>Sélectionner un local</option>
-                        <option value="Bab Saadoun">Bab Saadoun</option>
-                        <option value="Douar Hicher">Douar Hicher</option>
-                        <option value="Soumaya">Soumaya</option>
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  ) : (
-                    <input 
+                  <div className="relative">
+                    <select 
                       id="f-paymentDetails" 
                       name="paymentDetails" 
-                      type="text" 
-                      className="input" 
-                      placeholder={
-                        formData.mode === 'Virement Bancaire' ? 'ex. ATB' :
-                        formData.mode === 'Poste' ? 'ex. Elyes Laabidi' :
-                        'ex. Soumaya'
-                      }
-                      autoComplete="off" 
+                      className="input appearance-none pr-10"
                       aria-invalid={errors.paymentDetails ? 'true' : 'false'}
                       value={formData.paymentDetails}
                       disabled={isUploading}
                       onChange={(e) => { setFormData({...formData, paymentDetails: e.target.value}); setErrors({...errors, paymentDetails: false}); }}
-                    />
-                  )}
+                    >
+                      {formData.mode === 'Espèces' && (
+                        <>
+                          <option value="" disabled>Sélectionner un local</option>
+                          <option value="Bab Saadoun">Bab Saadoun</option>
+                          <option value="Douar Hicher">Douar Hicher</option>
+                          <option value="Soumaya">Soumaya</option>
+                        </>
+                      )}
+                      {formData.mode === 'D17' && (
+                        <>
+                          <option value="" disabled>Sélectionner un titulaire</option>
+                          <option value="Soumaya">Soumaya</option>
+                          <option value="Elyes">Elyes</option>
+                        </>
+                      )}
+                      {formData.mode === 'Virement Bancaire' && (
+                        <>
+                          <option value="" disabled>Sélectionner une banque</option>
+                          <option value="ATB Safa">ATB Safa</option>
+                          <option value="ATB Elyes">ATB Elyes</option>
+                          <option value="El Baraka Elios">El Baraka Elios</option>
+                        </>
+                      )}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
               )}
 

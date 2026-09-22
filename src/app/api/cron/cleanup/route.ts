@@ -52,8 +52,9 @@ export async function GET(request: Request) {
           }
         }
 
-        // Suppression dans MongoDB
-        await Receipt.deleteOne({ _id: receipt._id });
+        // Passage en statut ARCHIVED au lieu de suppression MongoDB
+        receipt.status = 'ARCHIVED';
+        await receipt.save();
         successCount++;
       } catch (receiptError: any) {
         console.error(`Erreur lors de la suppression du reçu ${receipt._id}:`, receiptError.message);

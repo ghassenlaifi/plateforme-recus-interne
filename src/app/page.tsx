@@ -8,7 +8,8 @@ import { ReceiptCard } from '@/components/ReceiptCard';
 import { ReceiptModal } from '@/components/ReceiptModal';
 import { useToast } from '@/components/Toast';
 import { Receipt, Operator } from '@/types';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, Settings, Wallet } from 'lucide-react';
+import Link from 'next/link';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur lors du chargement des données');
@@ -71,15 +72,34 @@ function ReceiptHubApp() {
   const openReceipt = visibleReceipts.find(r => r._id === openModalId) || null;
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased overflow-x-hidden">
+    <div className="min-h-[100dvh] bg-gray-50 font-sans text-gray-900 antialiased overflow-x-hidden">
       <Header activeUser={activeUser} setActiveUser={handleSetActiveUser} attention={attention} />
       
       <main className="mx-auto grid max-w-[90rem] gap-8 px-4 pb-10 pt-6 sm:px-6 lg:grid-cols-12 lg:gap-10 lg:px-8 lg:pb-12">
-        <UploadZone 
-          activeUser={activeUser} 
-          triggerAttention={triggerAttention}
-          onUploadSuccess={handleUploadSuccess} 
-        />
+        <div className="lg:col-span-5 flex flex-col gap-3">
+          <UploadZone 
+            activeUser={activeUser} 
+            triggerAttention={triggerAttention}
+            onUploadSuccess={handleUploadSuccess} 
+          />
+
+          <div className="flex justify-end gap-2 pr-1">
+            <Link 
+              href="/portefeuilles" 
+              title="Portefeuilles"
+              className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors shadow-sm ring-1 ring-indigo-600/10"
+            >
+              <Wallet className="h-[18px] w-[18px]" />
+            </Link>
+            <Link 
+              href="/admin/operators" 
+              title="Paramètres & Opérateurs"
+              className="flex items-center justify-center h-10 w-10 rounded-full bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm ring-1 ring-gray-900/5"
+            >
+              <Settings className="h-[18px] w-[18px]" />
+            </Link>
+          </div>
+        </div>
         
         <section id="zoneQueue" className="min-w-0 lg:col-span-7" aria-labelledby="hQueue">
           <div className="mb-4 flex items-start justify-between gap-4">

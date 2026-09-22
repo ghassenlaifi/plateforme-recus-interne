@@ -11,7 +11,7 @@ export interface IReceipt extends Document {
   processedBy?: string | null;
   processedAt?: Date | null;
   clientDetails: {
-    nom: string;
+    nom?: string;
     telephone: string;
     classe?: string;
     email?: string;
@@ -24,7 +24,7 @@ export interface IReceipt extends Document {
   notes: INote[];
   gDriveFileId: string;
   gDriveViewUrl: string;
-  status: 'PENDING' | 'PROCESSED';
+  status: 'PENDING' | 'PROCESSED' | 'ARCHIVED';
   lockedBy?: string | null;
   lockedAt?: Date | null;
   createdAt: Date;
@@ -51,7 +51,7 @@ const ReceiptSchema = new Schema<IReceipt>({
     default: null,
   },
   clientDetails: {
-    nom: { type: String, required: true },
+    nom: { type: String, required: false },
     telephone: { type: String, required: true },
     classe: { type: String, required: false },
     email: { type: String, required: false },
@@ -82,7 +82,7 @@ const ReceiptSchema = new Schema<IReceipt>({
     required: true,
   },
   gDriveViewUrl: { type: String, required: true },
-  status: { type: String, enum: ['PENDING', 'PROCESSED'], default: 'PENDING' },
+  status: { type: String, enum: ['PENDING', 'PROCESSED', 'ARCHIVED'], default: 'PENDING' },
   lockedBy: { type: String, default: null },
   lockedAt: { type: Date, default: null }
 }, {

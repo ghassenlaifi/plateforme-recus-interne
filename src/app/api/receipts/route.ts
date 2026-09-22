@@ -10,7 +10,20 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const status = url.searchParams.get('status');
 
-    const query = status ? { status: status as 'PENDING' | 'PROCESSED' } : {};
+    const paymentMode = url.searchParams.get('paymentMode');
+    const paymentDetails = url.searchParams.get('paymentDetails');
+    
+    let query: any = {};
+    if (status === 'all') {
+      query.status = { $in: ['PENDING', 'PROCESSED', 'ARCHIVED'] };
+    } else if (status) {
+      query.status = status;
+    } else {
+      query.status = { $in: ['PENDING', 'PROCESSED'] };
+    }
+    
+    if (paymentMode) query.paymentMode = paymentMode;
+    if (paymentDetails) query.paymentDetails = paymentDetails;
 
     const receipts = await Receipt.find(query).sort({ createdAt: -1 });
 
@@ -56,8 +69,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Validation rigoureuse (classe n'est plus obligatoire)
-    if (!operatorName || !nom || !telephone || !paymentMode || !paymentDetails || amount === undefined || isNaN(amount)) {
-      return NextResponse.json({ error: 'Les champs obligatoires (opérateur, nom, téléphone, mode de paiement, détails et montant) sont manquants ou invalides' }, { status: 400 });
+    if (!operatorName || !telephone || !paymentMode || !paymentDetails || amount === undefined || isNaN(amount)) {
+      return NextResponse.json({ error: 'Les champs obligatoires (opérateur, téléphone, mode de paiement, détails et montant) sont manquants ou invalides' }, { status: 400 });
     }
 
     // 2. Convertir le fichier en Buffer

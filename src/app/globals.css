@@ -43,7 +43,7 @@
   }
 }
 
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--hdr, 5rem) + .75rem); overscroll-behavior-y: none; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--hdr, 5rem) + .75rem); overscroll-behavior-y: none; scrollbar-gutter: stable; }
 body { background-color: #f9fafb; color: #111827; }
 
 /* ---------- Navbar flottante ---------- */
@@ -113,4 +113,14 @@ body { background-color: #f9fafb; color: #111827; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0s !important; }
+}
+
+/* Cacher les flèches du champ montant (number) */
+input[type="number"]::-webkit-inner-spin-button, 
+input[type="number"]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }

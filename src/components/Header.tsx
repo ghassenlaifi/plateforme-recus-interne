@@ -126,11 +126,6 @@ export function Header({ activeUser, setActiveUser, attention }: HeaderProps) {
                       Configurer les opérateurs
                     </Link>
                   )}
-                  {operators && operators.length > 0 && (
-                    <Link href="/admin/operators" title="Gérer les opérateurs" className="ml-2 inline-flex shrink-0 items-center justify-center rounded-full h-8 w-8 text-gray-400 hover:bg-gray-100 hover:text-gray-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
-                      <Settings className="h-4 w-4" />
-                    </Link>
-                  )}
                 </div>
               </div>
             </div>
