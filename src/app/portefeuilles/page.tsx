@@ -1,12 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR from 'swr';
-import { Header } from '@/components/Header';
-import { useToast } from '@/components/Toast';
-import { Wallet, RefreshCw, AlertTriangle, Building, User, LayoutGrid, Wifi, Copy, Lock, KeyRound, FileText } from 'lucide-react';
-import { StatementModal } from '@/components/StatementModal';
 import Link from 'next/link';
+import { EliosHeader } from '@/components/EliosHeader';
+import { useToast } from '@/components/Toast';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
@@ -17,490 +15,1594 @@ interface WalletData {
   count: number;
 }
 
+interface ReceiptItem {
+  _id: string;
+  reference?: string;
+  amount: number;
+  paymentMode: string;
+  paymentDetails: string;
+  paymentDate?: string;
+  createdAt: string;
+  operatorName?: string;
+  clientDetails?: {
+    nom?: string;
+    telephone?: string;
+    classe?: string;
+    offer?: string;
+    note?: string;
+  };
+  notes?: {
+    text: string;
+    addedBy?: string;
+    addedAt?: string;
+  }[];
+  status: string;
+}
+
+const OPERATOR_COLORS: Record<string, string> = {
+  Amine: '#8B5CF6',
+  Elyes: '#4F46E5',
+  Soumaya: '#E5484D',
+  Narjess: '#0891B2',
+  Koussay: '#64748B',
+  Aya: '#D946EF',
+  Mariem: '#A855F7',
+  Asma: '#F97316',
+  Ghassen: '#E08A12',
+};
+
+function getOperatorColor(name?: string): string {
+  if (!name) return '#8B5CF6';
+  const found = Object.entries(OPERATOR_COLORS).find(
+    ([k]) => k.toLowerCase() === name.trim().toLowerCase()
+  );
+  return found ? found[1] : '#8B5CF6';
+}
+
+function getWalletGrads(mode: string, details: string): { g1: string; g2: string } {
+  const m = (mode || '').toLowerCase();
+  const d = (details || '').toLowerCase();
+
+  if (m.includes('esp')) {
+    if (d.includes('bab saadoun') || d.includes('saadoun')) return { g1: '#0FA36B', g2: '#054C38' };
+    if (d.includes('soumaya')) return { g1: '#A3143F', g2: '#4A0A24' };
+    if (d.includes('douar') || d.includes('hicher')) return { g1: '#C2570A', g2: '#582304' };
+    return { g1: '#0FA36B', g2: '#054C38' };
+  }
+
+  if (m.includes('edinar') || m.includes('d17')) {
+    if (d.includes('soumaya')) return { g1: '#403BC2', g2: '#1D1962' };
+    if (d.includes('elyes')) return { g1: '#0A93B4', g2: '#0B4D57' };
+    return { g1: '#0A93B4', g2: '#0B4D57' };
+  }
+
+  if (m.includes('vir') || m.includes('banque')) {
+    if (d.includes('safa')) return { g1: '#7E24D6', g2: '#3E0870' };
+    if (d.includes('elyes')) return { g1: '#3B4864', g2: '#0E1932' };
+    if (d.includes('baraka')) return { g1: '#C70F1E', g2: '#59050F' };
+    return { g1: '#7E24D6', g2: '#3E0870' };
+  }
+
+  return { g1: '#374151', g2: '#111827' };
+}
+
+const formatDT = (n: number) =>
+  (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const fdt = (iso: string | Date | undefined) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return (
+    d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  );
+};
+
 export default function PortefeuillesPage() {
   const { toast } = useToast();
   const [activeUser, setActiveUser] = useState<string | null>(null);
-  const [resetModal, setResetModal] = useState<{ isOpen: boolean; wallet: any | null }>({ isOpen: false, wallet: null });
-  const [isResetting, setIsResetting] = useState(false);
-  const [statementModal, setStatementModal] = useState<{isOpen: boolean, wallet: any | null}>({ isOpen: false, wallet: null });
 
-  // Security state
+  // Security / PIN Gate
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pin, setPin] = useState(['', '', '', '', '', '']);
-  const [pinError, setPinError] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
-  const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [authPin, setAuthPin] = useState('');
+  const [authPinError, setAuthPinError] = useState('');
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
+  const authPinRef = useRef<HTMLInputElement | null>(null);
 
-  // Change PIN state
-  const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
-  const [securityPhrase, setSecurityPhrase] = useState('');
-  const [newPin, setNewPin] = useState(['', '', '', '', '', '']);
+  // Data fetching
+  const { data: wallets, isLoading, error, mutate } = useSWR<WalletData[]>('/api/portefeuilles', fetcher);
+  const { data: allReceipts } = useSWR<ReceiptItem[]>('/api/receipts?status=all', fetcher);
+
+  // Active Category Filter Tab
+  const [tab, setTab] = useState<string>('');
+
+  // Retrait Modal (Sole deduction action requested by user)
+  const [retraitWallet, setRetraitWallet] = useState<WalletData | null>(null);
+  const [retraitAmount, setRetraitAmount] = useState('');
+  const [retraitMotif, setRetraitMotif] = useState('');
+  const [retraitPin, setRetraitPin] = useState('');
+  const [retraitError, setRetraitError] = useState('');
+  const [isSubmittingRetrait, setIsSubmittingRetrait] = useState(false);
+
+  // Extrait Modal
+  const [extraitWallet, setExtraitWallet] = useState<WalletData | null>(null);
+  const [extraitReceipts, setExtraitReceipts] = useState<ReceiptItem[]>([]);
+  const [isLoadingExtrait, setIsLoadingExtrait] = useState(false);
+  const [isDownloadingExtrait, setIsDownloadingExtrait] = useState(false);
+  const exportTicketRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset Modal
+  const [resetWallet, setResetWallet] = useState<WalletData | null>(null);
+  const [resetPin, setResetPin] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Change PIN Modal
+  const [isChangePinOpen, setIsChangePinOpen] = useState(false);
+  const [changeOldPin, setChangeOldPin] = useState('');
+  const [changeNewPin, setChangeNewPin] = useState('');
+  const [changeConfirmPin, setChangeConfirmPin] = useState('');
   const [changePinError, setChangePinError] = useState('');
-  const [changePinSuccess, setChangePinSuccess] = useState('');
-  const [isChangingPin, setIsChangingPin] = useState(false);
-  const newPinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [isSubmittingChangePin, setIsSubmittingChangePin] = useState(false);
 
+  // Restore user from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('elios.user') || localStorage.getItem('receiptHubActiveUser');
+      if (saved) {
+        const parsed = saved.startsWith('"') ? JSON.parse(saved) : saved;
+        setActiveUser(parsed);
+      }
+    } catch {}
+  }, []);
+
+  const handleUserChange = (user: string) => {
+    setActiveUser(user);
+    try {
+      localStorage.setItem('elios.user', JSON.stringify(user));
+      localStorage.setItem('receiptHubActiveUser', user);
+    } catch {}
+  };
+
+  // Focus auth PIN input on mount
   useEffect(() => {
     if (!isAuthenticated) {
       document.body.style.overflow = 'hidden';
-      if (pinInputRefs.current[0]) {
-        pinInputRefs.current[0].focus();
-      }
+      const timer = setTimeout(() => {
+        authPinRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
     } else {
       document.body.style.overflow = '';
     }
-    
     return () => { document.body.style.overflow = ''; };
   }, [isAuthenticated]);
 
-  const handlePinChange = (index: number, value: string, isNewPin = false) => {
-    if (!/^[0-9]*$/.test(value)) return;
-    
-    const stateSetter = isNewPin ? setNewPin : setPin;
-    const currentState = isNewPin ? newPin : pin;
-    const refs = isNewPin ? newPinInputRefs : pinInputRefs;
-    const errorSetter = isNewPin ? setChangePinError : setPinError;
-    
-    errorSetter('');
-    const newArr = [...currentState];
-    newArr[index] = value;
-    stateSetter(newArr);
-    
-    if (value && index < 5 && refs.current[index + 1]) {
-      refs.current[index + 1]?.focus();
+  // Handle Auth PIN verification (auto-called on 6 digits or on submit)
+  const verifyAuthPin = async (pinVal: string) => {
+    if (!pinVal || pinVal.length !== 6) {
+      setAuthPinError('Le code PIN doit comporter exactement 6 chiffres.');
+      return;
     }
-
-    if (!isNewPin && newArr.every(d => d !== '')) {
-      verifyPin(newArr.join(''));
-    }
-  };
-
-  const handlePinKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>, isNewPin = false) => {
-    const refs = isNewPin ? newPinInputRefs : pinInputRefs;
-    if (e.key === 'Backspace' && !e.currentTarget.value && index > 0) {
-      refs.current[index - 1]?.focus();
-    }
-  };
-
-  const verifyPin = async (fullPin: string) => {
-    setIsVerifying(true);
+    setIsVerifyingAuth(true);
+    setAuthPinError('');
     try {
       const res = await fetch('/api/settings/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'verify', pin: fullPin })
+        body: JSON.stringify({ action: 'verify', pin: pinVal })
       });
       const data = await res.json();
       if (data.success) {
         setIsAuthenticated(true);
         toast({ message: 'Accès autorisé', tone: 'ok' });
       } else {
-        setPinError('Code PIN incorrect');
-        setPin(['', '', '', '', '', '']);
-        pinInputRefs.current[0]?.focus();
+        setAuthPinError(data.error || 'Code PIN incorrect.');
+        setAuthPin('');
+        authPinRef.current?.focus();
       }
-    } catch (err) {
-      setPinError('Erreur de vérification');
+    } catch {
+      setAuthPinError('Erreur de vérification avec le serveur.');
     } finally {
-      setIsVerifying(false);
+      setIsVerifyingAuth(false);
     }
   };
 
-  const handleChangePin = async (e: React.FormEvent) => {
+  const handleAuthPinChange = (val: string) => {
+    const digitsOnly = val.replace(/\D/g, '').slice(0, 6);
+    setAuthPin(digitsOnly);
+    setAuthPinError('');
+    if (digitsOnly.length === 6) {
+      verifyAuthPin(digitsOnly);
+    }
+  };
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const fullPin = newPin.join('');
-    if (fullPin.length !== 6) {
-      setChangePinError('Code PIN incomplet');
+    if (authPin.length !== 6) {
+      setAuthPinError('Le code PIN doit comporter exactement 6 chiffres.');
       return;
     }
-    setIsChangingPin(true);
+    verifyAuthPin(authPin);
+  };
+
+  // Helper for categories and counts
+  const categories = useMemo(() => {
+    if (!wallets) return [];
+    const set = new Set<string>();
+    wallets.forEach(w => {
+      if (w.mode) set.add(w.mode);
+    });
+    return Array.from(set);
+  }, [wallets]);
+
+  const filteredWallets = useMemo(() => {
+    if (!wallets) return [];
+    if (!tab) return wallets;
+    return wallets.filter(w => w.mode === tab);
+  }, [wallets, tab]);
+
+  // Overall statistics
+  const totalBalance = useMemo(() => {
+    if (!wallets) return 0;
+    return wallets.reduce((acc, w) => acc + (w.totalAmount || 0), 0);
+  }, [wallets]);
+
+  const activeWalletsCount = useMemo(() => {
+    return wallets ? wallets.length : 0;
+  }, [wallets]);
+
+  const todayMovementsCount = useMemo(() => {
+    if (!allReceipts) return 0;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return allReceipts.filter(r => {
+      const d = (r.paymentDate || r.createdAt || '').slice(0, 10);
+      return d === todayStr;
+    }).length;
+  }, [allReceipts]);
+
+  // 3D Card tilt handlers
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    card.style.setProperty('--mx', `${x * 100}%`);
+    card.style.setProperty('--my', `${y * 100}%`);
+    card.style.transform = `perspective(700px) rotateY(${(x - 0.5) * 7}deg) rotateX(${(0.5 - y) * 7}deg) translateY(-3px)`;
+  };
+
+  const handlePointerLeave = (e: React.PointerEvent<HTMLDivElement>) => {
+    const card = e.currentTarget;
+    card.style.transform = '';
+  };
+
+  // Open Retrait modal
+  const openRetrait = (w: WalletData) => {
+    setRetraitWallet(w);
+    setRetraitAmount('');
+    setRetraitMotif('');
+    setRetraitPin('');
+    setRetraitError('');
+  };
+
+  const closeRetrait = () => {
+    setRetraitWallet(null);
+    setRetraitAmount('');
+    setRetraitMotif('');
+    setRetraitPin('');
+    setRetraitError('');
+  };
+
+  const handleConfirmRetrait = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!retraitWallet) return;
+    const v = Math.round(parseFloat(retraitAmount) * 100) / 100;
+    if (isNaN(v) || v <= 0) {
+      setRetraitError('Saisissez un montant valide.');
+      return;
+    }
+    if (v > retraitWallet.totalAmount) {
+      setRetraitError('Le montant dépasse le solde disponible.');
+      return;
+    }
+    if (!retraitPin || !/^\d{6}$/.test(retraitPin)) {
+      setRetraitError('Le code PIN doit comporter exactement 6 chiffres.');
+      return;
+    }
+
+    setIsSubmittingRetrait(true);
+    setRetraitError('');
+
     try {
-      const res = await fetch('/api/settings/pin', {
+      // Step 1: Verify PIN
+      const pinRes = await fetch('/api/settings/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'change', phrase: securityPhrase, newPin: fullPin })
+        body: JSON.stringify({ action: 'verify', pin: retraitPin })
       });
-      const data = await res.json();
-      if (data.success) {
-        setChangePinSuccess('Code PIN modifié avec succès.');
-        setTimeout(() => {
-          setIsChangePinModalOpen(false);
-          setSecurityPhrase('');
-          setNewPin(['', '', '', '', '', '']);
-          setChangePinSuccess('');
-        }, 1500);
-      } else {
-        setChangePinError(data.error || 'Erreur');
+      const pinData = await pinRes.json();
+      if (!pinData.success) {
+        setRetraitError(pinData.error || 'Code PIN incorrect.');
+        setIsSubmittingRetrait(false);
+        return;
       }
-    } catch (err) {
-      setChangePinError('Erreur serveur');
+
+      // Step 2: Post negative amount deduction receipt
+      const receiptRes = await fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageId: 'retrait-' + Date.now(),
+          operator: activeUser || 'Elios',
+          reference: `RET-${Date.now().toString().slice(-6)}`,
+          clientDetails: {
+            name: 'RETRAIT',
+            phone: '00000000',
+            offer: 'Retrait',
+            paymentMethod: `${retraitWallet.mode} - ${retraitWallet.details}`,
+            amount: -Math.abs(v),
+            date: new Date().toISOString().split('T')[0],
+            note: retraitMotif.trim() || 'Retrait du portefeuille'
+          }
+        })
+      });
+
+      if (!receiptRes.ok) {
+        throw new Error('Erreur lors de la déduction');
+      }
+
+      await mutate();
+      toast({ message: `Retrait de ${formatDT(v)} DT enregistré avec succès`, tone: 'ok' });
+      closeRetrait();
+    } catch (err: any) {
+      setRetraitError(err.message || 'Erreur serveur lors du retrait.');
     } finally {
-      setIsChangingPin(false);
+      setIsSubmittingRetrait(false);
     }
   };
 
+  // Open Extrait modal
+  const openExtrait = async (w: WalletData) => {
+    setExtraitWallet(w);
+    setIsLoadingExtrait(true);
+    try {
+      const url = new URL('/api/receipts', window.location.origin);
+      url.searchParams.append('status', 'all');
+      url.searchParams.append('paymentMode', w.mode);
+      url.searchParams.append('paymentDetails', w.details);
 
-  // Restore user from localStorage if exists
-  useEffect(() => {
-    const saved = localStorage.getItem('elios_active_user');
-    if (saved) setActiveUser(saved);
-  }, []);
-
-  const handleUserChange = (user: string) => {
-    setActiveUser(user);
-    localStorage.setItem('elios_active_user', user);
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setExtraitReceipts(data || []);
+      }
+    } catch {
+      toast({ message: "Erreur de chargement de l'extrait", tone: 'warn' });
+    } finally {
+      setIsLoadingExtrait(false);
+    }
   };
 
-  const { data: wallets, isLoading, error, mutate } = useSWR<WalletData[]>('/api/portefeuilles', fetcher);
+  const closeExtrait = () => {
+    setExtraitWallet(null);
+    setExtraitReceipts([]);
+  };
 
-  const handleReset = async () => {
-    if (!resetModal.wallet) return;
-    setIsResetting(true);
+  // Computed running balance and summary for Extrait
+  const { statementRows, totalIn, totalOut } = useMemo(() => {
+    if (!extraitReceipts || extraitReceipts.length === 0) {
+      return { statementRows: [], totalIn: 0, totalOut: 0 };
+    }
+
+    const tIn = extraitReceipts.filter(r => (r.amount || 0) > 0).reduce((acc, r) => acc + r.amount, 0);
+    const tOut = extraitReceipts.filter(r => (r.amount || 0) < 0).reduce((acc, r) => acc + Math.abs(r.amount), 0);
+
+    // Sort chronologically ascending to calculate running balance accurately
+    let run = 0;
+    const chronological = [...extraitReceipts].sort((a, b) => {
+      const timeA = new Date(a.paymentDate || a.createdAt).getTime();
+      const timeB = new Date(b.paymentDate || b.createdAt).getTime();
+      return timeA - timeB;
+    });
+
+    const withRunning = chronological.map(r => {
+      run = Math.round((run + r.amount) * 100) / 100;
+      return {
+        ...r,
+        runningBalance: run,
+      };
+    });
+
+    // Display newest first
+    return {
+      statementRows: withRunning.reverse(),
+      totalIn: tIn,
+      totalOut: tOut,
+    };
+  }, [extraitReceipts]);
+
+  // Handler for downloading high-resolution Extrait/Reçu image
+  const handleDownloadExtraitImage = async () => {
+    const targetEl = exportTicketRef.current;
+    if (!targetEl || !extraitWallet) return;
+    setIsDownloadingExtrait(true);
     try {
+      // 1. Positionner l'élément en fixed (0,0) pour un repère sans décalage de scroll
+      targetEl.style.position = 'fixed';
+      targetEl.style.top = '0px';
+      targetEl.style.left = '0px';
+      targetEl.style.visibility = 'visible';
+      targetEl.style.opacity = '1';
+      targetEl.style.zIndex = '-9999';
+
+      // 2. S'assurer que toutes les images sont chargées
+      const images = Array.from(targetEl.querySelectorAll('img'));
+      await Promise.all(
+        images.map(
+          img =>
+            new Promise(resolve => {
+              if (img.complete && img.naturalHeight !== 0) resolve(true);
+              else {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(true);
+              }
+            })
+        )
+      );
+
+      // Petit délai pour la stabilité du rendu DOM
+      await new Promise(r => setTimeout(r, 60));
+
+      let dataUrl = '';
+
+      // Moteur principal : html2canvas-pro (peinture directe DOM vers Canvas, pas de foreignObject SVG)
+      try {
+        const html2canvas = (await import('html2canvas-pro')).default;
+        const canvas = await html2canvas(targetEl, {
+          scale: 3, // Ultra-HD 3x Retina resolution
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          width: 800,
+          height: targetEl.scrollHeight,
+          windowWidth: 800,
+          x: 0,
+          y: 0,
+          scrollX: 0,
+          scrollY: 0,
+        });
+
+        // Vérification de sécurité que le canvas n'est pas blanc
+        const ctx = canvas.getContext('2d');
+        let hasContent = false;
+        if (ctx) {
+          const sample = ctx.getImageData(0, 0, Math.min(canvas.width, 250), Math.min(canvas.height, 250)).data;
+          for (let i = 0; i < sample.length; i += 4) {
+            if (sample[i + 3] > 50 && (sample[i] < 240 || sample[i + 1] < 240 || sample[i + 2] < 240)) {
+              hasContent = true;
+              break;
+            }
+          }
+        }
+
+        if (hasContent) {
+          dataUrl = canvas.toDataURL('image/png', 1.0);
+        } else {
+          throw new Error('Canvas blanc détecté, basculement vers fallback');
+        }
+      } catch (canvasErr) {
+        console.warn('html2canvas fallback vers html-to-image:', canvasErr);
+        const { toPng } = await import('html-to-image');
+        dataUrl = await toPng(targetEl, {
+          quality: 1.0,
+          pixelRatio: 3,
+          backgroundColor: '#ffffff',
+          cacheBust: true,
+          style: {
+            position: 'static',
+            transform: 'none',
+            margin: '0',
+          },
+        });
+      }
+
+      if (!dataUrl || dataUrl.length < 500) {
+        throw new Error("L'image générée est vide");
+      }
+
+      const safeMode = (extraitWallet.mode || 'Mode').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeDetails = (extraitWallet.details || 'Portefeuille').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const today = new Date().toISOString().slice(0, 10);
+      const fileName = `Extrait_${safeMode}_${safeDetails}_${today}.png`;
+
+      const link = document.createElement('a');
+      link.download = fileName;
+      link.href = dataUrl;
+      link.click();
+
+      toast({ message: "Image de l'extrait téléchargée avec succès (Haute Résolution)", tone: 'ok' });
+    } catch (err) {
+      console.error("Erreur lors de la génération de l'image de l'extrait:", err);
+      toast({ message: "Erreur lors du téléchargement de l'image", tone: 'warn' });
+    } finally {
+      setIsDownloadingExtrait(false);
+    }
+  };
+
+  // Open Reset modal
+  const openReset = (w: WalletData) => {
+    setResetWallet(w);
+    setResetPin('');
+    setResetError('');
+  };
+
+  const closeReset = () => {
+    setResetWallet(null);
+    setResetPin('');
+    setResetError('');
+  };
+
+  const handleConfirmReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetWallet) return;
+    if (resetWallet.totalAmount > 0 && (!resetPin || !/^\d{6}$/.test(resetPin))) {
+      setResetError('Le code PIN doit comporter exactement 6 chiffres.');
+      return;
+    }
+
+    setIsResetting(true);
+    setResetError('');
+
+    try {
+      // Step 1: Verify PIN if wallet has positive balance
+      if (resetWallet.totalAmount > 0) {
+        const pinRes = await fetch('/api/settings/pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'verify', pin: resetPin })
+        });
+        const pinData = await pinRes.json();
+        if (!pinData.success) {
+          setResetError(pinData.error || 'Code PIN incorrect.');
+          setIsResetting(false);
+          return;
+        }
+      }
+
+      // Step 2: Delete/reset wallet
       const res = await fetch('/api/portefeuilles/reset', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: resetModal.wallet.mode, details: resetModal.wallet.details })
+        body: JSON.stringify({ mode: resetWallet.mode, details: resetWallet.details })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur de réinitialisation');
-      
-      toast({ message: data.message || 'Portefeuille réinitialisé avec succès.', tone: 'ok' });
-      mutate();
-      setResetModal({ isOpen: false, wallet: null });
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de la remise à zéro');
+
+      await mutate();
+      toast({ message: `Portefeuille ${resetWallet.mode} - ${resetWallet.details} remis à zéro.`, tone: 'ok' });
+      closeReset();
     } catch (err: any) {
-      toast({ message: err.message, tone: 'warn' });
+      setResetError(err.message || 'Erreur serveur.');
     } finally {
       setIsResetting(false);
     }
   };
 
-  // Helper pour les couleurs et icônes
-  const getCardStyle = (mode: string, details: string) => {
-    const key = `${mode}-${details}`;
-    switch (key) {
-      case 'Espèces-Bab Saadoun':
-        return { bg: 'from-emerald-600 to-emerald-900', shadow: 'shadow-emerald-900/40' }; // Vert Émeraude
-      case 'Espèces-Soumaya':
-        return { bg: 'from-rose-800 to-rose-950', shadow: 'shadow-rose-900/40' }; // Rose Rubis très sombre
-      case 'Espèces-Douar Hicher':
-        return { bg: 'from-amber-700 to-amber-950', shadow: 'shadow-amber-900/40' }; // Or / Ambre très sombre
-      
-      case 'Edinar - D17-Soumaya':
-        return { bg: 'from-indigo-800 to-indigo-950', shadow: 'shadow-indigo-900/40' }; // Bleu Indigo très sombre
-      case 'Edinar - D17-Elyes':
-        return { bg: 'from-cyan-600 to-teal-900', shadow: 'shadow-cyan-900/40' }; // Cyan / Sarcelle
-      
-      case 'Virement Bancaire-ATB Safa':
-        return { bg: 'from-purple-800 to-purple-950', shadow: 'shadow-purple-900/40' }; // Violet Améthyste très sombre
-      case 'Virement Bancaire-ATB Elyes':
-        return { bg: 'from-slate-700 to-slate-900', shadow: 'shadow-slate-900/40' }; // Graphite / Ardoise
-      case 'Virement Bancaire-El Baraka Elios':
-        return { bg: 'from-red-700 to-red-950', shadow: 'shadow-red-900/40' }; // Rouge Cramoisi
-      
-      default:
-        return { bg: 'from-gray-700 to-slate-900', shadow: 'shadow-gray-900/40' };
+  // Change PIN modal handlers
+  const handleConfirmChangePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!changeOldPin) {
+      setChangePinError('Saisissez votre code PIN actuel.');
+      return;
+    }
+    if (!/^\d{6}$/.test(changeNewPin)) {
+      setChangePinError('Le nouveau code PIN doit comporter exactement 6 chiffres.');
+      return;
+    }
+    if (changeNewPin !== changeConfirmPin) {
+      setChangePinError('La confirmation ne correspond pas.');
+      return;
+    }
+
+    setIsSubmittingChangePin(true);
+    setChangePinError('');
+
+    try {
+      const res = await fetch('/api/settings/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'change',
+          currentPin: changeOldPin,
+          newPin: changeNewPin,
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Erreur lors du changement de PIN');
+      }
+
+      toast({ message: 'Code PIN modifié avec succès', tone: 'ok' });
+      setIsChangePinOpen(false);
+      setChangeOldPin('');
+      setChangeNewPin('');
+      setChangeConfirmPin('');
+    } catch (err: any) {
+      setChangePinError(err.message || 'Erreur lors du changement de PIN.');
+    } finally {
+      setIsSubmittingChangePin(false);
     }
   };
 
   return (
-    <div className="min-h-[100dvh] bg-transparent font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-20 relative">
-      <Header activeUser={activeUser} setActiveUser={handleUserChange} attention={!activeUser} />
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      {/* Header bar matching portefeuilles.html */}
+      <EliosHeader
+        crumb="Portefeuilles"
+        parentCrumb="Suivi des encaissements"
+        parentHref="/receipt-management"
+        activeUser={activeUser}
+        setActiveUser={handleUserChange}
+      />
 
-      {!isAuthenticated && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-xl">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-2xl ring-1 ring-gray-900/10">
-            <div className="flex justify-center mb-6">
-              <div className="h-16 w-16 rounded-full bg-indigo-50 flex items-center justify-center ring-4 ring-indigo-50/50">
-                <Lock className="h-8 w-8 text-indigo-600" />
-              </div>
+      {/* Wave cover banner */}
+      <div className="cover" aria-hidden="true">
+        <svg viewBox="0 0 800 44" preserveAspectRatio="none">
+          <g fill="none" stroke="#fff" strokeWidth="1.2">
+            <path d="M0 30C120 8 220 40 360 22S580 6 800 26"/>
+            <path d="M0 38C140 18 240 44 380 30S600 14 800 34"/>
+          </g>
+        </svg>
+      </div>
+
+      {/* Authenticated Main Page */}
+      {isAuthenticated && (
+        <main className="page">
+          <div className="hd">
+            <div className="pageicon" aria-hidden="true">
+              <svg className="i" viewBox="0 0 24 24">
+                <path d="M3 7a2 2 0 0 1 2-2h13v4"/>
+                <path d="M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2z"/>
+                <circle cx="16.5" cy="14.5" r="1"/>
+              </svg>
             </div>
-            <h2 className="text-xl font-bold text-center text-gray-900 tracking-tight">Accès Sécurisé</h2>
-            <p className="text-sm text-gray-500 text-center mt-2 mb-8">Veuillez entrer votre code PIN administrateur pour accéder à la trésorerie.</p>
-            
-            <div className="flex gap-1.5 justify-center mb-6">
-              {pin.map((digit, i) => (
-                <input
-                  key={i}
-                  // @ts-ignore
-                  ref={el => pinInputRefs.current[i] = el}
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={e => handlePinChange(i, e.target.value)}
-                  onKeyDown={e => handlePinKeyDown(i, e)}
-                  disabled={isVerifying}
-                  className="w-10 h-12 text-center text-xl font-bold rounded-lg border border-gray-200 bg-gray-100 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50 shadow-inner"
-                />
-              ))}
+            <div className="t">
+              <h1>Portefeuilles</h1>
+              <p className="sub">Supervisez l'ensemble des encaissements par destination.</p>
             </div>
-
-            {pinError && (
-              <p className="text-center text-red-500 text-sm font-medium animate-in slide-in-from-top-1 mb-4">{pinError}</p>
-            )}
-
-            <Link href="/" className="block w-full text-center text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors mt-6">
-              &larr; Retour à l'accueil
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {isAuthenticated && (<main className="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8 mt-6">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-semibold tracking-tight text-gray-900 flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-indigo-600" />
-              Portefeuilles
-            </h1>
-            <p className="text-xs text-gray-500 mt-1">Supervisez l'ensemble des encaissements par destination.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsChangePinModalOpen(true)}
-              className="text-xs font-medium text-gray-600 hover:text-gray-900 bg-white ring-1 ring-gray-200 hover:bg-transparent px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-              title="Modifier le code PIN"
-            >
-              <KeyRound className="h-3.5 w-3.5" />
+            <button className="btn" id="pinBtn" onClick={() => setIsChangePinOpen(true)} type="button">
+              <svg className="i" viewBox="0 0 24 24">
+                <circle cx="8" cy="15" r="4"/>
+                <path d="m11 12 9-9M16 7l3 3M14 9l2 2"/>
+              </svg>
               Changer PIN
             </button>
-            <Link href="/" className="text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
-              &larr; Retour
-            </Link>
           </div>
-        </div>
 
-        {isLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
-          </div>
-        ) : error ? (
-          <div className="rounded-xl bg-red-50 p-6 text-center text-red-600">
-            Une erreur est survenue lors du chargement des portefeuilles.
-          </div>
-        ) : !wallets || wallets.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white">
-            <Wallet className="h-12 w-12 text-gray-300 mb-3" />
-            <h3 className="text-lg font-medium text-gray-900">Aucun portefeuille actif</h3>
-            <p className="text-gray-500 mt-1">Les cartes apparaîtront dès que des reçus seront traités.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {wallets.map((wallet, idx) => {
-              const style = getCardStyle(wallet.mode, wallet.details);
+          {/* Stats Summary */}
+          <section className="stats stats-enc" aria-label="Résumé">
+            <div className="stat">
+              <small>
+                <i style={{ background: 'var(--fin)' }}></i>
+                Solde total
+              </small>
+              <b>
+                {formatDT(totalBalance)} <u>DT</u>
+              </b>
+            </div>
+            <div className="stat">
+              <small>
+                <i style={{ background: 'var(--fin)' }}></i>
+                Portefeuilles actifs
+              </small>
+              <b>{activeWalletsCount}</b>
+            </div>
+            <div className="stat">
+              <small>
+                <i style={{ background: 'var(--fin)' }}></i>
+                Mouvements du jour
+              </small>
+              <b>{todayMovementsCount}</b>
+            </div>
+          </section>
+
+          {/* Filter Tabs */}
+          <div className="tabs" role="tablist" id="tabs">
+            <button
+              role="tab"
+              aria-selected={tab === ''}
+              onClick={() => setTab('')}
+              type="button"
+            >
+              Tous <em>{wallets ? wallets.length : 0}</em>
+            </button>
+            {categories.map(cat => {
+              const count = wallets ? wallets.filter(w => w.mode === cat).length : 0;
               return (
-                <div key={`${wallet.mode}-${wallet.details}`} className="flex flex-col gap-3">
-                  {/* Card Element */}
-                  <div 
-                    className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${style.bg} p-6 shadow-xl ${style.shadow} text-white flex flex-col justify-between h-[210px] transition-transform hover:-translate-y-1 animate-in fade-in slide-in-from-bottom-4 duration-500`}
-                    style={{ animationFillMode: 'both', animationDelay: `${idx * 100}ms` }}
-                  >
-                    {/* Glassmorphism effects */}
-                    <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
-                    <div className="absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
-                    <div className="absolute inset-0 border border-white/10 rounded-2xl pointer-events-none"></div>
-                    
-                    {/* Top Row: Labels */}
-                    <div className="relative z-10 flex justify-between items-start">
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60 mb-1">Elios Balance</p>
-                        <h3 className="text-sm font-bold tracking-widest uppercase">{wallet.mode} - {wallet.details || 'NON SPÉCIFIÉ'}</h3>
-                      </div>
-                    </div>
-
-                    {/* Middle Row: Chip & Balance */}
-                    <div className="relative z-10 flex items-center justify-between mt-4">
-                      {/* Fake Chip */}
-                      <div className="h-9 w-12 rounded bg-gradient-to-br from-amber-200 to-amber-500 opacity-90 shadow-inner overflow-hidden flex flex-wrap gap-[1px] p-[2px]">
-                         <div className="w-full h-full border border-amber-600/30 rounded-sm"></div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <p className="text-[10px] font-medium text-white/70 uppercase tracking-widest mb-1 flex items-center justify-end gap-1">
-                          SOLDE COURANT
-                          <Wifi className="h-3 w-3 rotate-90" />
-                        </p>
-                        <div className="flex items-baseline justify-end gap-1">
-                          <span className="text-3xl font-bold tracking-tight font-mono">
-                            {wallet.totalAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          <span className="text-xl font-medium">DT</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Row: Logo */}
-                    <div className="relative z-10 mt-auto pt-4 flex items-end justify-between">
-                      <div className="text-[10px] font-mono uppercase tracking-widest text-emerald-300">
-                        STATUT: ACTIF
-                      </div>
-                      <div className="text-2xl font-bold italic tracking-tighter">
-                        ELIOS
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Buttons below the card */}
-                  <div className="flex justify-end gap-2">
-                     <button 
-                       onClick={() => setStatementModal({ isOpen: true, wallet })}
-                       className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-200/50 hover:bg-gray-200 text-gray-600 text-[10px] font-medium uppercase tracking-wider transition-colors shadow-sm backdrop-blur-sm border border-gray-300/50"
-                       title="Voir l'extrait"
-                     >
-                       <FileText className="h-2.5 w-2.5" />
-                       Extrait
-                     </button>
-                     <button 
-                       onClick={() => setResetModal({ isOpen: true, wallet })}
-                       className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-200/50 hover:bg-gray-200 text-gray-600 text-[10px] font-medium uppercase tracking-wider transition-colors shadow-sm backdrop-blur-sm border border-gray-300/50"
-                       title="Remettre à zéro"
-                     >
-                       <RefreshCw className="h-2.5 w-2.5" />
-                       Remise à Zéro
-                     </button>
-                  </div>
-                </div>
+                <button
+                  key={cat}
+                  role="tab"
+                  aria-selected={tab === cat}
+                  onClick={() => setTab(cat)}
+                  type="button"
+                >
+                  {cat} <em>{count}</em>
+                </button>
               );
             })}
           </div>
-        )}
-      </main>
 
-      )} {/* End isAuthenticated check for main */}
-
-      {/* Change PIN Modal */}
-      {isChangePinModalOpen && (
-        <div className="relative z-50" role="dialog" aria-modal="true">
-          <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" onClick={() => !isChangingPin && setIsChangePinModalOpen(false)}></div>
-          <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
-              <div className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-md ring-1 ring-gray-200 p-8 animate-in fade-in zoom-in-95 duration-200">
-                <div className="flex items-center justify-center mb-6">
-                  <div className="h-12 w-12 rounded-full bg-indigo-50 flex items-center justify-center">
-                    <KeyRound className="h-6 w-6 text-indigo-600" />
-                  </div>
-                </div>
-                <h3 className="text-lg font-bold text-center text-gray-900 mb-2">Modifier le code PIN</h3>
-                <p className="text-sm text-center text-gray-500 mb-6">Pour des raisons de sécurité, veuillez entrer la phrase de confiance secrète, suivie de votre nouveau code PIN.</p>
-                
-                <form onSubmit={handleChangePin} className="space-y-6">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">Phrase de confiance</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="Saisissez la phrase de confiance"
-                      className="block w-full rounded-lg border border-gray-200 bg-gray-100 py-2 px-3 text-sm text-gray-900 shadow-inner focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all"
-                      value={securityPhrase}
-                      onChange={e => {setSecurityPhrase(e.target.value); setChangePinError('');}}
-                      disabled={isChangingPin || !!changePinSuccess}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">Nouveau code PIN</label>
-                    <div className="flex gap-1.5 justify-center">
-                      {newPin.map((digit, i) => (
-                        <input
-                          key={i}
-                          // @ts-ignore
-                          ref={el => newPinInputRefs.current[i] = el}
-                          type="password"
-                          inputMode="numeric"
-                          maxLength={1}
-                          required
-                          value={digit}
-                          onChange={e => handlePinChange(i, e.target.value, true)}
-                          onKeyDown={e => handlePinKeyDown(i, e, true)}
-                          disabled={isChangingPin || !!changePinSuccess}
-                          className="w-8 h-10 text-center text-lg font-bold rounded-md border border-gray-200 bg-gray-100 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
-                        />
-                      ))}
+          {/* Grid of Credit Card Style Wallets */}
+          {isLoading ? (
+            <div className="flex h-64 items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
+            </div>
+          ) : error ? (
+            <div className="mt-8 rounded-xl bg-red-50 p-6 text-center text-red-600 border border-red-200">
+              Une erreur est survenue lors du chargement des portefeuilles.
+            </div>
+          ) : !filteredWallets || filteredWallets.length === 0 ? (
+            <div className="mt-8 flex h-64 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--line)] bg-[var(--card)]">
+              <p className="text-gray-500">Aucun portefeuille trouvé dans cette catégorie.</p>
+            </div>
+          ) : (
+            <div className="wallet-grid" id="grid">
+              {filteredWallets.map((w, idx) => {
+                const grads = getWalletGrads(w.mode, w.details);
+                return (
+                  <article
+                    key={`${w.mode}-${w.details}`}
+                    className="w-card"
+                    style={{
+                      '--i': idx,
+                      '--g1': grads.g1,
+                      '--g2': grads.g2,
+                    } as React.CSSProperties}
+                  >
+                    <div
+                      className="face"
+                      onPointerMove={handlePointerMove}
+                      onPointerLeave={handlePointerLeave}
+                    >
+                      <span className="cap">ELIOS BALANCE</span>
+                      <h3>
+                        {w.mode} - {w.details || 'NON SPÉCIFIÉ'}
+                      </h3>
+                      <div className="mid">
+                        <span className="chip" />
+                        <div className="bal">
+                          <small>
+                            SOLDE COURANT{' '}
+                            <svg viewBox="0 0 24 24">
+                              <path d="M8 8a6 6 0 0 1 0 8M12 5a10 10 0 0 1 0 14M16 3a14 14 0 0 1 0 18"/>
+                            </svg>
+                          </small>
+                          <b>
+                            {formatDT(w.totalAmount)}
+                            <i>DT</i>
+                          </b>
+                        </div>
+                      </div>
+                      <div className="bot">
+                        <span className="stt">STATUT: ACTIF</span>
+                        <span className="wm">ELIOS</span>
+                      </div>
                     </div>
-                  </div>
 
-                  {changePinError && <p className="text-red-500 text-sm font-medium text-center">{changePinError}</p>}
-                  {changePinSuccess && <p className="text-emerald-600 text-sm font-medium text-center">{changePinSuccess}</p>}
+                    {/* Action buttons: Single Retrait, Extrait, and Remise à zéro */}
+                    <div className="wallet-acts">
+                      <button type="button" onClick={() => openRetrait(w)}>
+                        <svg className="i" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="9"/>
+                          <path d="M8 12h8"/>
+                        </svg>
+                        Retrait
+                      </button>
+                      <button type="button" onClick={() => openExtrait(w)}>
+                        <svg className="i" viewBox="0 0 24 24">
+                          <path d="M6 3h9l4 4v14H6z"/>
+                          <path d="M14 3v5h5M9 13h7M9 17h5"/>
+                        </svg>
+                        Extrait
+                      </button>
+                      <button className="zero" type="button" onClick={() => openReset(w)}>
+                        <svg className="i" viewBox="0 0 24 24">
+                          <path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>
+                        </svg>
+                        Remise à zéro
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </main>
+      )}
 
-                  <div className="mt-5 sm:mt-6 flex gap-3">
-                    <button 
-                      type="button"
-                      onClick={() => setIsChangePinModalOpen(false)}
-                      disabled={isChangingPin || !!changePinSuccess}
-                      className="inline-flex flex-1 justify-center rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-transparent"
-                    >
-                      Annuler
-                    </button>
-                    <button 
-                      type="submit"
-                      disabled={isChangingPin || !!changePinSuccess}
-                      className="inline-flex flex-1 justify-center items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
-                    >
-                      {isChangingPin && <RefreshCw className="h-4 w-4 animate-spin" />}
-                      Sauvegarder
-                    </button>
-                  </div>
-                </form>
+      {/* =========================================================================
+          POPUP 1: ACCÈS SÉCURISÉ PIN (when not authenticated)
+          ========================================================================= */}
+      {!isAuthenticated && (
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ width: 'min(440px, 94vw)' }}>
+            <div className="dh" style={{ justifyContent: 'flex-start', gap: '14px', alignItems: 'center' }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 30,
+                  borderRadius: 7,
+                  background: 'linear-gradient(135deg, #0F9D82, #054C38)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: '#fff',
+                  flex: 'none',
+                  boxShadow: 'var(--shadow)',
+                }}
+              >
+                <svg className="i" viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
               </div>
+              <div style={{ flex: 'none', textAlign: 'left' }}>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--ink)' }}>
+                  Accès Sécurisé
+                </h2>
+                <small style={{ display: 'block', color: 'var(--ink2)', fontSize: '13px', marginTop: '2px' }}>
+                  Entrez votre code PIN administrateur
+                </small>
+              </div>
+            </div>
+            <form onSubmit={handleAuthSubmit} noValidate>
+              <div className="db" style={{ padding: '24px 22px', gap: '20px' }}>
+                <p className="note" style={{ textAlign: 'center', margin: 0, fontSize: '14px', color: 'var(--ink2)', lineHeight: '1.5' }}>
+                  Veuillez saisir votre code PIN pour accéder à la trésorerie des portefeuilles.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', gap: '10px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink2)', textAlign: 'center' }}>
+                    Code PIN
+                  </label>
+                  <input
+                    ref={authPinRef}
+                    className="pin"
+                    style={{
+                      textAlign: 'center',
+                      fontSize: '22px',
+                      letterSpacing: '8px',
+                      padding: '10px 16px',
+                      width: '210px',
+                      borderRadius: '12px',
+                    }}
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    autoComplete="off"
+                    placeholder="••••••"
+                    value={authPin}
+                    onChange={e => handleAuthPinChange(e.target.value)}
+                    disabled={isVerifyingAuth}
+                  />
+                </div>
+                {authPinError && (
+                  <p className="err" role="alert" style={{ textAlign: 'center', margin: 0 }}>
+                    {authPinError}
+                  </p>
+                )}
+              </div>
+              <div className="df" style={{ justifyContent: 'center', gap: '12px', padding: '14px 22px' }}>
+                <Link href="/" className="btn" style={{ padding: '9px 18px' }}>
+                  Retour à l'accueil
+                </Link>
+                <button
+                  className="btn pri"
+                  type="submit"
+                  disabled={isVerifyingAuth || authPin.length !== 6}
+                  style={{ padding: '9px 20px' }}
+                >
+                  {isVerifyingAuth ? 'Vérification...' : 'Déverrouiller'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          POPUP 2: RETRAIT MODAL (Single deduction action)
+          ========================================================================= */}
+      {retraitWallet && (
+        <div
+          className="modal-overlay"
+          onClick={e => {
+            if (e.target === e.currentTarget && !isSubmittingRetrait) closeRetrait();
+          }}
+        >
+          <div className="modal-dialog">
+            <div className="dh" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                <span
+                  className="mw"
+                  style={{
+                    '--g1': getWalletGrads(retraitWallet.mode, retraitWallet.details).g1,
+                    '--g2': getWalletGrads(retraitWallet.mode, retraitWallet.details).g2,
+                  } as React.CSSProperties}
+                />
+                <div style={{ textAlign: 'left', minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--ink)' }}>
+                    Retrait
+                  </h2>
+                  <small style={{ display: 'block', color: 'var(--ink2)', fontSize: '13px', marginTop: '2px' }}>
+                    {retraitWallet.mode} - {retraitWallet.details} · solde {formatDT(retraitWallet.totalAmount)} DT
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="x"
+                onClick={closeRetrait}
+                disabled={isSubmittingRetrait}
+                aria-label="Fermer"
+              >
+                <svg className="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+            <form onSubmit={handleConfirmRetrait} noValidate>
+              <div className="db">
+                <label>
+                  Montant (DT)
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    value={retraitAmount}
+                    onChange={e => {
+                      setRetraitAmount(e.target.value);
+                      setRetraitError('');
+                    }}
+                    onKeyDown={e => {
+                      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onWheel={e => e.currentTarget.blur()}
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  Bénéficiaire ou motif (facultatif)
+                  <textarea
+                    rows={2}
+                    placeholder="Bénéficiaire ou motif du retrait..."
+                    value={retraitMotif}
+                    onChange={e => setRetraitMotif(e.target.value)}
+                  />
+                </label>
+                <div className="pv">
+                  <span>Solde après opération</span>
+                  <b
+                    className={
+                      parseFloat(retraitAmount) > retraitWallet.totalAmount ? 'neg' : ''
+                    }
+                  >
+                    {formatDT(
+                      Math.max(
+                        0,
+                        retraitWallet.totalAmount - (parseFloat(retraitAmount) || 0)
+                      )
+                    )}{' '}
+                    DT
+                  </b>
+                </div>
+                <label>
+                  Code PIN
+                  <input
+                    className="pin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    autoComplete="off"
+                    placeholder="••••"
+                    value={retraitPin}
+                    onChange={e => {
+                      setRetraitPin(e.target.value);
+                      setRetraitError('');
+                    }}
+                  />
+                </label>
+                {retraitError && <p className="err" role="alert">{retraitError}</p>}
+              </div>
+              <div className="df">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={closeRetrait}
+                  disabled={isSubmittingRetrait}
+                >
+                  Annuler
+                </button>
+                <button
+                  className="btn pri"
+                  type="submit"
+                  disabled={isSubmittingRetrait || !retraitAmount || !retraitPin}
+                >
+                  {isSubmittingRetrait ? 'Validation...' : 'Confirmer le retrait'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          POPUP 3: EXTRAIT DU PORTEFEUILLE MODAL
+          ========================================================================= */}
+      {extraitWallet && (
+        <div
+          className="modal-overlay"
+          onClick={e => {
+            if (e.target === e.currentTarget) closeExtrait();
+          }}
+        >
+          <div className="modal-dialog xl">
+            <div className="dh" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                <span
+                  className="mw"
+                  style={{
+                    '--g1': getWalletGrads(extraitWallet.mode, extraitWallet.details).g1,
+                    '--g2': getWalletGrads(extraitWallet.mode, extraitWallet.details).g2,
+                  } as React.CSSProperties}
+                />
+                <div style={{ textAlign: 'left', minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--ink)' }}>
+                    Extrait du portefeuille
+                  </h2>
+                  <small style={{ display: 'block', color: 'var(--ink2)', fontSize: '13px', marginTop: '2px' }}>
+                    {extraitWallet.mode} - {extraitWallet.details} · solde {formatDT(extraitWallet.totalAmount)} DT
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="x"
+                onClick={closeExtrait}
+                aria-label="Fermer"
+              >
+                <svg className="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+
+            <div className="db">
+              <div className="sum">
+                <div>
+                  <small>Total encaissé</small>
+                  <b className="pos">+{formatDT(totalIn)} DT</b>
+                </div>
+                <div>
+                  <small>Total sorti</small>
+                  <b className="neg">−{formatDT(totalOut)} DT</b>
+                </div>
+              </div>
+
+              {isLoadingExtrait ? (
+                <div className="py-12 text-center text-sm text-[var(--ink3)]">
+                  Chargement des transactions...
+                </div>
+              ) : statementRows.length === 0 ? (
+                <div className="py-12 text-center text-sm text-[var(--ink3)] border border-[var(--line)] rounded-xl">
+                  Aucun mouvement enregistré pour ce portefeuille.
+                </div>
+              ) : (
+                <div className="tx">
+                  <div className="tr h">
+                    <span>Date</span>
+                    <span>Opération</span>
+                    <span style={{ textAlign: 'right' }}>Montant</span>
+                    <span style={{ textAlign: 'right' }}>Solde</span>
+                  </div>
+                  {statementRows.map(tx => {
+                    const isNegative = (tx.amount || 0) < 0;
+                    const opType = isNegative ? 'Retrait' : 'Encaissement';
+                    const opColor = getOperatorColor(tx.operatorName);
+                    const labelText =
+                      tx.clientDetails?.note ||
+                      (isNegative ? 'Retrait manuel' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
+
+                    return (
+                      <div key={tx._id} className="tr">
+                        <span>{fdt(tx.paymentDate || tx.createdAt)}</span>
+                        <span>
+                          {opType}
+                          <small>
+                            {labelText} ·{' '}
+                            <span
+                              className="by"
+                              style={{ '--u': opColor } as React.CSSProperties}
+                            >
+                              {tx.operatorName || 'Elios'}
+                            </span>
+                          </small>
+                        </span>
+                        <span className={`m ${isNegative ? 'neg' : 'pos'}`}>
+                          {isNegative ? '−' : '+'}
+                          {formatDT(Math.abs(tx.amount))}
+                        </span>
+                        <span className="s">{formatDT(tx.runningBalance || 0)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="df no-print">
+              <button type="button" className="btn" onClick={closeExtrait}>
+                Fermer
+              </button>
+              <button
+                type="button"
+                className="btn pri"
+                onClick={handleDownloadExtraitImage}
+                disabled={isDownloadingExtrait || isLoadingExtrait}
+                style={{ minWidth: '150px', cursor: isDownloadingExtrait ? 'wait' : 'pointer' }}
+              >
+                {isDownloadingExtrait ? (
+                  <>
+                    <svg className="i" style={{ animation: 'spin 1s linear infinite' }} viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" opacity="0.25"/>
+                      <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                    </svg>
+                    Téléchargement...
+                  </>
+                ) : (
+                  <>
+                    <svg className="i" viewBox="0 0 24 24">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Télécharger
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Statement Modal */}
-      {statementModal.isOpen && statementModal.wallet && (
-        <StatementModal 
-          wallet={statementModal.wallet}
-          onClose={() => setStatementModal({ isOpen: false, wallet: null })}
-        />
-      )}
-
-      {/* Modal de confirmation */}
-      {resetModal.isOpen && resetModal.wallet && (
-        <div className="relative z-50" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-          <div 
-            className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
-            onClick={() => !isResetting && setResetModal({ isOpen: false, wallet: null })}
-          ></div>
-          <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-              <div className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg ring-1 ring-gray-200 p-6 animate-in fade-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-4 mb-4 text-red-600">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 shrink-0">
-                    <AlertTriangle className="h-6 w-6" />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 leading-6" id="modal-title">Confirmation de purge</h3>
-                </div>
-                <div className="mt-2">
-                  <p className="text-sm text-gray-500 mb-6">
-                    Êtes-vous sûr de vouloir remettre à zéro le portefeuille 
-                    <strong className="text-gray-900 mx-1">{resetModal.wallet.mode} - {resetModal.wallet.details}</strong> ? 
-                    Cette action effectuera un "Hard Delete" : tous les reçus liés (et leurs images sur le Drive) seront définitivement effacés. 
-                    Cette action est irréversible.
-                  </p>
-                </div>
-                <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
-                  <button 
-                    type="button"
-                    onClick={handleReset}
-                    disabled={isResetting}
-                    className="inline-flex w-full justify-center items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:w-auto disabled:opacity-50"
-                  >
-                    {isResetting && <RefreshCw className="h-4 w-4 animate-spin" />}
-                    Oui, remettre à zéro
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setResetModal({ isOpen: false, wallet: null })}
-                    disabled={isResetting}
-                    className="mt-3 inline-flex w-full justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-transparent sm:mt-0 sm:w-auto disabled:opacity-50"
-                  >
-                    Annuler
-                  </button>
-                </div>
+      {/* =========================================================================
+          CONTAINER HAUTE RÉSOLUTION POUR TÉLÉCHARGEMENT DU REÇU / EXTRAIT (PNG 3X SANS COUPURE)
+          ========================================================================= */}
+      {extraitWallet && (
+        <div
+          ref={exportTicketRef}
+          style={{
+            position: 'fixed',
+            left: '0px',
+            top: '0px',
+            width: '800px',
+            minHeight: 'fit-content',
+            backgroundColor: '#ffffff',
+            color: '#1F2937',
+            fontFamily: '"DM Sans", system-ui, -apple-system, sans-serif',
+            padding: '48px 44px 38px 44px',
+            borderRadius: '0px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '22px',
+            zIndex: -9999,
+            pointerEvents: 'none',
+            visibility: 'visible',
+            opacity: 1,
+          }}
+        >
+          {/* En-tête officiel */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #F3F4F6', paddingBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <img
+                src="/LogoReceipt.png"
+                alt="Elios Academy"
+                style={{ height: '54px', width: 'auto', maxHeight: '58px', objectFit: 'contain', display: 'block' }}
+              />
+              <div style={{ borderLeft: '1px solid #E5E7EB', paddingLeft: '14px' }}>
+                <span style={{ fontSize: '15px', fontWeight: 800, color: '#111827', letterSpacing: '-0.3px', display: 'block' }}>
+                  Elios Workspace
+                </span>
+                <span style={{ fontSize: '12px', color: '#6B7280', fontWeight: 500 }}>
+                  Gestion & Trésorerie Sécurisée
+                </span>
               </div>
             </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  background: '#F3F4F6',
+                  color: '#374151',
+                  border: '1px solid #E5E7EB',
+                  padding: '4px 12px',
+                  borderRadius: '8px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.8px',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Extrait de compte
+              </span>
+              <p style={{ margin: 0, fontSize: '12px', color: '#6B7280', textAlign: 'center' }}>
+                Émis le : <b>{fdt(new Date())}</b>
+              </p>
+            </div>
+          </div>
+
+          {/* Bannière du Portefeuille avec Dégradé */}
+          <div
+            style={{
+              background: `linear-gradient(135deg, ${getWalletGrads(extraitWallet.mode, extraitWallet.details).g1}, ${getWalletGrads(extraitWallet.mode, extraitWallet.details).g2})`,
+              borderRadius: '14px',
+              padding: '20px 24px',
+              color: '#ffffff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            }}
+          >
+            <div>
+              <span style={{ fontSize: '10.5px', fontFamily: 'monospace', letterSpacing: '1.6px', opacity: 0.85 }}>
+                PORTEFEUILLE ACTIF
+              </span>
+              <h3 style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 800, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                {extraitWallet.mode} - {extraitWallet.details || 'NON SPÉCIFIÉ'}
+              </h3>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: '10.5px', fontFamily: 'monospace', letterSpacing: '1.4px', opacity: 0.85, display: 'block' }}>
+                SOLDE COURANT
+              </span>
+              <b style={{ fontSize: '28px', fontWeight: 800, letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+                {formatDT(extraitWallet.totalAmount)} <span style={{ fontSize: '16px', fontWeight: 600 }}>DT</span>
+              </b>
+            </div>
+          </div>
+
+          {/* Résumé des totaux */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '12px', padding: '14px 18px' }}>
+              <span style={{ display: 'block', fontSize: '12px', color: '#065F46', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Total Encaissé
+              </span>
+              <b style={{ fontSize: '22px', fontWeight: 800, color: '#059669', fontVariantNumeric: 'tabular-nums' }}>
+                +{formatDT(totalIn)} DT
+              </b>
+            </div>
+            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '12px', padding: '14px 18px' }}>
+              <span style={{ display: 'block', fontSize: '12px', color: '#991B1B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Total Sorti (Retraits)
+              </span>
+              <b style={{ fontSize: '22px', fontWeight: 800, color: '#DC2626', fontVariantNumeric: 'tabular-nums' }}>
+                −{formatDT(totalOut)} DT
+              </b>
+            </div>
+          </div>
+
+          {/* Tableau de toutes les transactions sans limitation de hauteur */}
+          <div style={{ border: '1px solid #E5E7EB', borderRadius: '14px', overflow: 'hidden' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1.2fr 2.4fr 1fr 1fr',
+                padding: '12px 18px',
+                background: '#F9FAFB',
+                borderBottom: '1px solid #E5E7EB',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: '#4B5563',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}
+            >
+              <span>Date</span>
+              <span>Opération & Libellé</span>
+              <span style={{ textAlign: 'right' }}>Montant</span>
+              <span style={{ textAlign: 'right' }}>Solde</span>
+            </div>
+            {statementRows.length === 0 ? (
+              <div style={{ padding: '36px', textAlign: 'center', color: '#9CA3AF', fontSize: '14px' }}>
+                Aucune opération enregistrée pour ce portefeuille.
+              </div>
+            ) : (
+              statementRows.map((tx, idx) => {
+                const isNegative = (tx.amount || 0) < 0;
+                const opType = isNegative ? 'Retrait' : 'Encaissement';
+                const labelText =
+                  tx.clientDetails?.note ||
+                  (isNegative ? 'Retrait manuel' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
+
+                return (
+                  <div
+                    key={tx._id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1.2fr 2.4fr 1fr 1fr',
+                      padding: '12px 18px',
+                      alignItems: 'center',
+                      borderBottom: idx === statementRows.length - 1 ? 'none' : '1px solid #F3F4F6',
+                      background: idx % 2 === 0 ? '#ffffff' : '#FAFAFA',
+                      fontSize: '13.5px',
+                    }}
+                  >
+                    <span style={{ color: '#4B5563', fontSize: '13px' }}>
+                      {fdt(tx.paymentDate || tx.createdAt)}
+                    </span>
+                    <span style={{ color: '#111827' }}>
+                      <span style={{ fontWeight: 700 }}>{opType}</span>
+                      {labelText && (
+                        <small style={{ display: 'block', color: '#6B7280', fontSize: '12px', marginTop: '2px' }}>
+                          {labelText}
+                        </small>
+                      )}
+                    </span>
+                    <span
+                      style={{
+                        textAlign: 'right',
+                        fontWeight: 700,
+                        fontFamily: 'monospace',
+                        color: isNegative ? '#DC2626' : '#059669',
+                      }}
+                    >
+                      {isNegative ? '−' : '+'}
+                      {formatDT(Math.abs(tx.amount))} DT
+                    </span>
+                    <span
+                      style={{
+                        textAlign: 'right',
+                        fontWeight: 600,
+                        fontFamily: 'monospace',
+                        color: '#374151',
+                      }}
+                    >
+                      {formatDT(tx.runningBalance || 0)} DT
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Bas de page officiel */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #E5E7EB', paddingTop: '16px', fontSize: '11.5px', color: '#9CA3AF' }}>
+            <span>Document certifié conforme · Trésorerie Elios Workspace</span>
+            <span>Total mouvements : {statementRows.length}</span>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          POPUP 4: REMISE À ZÉRO MODAL
+          ========================================================================= */}
+      {resetWallet && (
+        <div
+          className="modal-overlay"
+          onClick={e => {
+            if (e.target === e.currentTarget && !isResetting) closeReset();
+          }}
+        >
+          <div className="modal-dialog">
+            <div className="dh" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                <span
+                  className="mw"
+                  style={{
+                    '--g1': getWalletGrads(resetWallet.mode, resetWallet.details).g1,
+                    '--g2': getWalletGrads(resetWallet.mode, resetWallet.details).g2,
+                  } as React.CSSProperties}
+                />
+                <div style={{ textAlign: 'left', minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--ink)' }}>
+                    Remise à zéro
+                  </h2>
+                  <small style={{ display: 'block', color: 'var(--ink2)', fontSize: '13px', marginTop: '2px' }}>
+                    {resetWallet.mode} - {resetWallet.details} · solde {formatDT(resetWallet.totalAmount)} DT
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="x"
+                onClick={closeReset}
+                disabled={isResetting}
+                aria-label="Fermer"
+              >
+                <svg className="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+            <form onSubmit={handleConfirmReset} noValidate>
+              <div className="db">
+                <p className="note">
+                  {resetWallet.totalAmount > 0 ? (
+                    <>
+                      Le solde de <b>{formatDT(resetWallet.totalAmount)} DT</b> sera remis à zéro.
+                      Cette action effectuera une purge définitive : tous les reçus liés et leurs fichiers Drive seront effacés.
+                    </>
+                  ) : (
+                    'Le solde de ce portefeuille est déjà à zéro.'
+                  )}
+                </p>
+                {resetWallet.totalAmount > 0 && (
+                  <label>
+                    Code PIN
+                    <input
+                      className="pin"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      autoComplete="off"
+                      placeholder="••••"
+                      value={resetPin}
+                      onChange={e => {
+                        setResetPin(e.target.value);
+                        setResetError('');
+                      }}
+                      autoFocus
+                    />
+                  </label>
+                )}
+                {resetError && <p className="err" role="alert">{resetError}</p>}
+              </div>
+              <div className="df">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={closeReset}
+                  disabled={isResetting}
+                >
+                  Annuler
+                </button>
+                <button
+                  className="btn dng"
+                  type="submit"
+                  disabled={isResetting || (resetWallet.totalAmount > 0 && !resetPin)}
+                >
+                  {isResetting ? 'Réinitialisation...' : 'Remettre à zéro'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          POPUP 5: CHANGER LE CODE PIN MODAL
+          ========================================================================= */}
+      {isChangePinOpen && (
+        <div
+          className="modal-overlay"
+          onClick={e => {
+            if (e.target === e.currentTarget && !isSubmittingChangePin) setIsChangePinOpen(false);
+          }}
+        >
+          <div className="modal-dialog">
+            <div className="dh" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: 44,
+                    height: 30,
+                    borderRadius: 7,
+                    background: 'linear-gradient(135deg, #4F46E5, #312E81)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#fff',
+                    flex: 'none',
+                    boxShadow: 'var(--shadow)',
+                  }}
+                >
+                  <svg className="i" viewBox="0 0 24 24" style={{ width: 16, height: 16 }}>
+                    <circle cx="8" cy="15" r="4"/>
+                    <path d="m11 12 9-9M16 7l3 3M14 9l2 2"/>
+                  </svg>
+                </div>
+                <div style={{ textAlign: 'left', minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--ink)' }}>
+                    Changer le code PIN
+                  </h2>
+                  <small style={{ display: 'block', color: 'var(--ink2)', fontSize: '13px', marginTop: '2px' }}>
+                    Le PIN protège les retraits et remises à zéro (6 chiffres)
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="x"
+                onClick={() => setIsChangePinOpen(false)}
+                disabled={isSubmittingChangePin}
+                aria-label="Fermer"
+              >
+                <svg className="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+            <form onSubmit={handleConfirmChangePin} noValidate>
+              <div className="db">
+                <label>
+                  PIN actuel (ou phrase secrète)
+                  <input
+                    className="pin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={30}
+                    autoComplete="off"
+                    placeholder="••••••"
+                    value={changeOldPin}
+                    onChange={e => {
+                      setChangeOldPin(e.target.value);
+                      setChangePinError('');
+                    }}
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  Nouveau PIN (6 chiffres)
+                  <input
+                    className="pin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    autoComplete="off"
+                    placeholder="••••••"
+                    value={changeNewPin}
+                    onChange={e => {
+                      setChangeNewPin(e.target.value.replace(/\D/g, ''));
+                      setChangePinError('');
+                    }}
+                  />
+                </label>
+                <label>
+                  Confirmer le nouveau PIN (6 chiffres)
+                  <input
+                    className="pin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    autoComplete="off"
+                    placeholder="••••••"
+                    value={changeConfirmPin}
+                    onChange={e => {
+                      setChangeConfirmPin(e.target.value.replace(/\D/g, ''));
+                      setChangePinError('');
+                    }}
+                  />
+                </label>
+                {changePinError && <p className="err" role="alert">{changePinError}</p>}
+              </div>
+              <div className="df">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setIsChangePinOpen(false)}
+                  disabled={isSubmittingChangePin}
+                >
+                  Annuler
+                </button>
+                <button
+                  className="btn pri"
+                  type="submit"
+                  disabled={isSubmittingChangePin || !changeOldPin || !changeNewPin || !changeConfirmPin}
+                >
+                  {isSubmittingChangePin ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

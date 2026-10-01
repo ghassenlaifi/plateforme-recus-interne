@@ -37,12 +37,25 @@ export async function GET() {
       }
     ]);
 
+    const normalizeMode = (m: string) => {
+      if (!m) return '';
+      const s = m.trim().toLowerCase();
+      if (s.startsWith('virement')) return 'Virement Bancaire';
+      if (s.startsWith('edinar') || s.includes('d17')) return 'Edinar - D17';
+      if (s.includes('esp')) return 'Espèces';
+      return m.trim();
+    };
+
     // Convertir l'agrégation en dictionnaire pour un accès rapide (O(1))
     const aggMap = new Map();
     aggregation.forEach(item => {
-      aggMap.set(`${item._id.mode}-${item._id.details}`, {
-        totalAmount: item.totalAmount,
-        count: item.count
+      const mode = normalizeMode(item._id.mode);
+      const details = (item._id.details || '').trim();
+      const key = `${mode}-${details}`;
+      const existing = aggMap.get(key) || { totalAmount: 0, count: 0 };
+      aggMap.set(key, {
+        totalAmount: existing.totalAmount + item.totalAmount,
+        count: existing.count + item.count
       });
     });
 

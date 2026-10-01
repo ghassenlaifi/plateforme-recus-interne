@@ -13,16 +13,16 @@ export async function DELETE(request: Request) {
 
     await connectDB();
 
-    // Trouver tous les reçus correspondants (PROCESSED et ARCHIVED)
-    const query = {
-      status: { $in: ['PROCESSED', 'ARCHIVED'] as any[] },
-      paymentMode: mode,
-      paymentDetails: details || '' // ou null selon le cas, mais string vide est la norme
+    // Trouver tous les reçus correspondants (PENDING, PROCESSED et ARCHIVED)
+    const query: any = {
+      status: { $in: ['PENDING', 'PROCESSED', 'ARCHIVED'] },
+      paymentMode: { $regex: new RegExp(`^${mode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') },
     };
 
-    // On accepte de réinitialiser ceux qui n'ont pas de détails (si c'est le cas)
-    if (!details) {
-      query.paymentDetails = { $in: [null, ''] } as any;
+    if (details) {
+      query.paymentDetails = { $regex: new RegExp(`^${details.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') };
+    } else {
+      query.paymentDetails = { $in: [null, ''] };
     }
 
     const receiptsToDelete: any[] = await Receipt.find(query);

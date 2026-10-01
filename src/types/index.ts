@@ -24,6 +24,61 @@ export const getThemeColors = (themeKey: string) => {
   return THEMES[themeKey] || THEMES['gray'];
 };
 
+export interface OperatorThemeColors {
+  dot: string;
+  bg: string;
+  fg: string;
+  label: string;
+}
+
+/**
+ * Résolution dynamique de la couleur d'un opérateur :
+ * 1. Recherche par nom dans les opérateurs BDD (respecte le thème attribué).
+ * 2. Si non trouvé ou nouvel opérateur, calcul déterministe par hachage du nom parmi la palette complète.
+ * 3. Gestion élégante des statuts spéciaux ("Système", "Non assigné").
+ */
+export const getOperatorColors = (
+  name?: string | null,
+  operatorsList?: Operator[]
+): OperatorThemeColors => {
+  const clean = (name || '').trim();
+  if (!clean || clean.toLowerCase() === 'système' || clean.toLowerCase() === 'systeme') {
+    return { dot: '#94a3b8', bg: '#f1f5f9', fg: '#475569', label: 'Système' };
+  }
+  if (clean.toLowerCase() === 'non assigné' || clean.toLowerCase() === 'non assigne') {
+    return { dot: '#a1a1aa', bg: '#f4f4f5', fg: '#71717a', label: 'Non assigné' };
+  }
+
+  // 1. Recherche exacte dans les opérateurs enregistrés
+  if (Array.isArray(operatorsList) && operatorsList.length > 0) {
+    const found = operatorsList.find(o => o.name && o.name.trim().toLowerCase() === clean.toLowerCase());
+    if (found && found.theme && THEMES[found.theme]) {
+      return THEMES[found.theme];
+    }
+  }
+
+  // 2. Attribution dynamique et déterministe pour tout nouvel opérateur
+  const dynamicKeys = [
+    'indigo',
+    'rose',
+    'sky',
+    'amber',
+    'teal',
+    'purple',
+    'green',
+    'orange',
+    'cyan',
+    'fuchsia'
+  ];
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    hash = (hash << 5) - hash + clean.charCodeAt(i);
+    hash |= 0;
+  }
+  const key = dynamicKeys[Math.abs(hash) % dynamicKeys.length];
+  return THEMES[key] || THEMES['indigo'];
+};
+
 // Fallback for old receipts that don't match any dynamic operator
 export const FALLBACK_USER = { name: 'Inconnu', ...THEMES['gray'] };
 
@@ -58,6 +113,7 @@ export type Receipt = {
   paymentDetails?: string;
   paymentDate?: string;
   amount?: number;
+  reference?: string;
   notes: Note[];
   gDriveFileId: string;
   gDriveViewUrl: string;
@@ -67,3 +123,5 @@ export type Receipt = {
   createdAt: string; // ISO date string
   updatedAt: string;
 };
+
+export * from './session';

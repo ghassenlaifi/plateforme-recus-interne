@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/jsbarcode": "^3.11.4",
     "googleapis": "^178.0.0",
     "html-to-image": "^1.11.13",
     "html2canvas-pro": "^2.4.4",
+    "jsbarcode": "^3.12.3",
     "lucide-react": "^1.47.0",
     "mongoose": "^9.10.1",
     "next": "16.3.5",
@@ -19,7 +21,8 @@
     "react-dom": "19.2.8",
     "react-dropzone": "^19.3.0",
     "react-zoom-pan-pinch": "^4.2.0",
-    "swr": "^2.5.1"
+    "swr": "^2.5.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

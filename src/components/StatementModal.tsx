@@ -15,6 +15,11 @@ interface Receipt {
     email?: string;
     familyGroup?: string;
   };
+  notes?: {
+    text: string;
+    addedBy?: string;
+    addedAt?: string | Date;
+  }[];
   status: string;
   createdAt: string;
 }
@@ -71,10 +76,31 @@ export function StatementModal({ wallet, onClose }: StatementModalProps) {
     setIsDownloading(true);
     
     try {
+      // S'assurer que toutes les images sont chargées
+      const images = ticketRef.current.getElementsByTagName('img');
+      await Promise.all(
+        Array.from(images).map(
+          (img) =>
+            new Promise((resolve) => {
+              if (img.complete) resolve(true);
+              else {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(true);
+              }
+            })
+        )
+      );
+
       const htmlToImage = await import('html-to-image');
       const dataUrl = await htmlToImage.toPng(ticketRef.current, {
-        pixelRatio: 4, // Ultra High resolution
-        backgroundColor: '#ffffff'
+        quality: 1.0,
+        pixelRatio: 3,
+        backgroundColor: '#ffffff',
+        cacheBust: true,
+        style: {
+          transform: 'none',
+          margin: '0',
+        },
       });
       
       const link = document.createElement('a');
@@ -108,12 +134,21 @@ export function StatementModal({ wallet, onClose }: StatementModalProps) {
           <div 
             ref={ticketRef} 
             className="bg-white shadow-md border border-gray-200 p-6 sm:p-8 w-full relative"
-            style={{ fontFamily: "'Courier New', Courier, monospace", maxWidth: '420px' }}
+            style={{ fontFamily: "'Courier New', Courier, monospace", maxWidth: '420px', boxSizing: 'border-box' }}
           >
             {/* Top ZigZag Pattern */}
             <div className="absolute top-0 left-0 right-0 h-2 bg-repeat-x opacity-30" style={{ backgroundImage: "linear-gradient(-45deg, transparent 33.33%, #d1d5db 33.33%, #d1d5db 66.66%, transparent 66.66%), linear-gradient(45deg, transparent 33.33%, #d1d5db 33.33%, #d1d5db 66.66%, transparent 66.66%)", backgroundSize: "8px 16px" }}></div>
 
-            <div className="text-center mb-5 border-b-2 border-dashed border-gray-300 pb-4 mt-2">
+            {/* Logo Officiel Elios Academy */}
+            <div className="flex justify-center mb-3 mt-1">
+              <img
+                src="/LogoReceipt.png"
+                alt="Elios Academy"
+                className="w-[140px] h-auto object-contain block mx-auto"
+              />
+            </div>
+
+            <div className="text-center mb-5 border-b-2 border-dashed border-gray-300 pb-4">
               <h3 className="font-bold text-black text-sm sm:text-base uppercase tracking-wider leading-snug">Elios Balance<br/>{wallet.mode} - {wallet.details}</h3>
             </div>
 
@@ -129,19 +164,29 @@ export function StatementModal({ wallet, onClose }: StatementModalProps) {
               <div className="flex flex-col gap-0 mb-4">
                 {receipts.map((receipt) => {
                   const date = receipt.paymentDate ? new Date(receipt.paymentDate) : new Date(receipt.createdAt);
+                  const amt = Number(receipt.amount) || 0;
+                  const isNegative = amt < 0;
                   return (
                     <div key={receipt._id} className="flex flex-col text-[11px] border-b border-gray-200 border-dashed py-2.5 last:border-0">
                       <div className="flex justify-between items-center mb-1">
                         <span className="font-bold text-black">{date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                        <span className="font-bold text-black text-[13px]">{receipt.amount.toFixed(3)} DT</span>
+                        <span className={`font-bold text-[13px] ${isNegative ? 'text-red-600' : 'text-black'}`}>
+                          {amt.toFixed(3)} DT
+                        </span>
                       </div>
                       
                       <div className="text-gray-700 leading-tight">
                         {receipt.clientDetails?.nom && <><span className="font-semibold text-gray-900">Nom:</span> {receipt.clientDetails.nom} &nbsp;</>}
-                        {receipt.clientDetails?.telephone && <><span className="font-semibold text-gray-900">Tél:</span> {receipt.clientDetails.telephone} &nbsp;</>}
-                        {receipt.clientDetails?.classe && <><span className="font-semibold text-gray-900">Classe:</span> {receipt.clientDetails.classe} &nbsp;</>}
+                        {receipt.clientDetails?.telephone && receipt.clientDetails.telephone !== '00000000' && receipt.clientDetails.telephone !== 'N/A' && <><span className="font-semibold text-gray-900">Tél:</span> {receipt.clientDetails.telephone} &nbsp;</>}
+                        {receipt.clientDetails?.classe && receipt.clientDetails.classe !== 'N/A' && <><span className="font-semibold text-gray-900">Offre:</span> {receipt.clientDetails.classe} &nbsp;</>}
                         {receipt.clientDetails?.email && <><span className="font-semibold text-gray-900">Email:</span> {receipt.clientDetails.email} &nbsp;</>}
-                        {receipt.clientDetails?.familyGroup && <><span className="font-semibold text-gray-900">Groupe:</span> {receipt.clientDetails.familyGroup}</>}
+                        {receipt.clientDetails?.familyGroup && <><span className="font-semibold text-gray-900">Groupe:</span> {receipt.clientDetails.familyGroup}&nbsp;</>}
+                        {/* Note ou motif */}
+                        {receipt.notes && receipt.notes.length > 0 && (
+                          <div className="mt-0.5 text-gray-500 italic">
+                            <span>Note: {receipt.notes[0].text}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

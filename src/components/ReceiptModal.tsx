@@ -480,6 +480,12 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                         value={editData.amount}
                         onChange={e => setEditData({...editData, amount: e.target.value})}
                         onBlur={handleBlurSave}
+                        onKeyDown={e => {
+                          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onWheel={e => e.currentTarget.blur()}
                       />
                       <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-medium text-gray-500">DT</span>
                     </div>

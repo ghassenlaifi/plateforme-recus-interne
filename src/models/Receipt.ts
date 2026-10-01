@@ -21,6 +21,7 @@ export interface IReceipt extends Document {
   paymentDetails?: string;
   paymentDate?: Date;
   amount?: number;
+  reference?: string;
   notes: INote[];
   gDriveFileId: string;
   gDriveViewUrl: string;
@@ -73,6 +74,11 @@ const ReceiptSchema = new Schema<IReceipt>({
     type: Number,
     required: false,
   },
+  reference: {
+    type: String,
+    required: false,
+    index: true,
+  },
   notes: {
     type: [NoteSchema],
     default: [],
@@ -81,7 +87,7 @@ const ReceiptSchema = new Schema<IReceipt>({
     type: String,
     required: true,
   },
-  gDriveViewUrl: { type: String, required: true },
+  gDriveViewUrl: { type: String, required: false, default: '' },
   status: { type: String, enum: ['PENDING', 'PROCESSED', 'ARCHIVED'], default: 'PENDING' },
   lockedBy: { type: String, default: null },
   lockedAt: { type: Date, default: null }

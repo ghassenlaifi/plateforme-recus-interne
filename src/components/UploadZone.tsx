@@ -3,6 +3,7 @@
 import React, { useState, useRef, FormEvent } from 'react';
 import { CloudUpload, X, FileText, Loader2 } from 'lucide-react';
 import { useToast } from './Toast';
+import { PaymentReceiptModal } from './PaymentReceiptModal';
 
 interface UploadZoneProps {
   activeUser: string | null;
@@ -18,10 +19,12 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
   const [isOver, setIsOver] = useState(false);
   const [fileData, setFileData] = useState<{ file: File; name: string; size: number; type: string; url: string | null } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [generatedTicket, setGeneratedTicket] = useState<any | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
+    familyGroup: '',
     classeSelect: '',
     classeCustom: '',
     email: '',
@@ -35,7 +38,10 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
   const digitsOf = (s: string) => s.replace(/\D/g, '');
   const formatPhone = (val: string) => {
-    const d = digitsOf(val).slice(0, 8);
+    let p = val.replace(/[^\d+]/g, '');
+    if (p.startsWith('+216')) p = p.substring(4);
+    else if (p.startsWith('00216')) p = p.substring(5);
+    const d = p.replace(/\D/g, '').slice(0, 8);
     if (d.length <= 2) return d;
     if (d.length <= 5) return `${d.slice(0,2)} ${d.slice(2)}`;
     return `${d.slice(0,2)} ${d.slice(2,5)} ${d.slice(5)}`;
@@ -107,6 +113,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
     setFormData({
       name: 'Sarra Ben Youssef',
       phone: '22 345 678',
+      familyGroup: '',
       classeSelect: 'Zero To Hero',
       classeCustom: '',
       email: '',
@@ -166,6 +173,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       payload.append('telephone', digitsOf(formData.phone));
       payload.append('classe', finalClasse.trim());
       if (formData.email.trim()) payload.append('email', formData.email.trim());
+      if (formData.familyGroup.trim()) payload.append('familyGroup', formData.familyGroup.trim());
       if (formData.note.trim()) payload.append('note', formData.note.trim());
       payload.append('paymentMode', formData.mode.trim());
       payload.append('paymentDetails', formData.paymentDetails.trim());
@@ -183,11 +191,25 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
         throw new Error(errData.error || 'Erreur lors de la soumission du reçu');
       }
 
-      setFormData({ name: '', phone: '', classeSelect: '', classeCustom: '', email: '', mode: '', paymentDetails: '', amount: '', date: '', note: '' });
+      const createdReceipt = await res.json();
+
+      setFormData({ name: '', phone: '', familyGroup: '', classeSelect: '', classeCustom: '', email: '', mode: '', paymentDetails: '', amount: '', date: '', note: '' });
       setErrors({});
       clearFile();
       
-      onUploadSuccess(`Reçu de ${formData.name.trim()} ajouté à la file d’attente.`);
+      onUploadSuccess(`Reçu de ${formData.name.trim()} enregistré avec succès.`);
+      
+      // Ouvrir automatiquement le reçu de paiement généré
+      setGeneratedTicket({
+        reference: createdReceipt.reference,
+        studentName: createdReceipt.clientDetails?.nom,
+        phone: createdReceipt.clientDetails?.telephone,
+        offer: createdReceipt.clientDetails?.classe,
+        familyGroup: createdReceipt.clientDetails?.familyGroup,
+        amount: createdReceipt.amount,
+        operatorName: createdReceipt.operatorName,
+        paymentDate: createdReceipt.paymentDate || createdReceipt.createdAt,
+      });
       
       if (window.matchMedia('(max-width: 1023px)').matches) {
         document.getElementById('zoneQueue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -308,7 +330,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     name="phone" 
                     type="tel" 
                     inputMode="tel" 
-                    maxLength={10} 
+                    maxLength={20} 
                     className="input tnum pl-12" 
                     placeholder="XX XXX XXX" 
                     autoComplete="off" 
@@ -332,6 +354,21 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                   value={formData.email}
                   disabled={isUploading}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
+                />
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
+                <label className="label" htmlFor="f-familyGroup">Family Group <span className="text-gray-400 font-normal text-xs">(si applicable)</span></label>
+                <input 
+                  id="f-familyGroup" 
+                  name="familyGroup" 
+                  type="text" 
+                  className="input" 
+                  placeholder="Ex: Fratrie Ben Ali / Groupe Famille..." 
+                  autoComplete="off" 
+                  value={formData.familyGroup}
+                  disabled={isUploading}
+                  onChange={(e) => setFormData({...formData, familyGroup: e.target.value})}
                 />
               </div>
 
@@ -466,13 +503,15 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                     type="number" 
                     step="0.01"
                     min="0"
-                    className="input tnum pr-12" 
+                    className="input tnum pr-12 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
                     placeholder="0.00" 
                     autoComplete="off" 
                     aria-invalid={errors.amount ? 'true' : 'false'}
                     value={formData.amount}
                     disabled={isUploading}
                     onChange={(e) => { setFormData({...formData, amount: e.target.value}); setErrors({...errors, amount: false}); }}
+                    onKeyDown={(e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) e.preventDefault(); }}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
                   />
                   <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-medium text-gray-500">DT</span>
                 </div>
@@ -525,6 +564,13 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
           </div>
         </div>
       </div>
+
+      {/* Modale d'affichage immédiat du reçu de paiement officiel généré */}
+      <PaymentReceiptModal
+        isOpen={!!generatedTicket}
+        onClose={() => setGeneratedTicket(null)}
+        data={generatedTicket}
+      />
     </section>
   );
 }

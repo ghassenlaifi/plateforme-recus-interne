@@ -22,10 +22,13 @@ export async function POST(req: Request) {
     }
 
     if (action === 'change') {
-      if (phrase !== 'Elios is the best Academy') {
-        return NextResponse.json({ success: false, error: 'Phrase de sécurité incorrecte' }, { status: 403 });
+      const isPhraseValid = phrase === 'Elios is the best Academy';
+      const isCurrentPinValid = (body.currentPin || body.oldPin || pin) === pinSetting.value;
+
+      if (!isPhraseValid && !isCurrentPinValid) {
+        return NextResponse.json({ success: false, error: 'Le code PIN actuel est incorrect' }, { status: 403 });
       }
-      if (!newPin || newPin.length !== 6) {
+      if (!newPin || newPin.length !== 6 || !/^\d{6}$/.test(newPin)) {
         return NextResponse.json({ success: false, error: 'Le code PIN doit contenir exactement 6 chiffres' }, { status: 400 });
       }
       
