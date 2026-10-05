@@ -210,7 +210,7 @@ export default function CRMEliosPage() {
   const triggerWhatsAppPopup = (studentName: string, phone: string, status: string) => {
     let msg = '';
     const st = (status || '').trim().toLowerCase();
-    if (st === 'approved prospect') {
+    if (st === 'approved prospect' || st === 'approved' || st === 'converti') {
       msg = buildApprovedProspectMessage(
         whatsappTemplates.approvedProspectHeader,
         whatsappTemplates.approvedProspectFooter,
@@ -612,7 +612,9 @@ export default function CRMEliosPage() {
 
       const savedStatus = (editStatus || '').trim();
       const shouldTrigger = (
-        savedStatus.toLowerCase() === 'approved prospect'
+        savedStatus.toLowerCase() === 'approved prospect' ||
+        savedStatus.toLowerCase() === 'approved' ||
+        savedStatus.toLowerCase() === 'n/a'
       );
 
       if (selectedLead) {
@@ -1213,20 +1215,20 @@ export default function CRMEliosPage() {
                       {classSec}
                     </div>
 
-                    {/* Statut + Badge Rappel si délai dépassé */}
-                    <div data-l="Statut" className="flex items-center gap-2">
-                      <span className="st" style={{ '--s': statusColor } as React.CSSProperties}>
+                    {/* Statut + Badge Rappel si délai dépassé (alignement vertical sans déséquilibre de colonne) */}
+                    <div data-l="Statut" className="flex flex-col items-start gap-1 min-w-0">
+                      <span className="st whitespace-nowrap" style={{ '--s': statusColor } as React.CSSProperties}>
                         {l.status}
                       </span>
                       {isOverdueRappel && (
                         <span 
-                          className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-500/15 text-amber-600 border border-amber-500/30 flex items-center gap-1"
-                          title={`Délai dépassé (${getRappelsDelayDays(l)}j depuis la dernière mise à jour)`}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 whitespace-nowrap shadow-2xs"
+                          title={`Délai dépassé (${getRappelsDelayDays(l)}j depuis la dernière mise à jour) — Relance requise`}
                         >
-                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <svg className="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             {IC.bell}
                           </svg>
-                          Rappel
+                          <span>Rappel</span>
                         </span>
                       )}
                     </div>
@@ -1359,9 +1361,17 @@ export default function CRMEliosPage() {
                         )}
                       </div>
                     </div>
-                    <span className="st text-[11px] py-0.5 px-2" style={{ '--s': statusColor } as React.CSSProperties}>
-                      {l.status}
-                    </span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="st text-[11px] py-0.5 px-2" style={{ '--s': statusColor } as React.CSSProperties}>
+                        {l.status}
+                      </span>
+                      {isOverdueRappel && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 font-bold bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-md">
+                          <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">{IC.bell}</svg>
+                          <span>Rappel</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-[var(--ink2)] py-1.5 border-y border-[var(--line)]/50">
@@ -1383,9 +1393,6 @@ export default function CRMEliosPage() {
                         <span className="truncate max-w-[100px]">{modifierName}</span>
                       </span>
                       <span>{lastUpdatedDateStr}</span>
-                      {isOverdueRappel && (
-                        <span className="text-[10px] text-amber-600 font-bold bg-amber-500/15 px-1 rounded">Rappel</span>
-                      )}
                     </div>
 
                     <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
