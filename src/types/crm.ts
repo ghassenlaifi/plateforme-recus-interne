@@ -29,6 +29,7 @@ export interface LeadItem {
   familyGroup?: string;
   toElios?: boolean;
   fromFormatic?: boolean;
+  isMigratedToElios?: boolean;
   crmType: 'elios' | 'formatic';
 }
 

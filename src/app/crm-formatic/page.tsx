@@ -352,17 +352,18 @@ export default function CRMFormaticPage() {
   // KPI Stats avec TO ELIOS et Règle Métier des Rappels
   const stats = useMemo(() => {
     const list = Array.isArray(leads) ? leads : [];
-    const countStatus = (st: string) => list.filter(l => (l.status || '').trim().toLowerCase() === st.toLowerCase()).length;
+    const activeList = list.filter((l: any) => !l.isMigratedToElios);
+    const countStatus = (st: string) => activeList.filter(l => (l.status || '').trim().toLowerCase() === st.toLowerCase()).length;
     
     // Rappels stricts : N/A (>=5 jours), Potential/Approved Prospect (>=3 jours)
-    const rappelsCount = list.filter(l => isLeadInRappels(l)).length;
+    const rappelsCount = activeList.filter(l => isLeadInRappels(l)).length;
     
-    // TO ELIOS stats
-    const toEliosCount = list.filter(l => Boolean(l.toElios)).length;
+    // TO ELIOS stats (tous les prospects migrés vers Elios)
+    const toEliosCount = list.filter((l: any) => Boolean(l.toElios || l.isMigratedToElios)).length;
 
     return {
-      total: list.length,
-      approved: list.filter(l => {
+      total: activeList.length,
+      approved: activeList.filter(l => {
         const s = (l.status || '').trim().toLowerCase();
         return s === 'approved' || s === 'converti';
       }).length,
@@ -400,13 +401,18 @@ export default function CRMFormaticPage() {
       }
 
       // 2. Filtre par carte KPI active
+      if (activeCard === 'to_elios') {
+        if (!Boolean(l.toElios || (l as any).isMigratedToElios)) return false;
+      } else {
+        // En dehors du filtre TO ELIOS, les prospects migrés vers Elios ne polluent pas les listes actives Formatic
+        if ((l as any).isMigratedToElios) return false;
+      }
+
       if (activeCard === 'approved') {
         const st = (l.status || '').trim().toLowerCase();
         if (st !== 'approved' && st !== 'converti') return false;
       } else if (activeCard === 'potential') {
         if ((l.status || '').trim().toLowerCase() !== 'potential prospect') return false;
-      } else if (activeCard === 'to_elios') {
-        if (!Boolean(l.toElios)) return false;
       } else if (activeCard === 'rappels') {
         if (!isLeadInRappels(l)) return false;
       }
@@ -624,10 +630,13 @@ export default function CRMFormaticPage() {
       if (selectedLead) {
         setLastInteractedLeadId(selectedLead._id || selectedLead.id);
       }
+      if (editToElios) {
+        mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
+      }
       setSelectedLead(null);
       setShowUnsavedConfirm(false);
       mutate();
-      showToast(editToElios ? 'Prospect synchronisé vers Elios avec succès !' : 'Prospect mis à jour avec succès');
+      showToast(editToElios ? 'Prospect migré vers le CRM Elios avec succès !' : 'Prospect mis à jour avec succès');
 
       if (shouldTrigger) {
         triggerWhatsAppPopup(computedFullName, cleanPhone, savedStatus);
@@ -944,7 +953,7 @@ export default function CRMFormaticPage() {
           >
             <small>TO ELIOS</small>
             <b className="text-xl sm:text-2xl" style={{ color: '#6366F1' }}>{stats.toElios.toLocaleString('fr-FR')}</b>
-            <span className="text-xs">Copiés vers Elios</span>
+            <span className="text-xs">Migrés vers Elios</span>
             <i className="si" style={{ color: '#6366F1', background: 'rgba(99, 102, 241, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.share}</svg>
             </i>
@@ -1216,9 +1225,9 @@ export default function CRMFormaticPage() {
                               👪 {l.familyGroup}
                             </span>
                           )}
-                          {Boolean(l.toElios) && (
-                            <span className="text-[10px] text-indigo-600 font-bold inline-flex items-center gap-0.5" title="Copié vers CRM Elios">
-                              To Elios
+                          {Boolean(l.toElios || (l as any).isMigratedToElios) && (
+                            <span className="text-[10px] text-indigo-600 font-bold inline-flex items-center gap-0.5" title="Prospect migré vers le CRM Elios">
+                              Migré vers Elios
                             </span>
                           )}
                         </div>
@@ -1376,9 +1385,9 @@ export default function CRMFormaticPage() {
                               👪 {l.familyGroup}
                             </span>
                           )}
-                          {Boolean(l.toElios) && (
-                            <span className="text-[10px] text-indigo-600 font-bold block truncate">
-                              To Elios
+                          {Boolean(l.toElios || (l as any).isMigratedToElios) && (
+                            <span className="text-[10px] text-indigo-600 font-bold block truncate" title="Prospect migré vers le CRM Elios">
+                              Migré vers Elios
                             </span>
                           )}
                         </div>
@@ -1670,10 +1679,10 @@ export default function CRMFormaticPage() {
                     </span>
                   )}
 
-                  {/* Badge To Elios si actif */}
-                  {editToElios && (
+                  {/* Badge To Elios si actif ou migré */}
+                  {(editToElios || (selectedLead as any).isMigratedToElios || selectedLead.toElios) && (
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-600 border border-indigo-500/30 flex items-center gap-1 shadow-2xs">
-                      <span>To Elios</span>
+                      <span>{(selectedLead as any).isMigratedToElios ? 'Migré vers Elios' : 'To Elios'}</span>
                     </span>
                   )}
                 </div>
@@ -1692,6 +1701,18 @@ export default function CRMFormaticPage() {
 
             {/* CORPS PANORAMIQUE 3 COLONNES DEVANT L'OPERATEUR (COLONNE GAUCHE COMPACTÉE POUR FAVORISER LE CENTRE) */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              {(selectedLead as any).isMigratedToElios && (
+                <div className="mb-4 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between text-xs text-indigo-700 dark:text-indigo-300">
+                  <span className="flex items-center gap-2 font-medium">
+                    <span className="text-base">🚀</span>
+                    <span>Ce prospect a été migré définitivement vers le <b>CRM Elios</b>.</span>
+                  </span>
+                  <a href="/crm-elios" className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold text-[11px] hover:bg-indigo-700 transition">
+                    Accéder à CRM Elios →
+                  </a>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
                 
                 {/* COLONNE 1 : SIDEBAR COMPACTÉE (lg:col-span-2) AVEC AVATAR CERCLE OFFICIEL DU CRM */}
@@ -1765,19 +1786,29 @@ export default function CRMFormaticPage() {
                 <div className="lg:col-span-6 space-y-3.5">
                   {/* Bannière profil lié avec petit bouton TO ELIOS interactif élégant */}
                   <div className="bg-[var(--hover)]/70 border border-[var(--line)] rounded-xl py-2.5 px-3.5 flex items-center justify-between shadow-2xs">
-                    <span className="text-xs sm:text-sm font-bold text-[var(--ink)] tracking-tight">
-                      To Elios
-                    </span>
+                    <div className="flex flex-col pr-2">
+                      <span className="text-xs sm:text-sm font-bold text-[var(--ink)] tracking-tight">
+                        To Elios
+                      </span>
+                      <span className="text-[10px] text-[var(--ink3)]">
+                        {(selectedLead as any).isMigratedToElios
+                          ? 'Ce prospect est déjà migré vers le CRM Elios'
+                          : editToElios
+                            ? 'Ce prospect sera migré vers le CRM Elios lors de l\'enregistrement'
+                            : 'Activer pour migrer ce prospect vers le CRM Elios'}
+                      </span>
+                    </div>
                     {/* Bouton switch style iPhone (Hotspot iOS) */}
                     <button
                       type="button"
                       role="switch"
+                      disabled={Boolean((selectedLead as any).isMigratedToElios)}
                       aria-checked={editToElios}
                       onClick={() => setEditToElios(!editToElios)}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500/30 ${
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500/30 ${
                         editToElios ? 'bg-[#34C759]' : 'bg-[#E9E9EA] dark:bg-slate-600'
-                      }`}
-                      title={editToElios ? "To Elios : Activé (Cliquer pour désactiver)" : "To Elios : Désactivé (Cliquer pour activer)"}
+                      } ${(selectedLead as any).isMigratedToElios ? 'opacity-80 cursor-default' : 'cursor-pointer'}`}
+                      title={(selectedLead as any).isMigratedToElios ? "Déjà migré vers CRM Elios" : editToElios ? "To Elios : Activé (Migrera vers Elios)" : "To Elios : Désactivé"}
                     >
                       <span
                         className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${

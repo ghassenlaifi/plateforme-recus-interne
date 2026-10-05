@@ -51,7 +51,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       };
 
       if (crmType === 'formatic') {
-        rowData['To Elios'] = lead.toElios ? 'Oui' : 'Non';
+        rowData['To Elios'] = (lead.toElios || lead.fromFormatic) ? 'Oui' : 'Non';
+      } else {
+        rowData['From Formatic'] = (lead.fromFormatic || lead.source === 'From Formatic') ? 'Oui' : 'Non';
       }
 
       rowData['DateCreation'] = formatDateFr(lead.date);
@@ -64,7 +66,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
     // Create workbook & worksheet (with fallback headers if empty)
     const fallbackHeaders = crmType === 'formatic'
       ? ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'To Elios', 'DateCreation', 'DerniereMiseAJour', 'Notes']
-      : ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'DateCreation', 'DerniereMiseAJour', 'Notes'];
+      : ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'From Formatic', 'DateCreation', 'DerniereMiseAJour', 'Notes'];
 
     const ws = data.length > 0
       ? xlsx.utils.json_to_sheet(data)

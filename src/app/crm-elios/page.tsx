@@ -1198,7 +1198,7 @@ export default function CRMEliosPage() {
                           </span>
                         )}
                         {(l.fromFormatic || l.source === 'From Formatic') && (
-                          <span className="text-[10px] text-indigo-600 font-bold inline-flex items-center gap-0.5 mt-0.5" title="Prospect copié depuis CRM Formatic">
+                          <span className="text-[10px] text-indigo-600 font-bold inline-flex items-center gap-0.5 mt-0.5" title="Prospect migré depuis CRM Formatic">
                             From Formatic
                           </span>
                         )}
@@ -1355,7 +1355,7 @@ export default function CRMEliosPage() {
                           </span>
                         )}
                         {(l.fromFormatic || l.source === 'From Formatic') && (
-                          <span className="text-[10px] text-indigo-600 font-bold block truncate">
+                          <span className="text-[10px] text-indigo-600 font-bold block truncate" title="Prospect migré depuis CRM Formatic">
                             From Formatic
                           </span>
                         )}

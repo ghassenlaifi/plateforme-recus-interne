@@ -11,6 +11,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 
+    if (crmType === 'formatic') {
+      // Pour Formatic : renvoyer les prospects Formatic actifs ainsi que les prospects migrés vers Elios
+      const formaticLeads = await Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).lean();
+      const migratedLeads = await Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).lean();
+
+      const formattedMigrated = migratedLeads.map((l: any) => ({
+        ...l,
+        isMigratedToElios: true,
+        toElios: true
+      }));
+
+      return NextResponse.json([...formaticLeads, ...formattedMigrated]);
+    }
+
     // Sort by creation date so modifications keep leads strictly in their place
     const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 });
     return NextResponse.json(leads);
@@ -30,7 +44,94 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     }
 
     const body = await request.json();
-    
+    const cleanPhone = String(body.phone || '').replace(/\D/g, '').replace(/^216(?=\d{8}$)/, '');
+    const firstName = (body.firstName || '').trim();
+    const lastName = (body.lastName || '').trim();
+    const computedName = body.name || [firstName, lastName].filter(Boolean).join(' ') || 'Prospect sans nom';
+    const now = new Date();
+    let leadStatus = body.status || 'Lead';
+    if (leadStatus === 'Converti') leadStatus = 'Approved';
+
+    // Si nouveau prospect créé avec To Elios activé : création directe dans Elios (MIGRATION, zéro copie dans Formatic)
+    const isToEliosActive = Boolean(body.toElios);
+    if (crmType === 'formatic' && isToEliosActive) {
+      const existingElios = await Lead.findOne({ crmType: 'elios', phone: cleanPhone || String(body.phone || '') });
+      if (existingElios) {
+        existingElios.fromFormatic = true;
+        existingElios.updatedAt = now;
+        existingElios.lastModifiedBy = body.staff || 'Système';
+        existingElios.notes = [
+          {
+            id: `note-from-formatic-${Date.now()}`,
+            text: `Nouveau prospect Formatic créé et migré vers Elios par ${body.staff || 'Système'}`,
+            by: body.staff || 'Système',
+            addedBy: body.staff || 'Système',
+            date: now.toISOString(),
+            addedAt: now
+          },
+          ...(existingElios.notes || [])
+        ];
+        await existingElios.save();
+        return NextResponse.json({
+          ...existingElios.toObject(),
+          migrated: true,
+          targetCrm: 'elios'
+        }, { status: 201 });
+      }
+
+      // Attribution d'un ID PRO pour Elios
+      let nextIdNumber = 1;
+      const allLeadsWithId = await Lead.find({ crmType: 'elios', id: /^PRO-\d+$/ }, { id: 1 }).lean();
+      if (allLeadsWithId && allLeadsWithId.length > 0) {
+        let maxNum = 0;
+        for (const item of allLeadsWithId) {
+          const num = parseInt(item.id.replace('PRO-', ''), 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+        nextIdNumber = maxNum + 1;
+      }
+      const newEliosId = `PRO-${nextIdNumber.toString().padStart(5, '0')}`;
+
+      const eliosLead = await Lead.create({
+        id: body.id || newEliosId,
+        firstName,
+        lastName,
+        name: computedName,
+        phone: cleanPhone || String(body.phone || ''),
+        offer: body.offer || 'Zero to Hero',
+        amount: body.amount || '',
+        source: 'From Formatic',
+        grade: body.grade || '',
+        section: body.section || '',
+        status: leadStatus,
+        staff: body.staff || 'Système',
+        crmType: 'elios',
+        familyGroup: (body.familyGroup || '').trim(),
+        toElios: false,
+        fromFormatic: true,
+        date: now,
+        updatedAt: now,
+        lastModifiedBy: body.staff || 'Système',
+        notes: [
+          ...(body.notes || []),
+          {
+            id: `note-from-formatic-${Date.now()}`,
+            text: `Nouveau prospect Formatic créé et migré vers Elios par ${body.staff || 'Système'}`,
+            by: body.staff || 'Système',
+            addedBy: body.staff || 'Système',
+            date: now.toISOString(),
+            addedAt: now
+          }
+        ]
+      });
+
+      return NextResponse.json({
+        ...eliosLead.toObject(),
+        migrated: true,
+        targetCrm: 'elios'
+      }, { status: 201 });
+    }
+
     // Auto-generate an ID (PRO-XXXXX) sequentially
     let nextIdNumber = 1;
     const allLeadsWithId = await Lead.find({ crmType, id: /^PRO-\d+$/ }, { id: 1 }).lean();
@@ -44,15 +145,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     }
     const newId = `PRO-${nextIdNumber.toString().padStart(5, '0')}`;
 
-    let leadStatus = body.status || 'Lead'; // Par défaut 'Lead'
-    if (leadStatus === 'Converti') leadStatus = 'Approved';
-
-    const cleanPhone = String(body.phone || '').replace(/\D/g, '').replace(/^216(?=\d{8}$)/, '');
-    const firstName = (body.firstName || '').trim();
-    const lastName = (body.lastName || '').trim();
-    const computedName = body.name || [firstName, lastName].filter(Boolean).join(' ') || 'Prospect sans nom';
-    const now = new Date();
-
     const lead = await Lead.create({
       id: body.id || newId,
       firstName,
@@ -61,78 +153,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       phone: cleanPhone || String(body.phone || ''),
       offer: body.offer || 'Zero to Hero',
       amount: body.amount || '',
-      source: body.source || 'Facebook', // Par défaut 'Facebook'
+      source: body.source || 'Facebook',
       grade: body.grade || '',
       section: body.section || '',
       status: leadStatus,
       staff: body.staff || 'Système',
       crmType: crmType,
       familyGroup: (body.familyGroup || '').trim(),
-      toElios: Boolean(body.toElios),
+      toElios: false,
       date: now,
       updatedAt: now,
       lastModifiedBy: body.staff || 'Système',
       notes: body.notes || []
     });
-
-    // Si nouveau prospect Formatic avec To Elios coché : synchroniser / copier vers Elios
-    const isToEliosActive = Boolean(body.toElios !== undefined ? body.toElios : (lead.toElios ?? (lead as any)?._doc?.toElios));
-    if (crmType === 'formatic' && isToEliosActive) {
-      try {
-        const targetPhone = lead.phone || cleanPhone;
-        const existingElios = await Lead.findOne({ crmType: 'elios', phone: targetPhone });
-        if (existingElios) {
-          existingElios.fromFormatic = true;
-          await existingElios.save();
-        } else {
-          let nextNum = 1;
-          const lastElios = await Lead.find({ crmType: 'elios', id: /^PRO-\d+$/ }, { id: 1 }).lean();
-          if (lastElios && lastElios.length > 0) {
-            let maxN = 0;
-            for (const item of lastElios) {
-              const num = parseInt(item.id.replace('PRO-', ''), 10);
-              if (!isNaN(num) && num > maxN) maxN = num;
-            }
-            nextNum = maxN + 1;
-          }
-          const newEliosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
-
-          await Lead.create({
-            id: newEliosId,
-            firstName: lead.firstName || '',
-            lastName: lead.lastName || '',
-            name: lead.name || 'Prospect sans nom',
-            phone: lead.phone,
-            offer: lead.offer || 'Zero to Hero',
-            amount: lead.amount || '',
-            source: 'From Formatic',
-            grade: lead.grade || '',
-            section: lead.section || '',
-            status: lead.status || 'Lead',
-            staff: lead.staff || 'Système',
-            crmType: 'elios',
-            familyGroup: lead.familyGroup || '',
-            date: now,
-            updatedAt: now,
-            lastModifiedBy: body.staff || 'Système',
-            fromFormatic: true,
-            notes: [
-              ...(lead.notes || []),
-              {
-                id: `note-from-formatic-${Date.now()}`,
-                text: `Nouveau prospect Formatic synchronisé vers Elios`,
-                by: body.staff || 'Système',
-                addedBy: body.staff || 'Système',
-                date: now.toISOString(),
-                addedAt: now
-              }
-            ]
-          });
-        }
-      } catch (copyErr) {
-        console.error('Erreur synchronisation To Elios:', copyErr);
-      }
-    }
 
     return NextResponse.json(lead, { status: 201 });
   } catch (error: any) {
