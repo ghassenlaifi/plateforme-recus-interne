@@ -1575,7 +1575,7 @@ export default function CRMEliosPage() {
       )}
 
       {/* ========================================================= */}
-      {/* MODALE : FICHE PROSPECT COMPLETE (DESIGN PANORAMIQUE 3 COLONNES) */}
+      {/* MODALE : FICHE PROSPECT COMPLETE (DESIGN PANORAMIQUE 3 COLONNES HARMONISÉ) */}
       {/* ========================================================= */}
       {selectedLead && (
         <div 
@@ -1586,14 +1586,14 @@ export default function CRMEliosPage() {
         >
           <div className="w-full max-w-6xl xl:max-w-7xl max-h-[92vh] flex flex-col bg-[var(--card)] rounded-2xl sm:rounded-3xl shadow-2xl border border-[var(--line)] overflow-hidden animate-pop">
             
-            {/* EN-TETE EXECUTIVE (EYEBROW + NOM + BADGES + BOUTON FERMER SQUIRCLE) */}
-            <div className="px-5 py-4 border-b border-[var(--line)] bg-[var(--card)] flex items-center justify-between gap-4">
+            {/* EN-TETE EXECUTIVE EN FRANÇAIS (EYEBROW + NOM + BADGES + BOUTON FERMER SQUIRCLE) */}
+            <div className="px-5 py-3.5 border-b border-[var(--line)] bg-[var(--card)] flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <span className="text-[11px] font-bold tracking-widest text-amber-600 dark:text-amber-400 uppercase block">
-                  LEAD DETAILS
+                <span className="text-[10px] font-bold tracking-widest text-amber-600 dark:text-amber-400 uppercase block">
+                  FICHE PROSPECT
                 </span>
                 <div className="flex items-center gap-2.5 flex-wrap mt-0.5">
-                  <h2 className="text-xl sm:text-2xl font-black text-[var(--ink)] truncate">
+                  <h2 className="text-lg sm:text-xl font-black text-[var(--ink)] truncate">
                     {[editFirst, editLast].filter(Boolean).join(' ') || selectedLead.name || 'Prospect sans nom'}
                   </h2>
 
@@ -1636,95 +1636,95 @@ export default function CRMEliosPage() {
               </button>
             </div>
 
-            {/* CORPS PANORAMIQUE 3 COLONNES DEVANT L'OPERATEUR */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
+            {/* CORPS PANORAMIQUE 3 COLONNES DEVANT L'OPERATEUR (COLONNE GAUCHE COMPACTÉE POUR FAVORISER LE CENTRE) */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
                 
-                {/* COLONNE 1 : SIDEBAR IDENTITE & METRIQUES CLES (lg:col-span-3) */}
-                <div className="lg:col-span-3 space-y-4">
-                  {/* Avatar Grand Format */}
-                  <div className="w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                {/* COLONNE 1 : SIDEBAR COMPACTÉE (lg:col-span-2) AVEC AVATAR CERCLE OFFICIEL DU CRM */}
+                <div className="lg:col-span-2 space-y-3 border-b lg:border-b-0 lg:border-r border-[var(--line)] pr-0 lg:pr-3 pb-3 lg:pb-0">
+                  {/* Avatar Cercle officiel du CRM */}
+                  <div className="w-12 h-12 rounded-full bg-[var(--acc-s)] text-[var(--acc)] border border-[var(--acc)]/30 flex items-center justify-center font-bold text-sm sm:text-base shadow-2xs">
                     {getInitials(selectedLead.name, editFirst, editLast)}
                   </div>
 
-                  {/* Key-Value Summary Stack */}
-                  <div className="space-y-3 pt-2">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">STATUS</span>
+                  {/* Pile d'informations compacte en français */}
+                  <div className="space-y-2.5 pt-1">
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">STATUT</span>
                       <div 
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
                         style={{
                           backgroundColor: `color-mix(in srgb, ${ELIOS_STATUS_COLORS[editStatus] || '#77766F'} 14%, transparent)`,
                           color: ELIOS_STATUS_COLORS[editStatus] || '#77766F'
                         }}
                       >
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
                         <span>{editStatus}</span>
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">GRADE SPECIALITY</span>
-                      <p className="text-xs font-semibold text-[var(--ink)]">
-                        {[editGrade, editSection].filter(Boolean).join(' • ') || 'Non renseigné'}
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">CLASSE & SECTION</span>
+                      <p className="text-[11px] font-semibold text-[var(--ink)] truncate" title={[editGrade, editSection].filter(Boolean).join(' • ') || 'Non renseigné'}>
+                        {[editGrade, editSection].filter(Boolean).join(' • ') || '—'}
                       </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">SOURCE</span>
-                      <p className="text-xs font-semibold text-[var(--ink)]">
-                        {editSource || 'Inconnue'}
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">SOURCE</span>
+                      <p className="text-[11px] font-semibold text-[var(--ink)] truncate">
+                        {editSource || '—'}
                       </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">ASSIGNED TO</span>
-                      <p className="text-xs font-semibold text-[var(--ink)]">
-                        {selectedLead.staff || activeUser || 'Unassigned'}
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">ASSIGNÉ À</span>
+                      <p className="text-[11px] font-semibold text-[var(--ink)] truncate" title={selectedLead.staff || activeUser || 'Non assigné'}>
+                        {selectedLead.staff || activeUser || 'Non assigné'}
                       </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">CREATED AT</span>
-                      <p className="text-xs text-[var(--ink2)] font-mono">
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">DATE CRÉATION</span>
+                      <p className="text-[10px] text-[var(--ink2)] font-mono">
                         {formatDateTimeFr(selectedLead.createdAt || selectedLead.date)}
                       </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">RECALL</span>
-                      <p className="text-xs text-[var(--ink2)]">
-                        {isLeadInRappels(selectedLead) ? '⚠️ Relance prioritaire' : 'No recall'}
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">RAPPEL</span>
+                      <p className="text-[11px] text-[var(--ink2)]">
+                        {isLeadInRappels(selectedLead) ? '⚠️ Relance active' : 'Aucun rappel'}
                       </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">OFFER HISTORY</span>
-                      <p className="text-xs font-medium text-[var(--ink)]">
-                        {editOffer || '0 offers'} {editAmount ? `• ${editAmount} DT` : ''}
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">OFFRE & PAIEMENT</span>
+                      <p className="text-[11px] font-medium text-[var(--ink)]">
+                        {editOffer || 'Sans offre'} {editAmount ? `• ${editAmount} DT` : ''}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* COLONNE 2 : FORMULAIRE PRINCIPAL DE MODIFICATION (lg:col-span-5) */}
-                <div className="lg:col-span-5 space-y-4">
-                  {/* Banniere profil lie */}
-                  <div className="bg-[var(--hover)]/60 border border-[var(--line)] rounded-xl p-3 flex items-center justify-between">
+                {/* COLONNE 2 : FORMULAIRE PRINCIPAL ÉLARGI (lg:col-span-6) TOUT EN FRANÇAIS */}
+                <div className="lg:col-span-6 space-y-3.5">
+                  {/* Bannière profil lié */}
+                  <div className="bg-[var(--hover)]/60 border border-[var(--line)] rounded-xl py-2 px-3 flex items-center justify-between">
                     <div>
-                      <span className="text-xs font-bold text-[var(--ink)] block">Linked student profile</span>
-                      <span className="text-[10px] text-[var(--ink3)]">The identity is verified and synchronized.</span>
+                      <span className="text-xs font-bold text-[var(--ink)] block">Profil élève Elios</span>
+                      <span className="text-[10px] text-[var(--ink3)]">Informations synchronisées en temps réel</span>
                     </div>
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
-                      ● Active
+                      ● Actif
                     </span>
                   </div>
 
-                  {/* Grille 2 colonnes des champs */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Grille des champs de saisie (2 colonnes) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        FIRST NAME
+                        PRÉNOM
                       </label>
                       <input 
                         value={editFirst} 
@@ -1736,7 +1736,7 @@ export default function CRMEliosPage() {
 
                     <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        LAST NAME
+                        NOM
                       </label>
                       <input 
                         value={editLast} 
@@ -1748,7 +1748,7 @@ export default function CRMEliosPage() {
 
                     <div className="sm:col-span-2">
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        PHONE NUMBER
+                        NUMÉRO DE TÉLÉPHONE
                       </label>
                       <div className="flex gap-2">
                         <input 
@@ -1777,7 +1777,7 @@ export default function CRMEliosPage() {
 
                     <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        GRADE
+                        CLASSE
                       </label>
                       <select 
                         value={editGrade} 
@@ -1791,7 +1791,7 @@ export default function CRMEliosPage() {
 
                     <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        SPECIALITY
+                        SECTION
                       </label>
                       <select 
                         value={editSection} 
@@ -1818,7 +1818,7 @@ export default function CRMEliosPage() {
 
                     <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        STATUS
+                        STATUT
                       </label>
                       <select 
                         value={editStatus} 
@@ -1858,7 +1858,7 @@ export default function CRMEliosPage() {
 
                     <div className="sm:col-span-2">
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        FAMILY GROUP (FACULTATIF)
+                        GROUPE FAMILIAL (FACULTATIF)
                       </label>
                       <input 
                         value={editFamilyGroup} 
@@ -1872,19 +1872,19 @@ export default function CRMEliosPage() {
                   {editErr && <p className="text-xs text-red-500 font-semibold" role="alert">{editErr}</p>}
                 </div>
 
-                {/* COLONNE 3 : CONTACT & ACTIVITE / NOTES (lg:col-span-4) */}
-                <div className="lg:col-span-4 space-y-4">
+                {/* COLONNE 3 : CONTACT & HISTORIQUE DES NOTES (lg:col-span-4) */}
+                <div className="lg:col-span-4 space-y-3.5">
                   
                   {/* Carte Contact WhatsApp rapide */}
-                  <div className="bg-[var(--card)] border border-[var(--line)] rounded-2xl p-3.5 shadow-2xs">
+                  <div className="bg-[var(--card)] border border-[var(--line)] rounded-2xl p-3 shadow-2xs">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center flex-shrink-0">
                           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.chat}</svg>
                         </div>
                         <div>
-                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest block">CONTACT</span>
-                          <span className="text-xs font-bold text-[var(--ink)]">WhatsApp message</span>
+                          <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest block">CONTACT</span>
+                          <span className="text-xs font-bold text-[var(--ink)]">Message WhatsApp</span>
                         </div>
                       </div>
                       <button 
@@ -1899,16 +1899,16 @@ export default function CRMEliosPage() {
                   </div>
 
                   {/* Section Contact Activity / Historique des notes */}
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">CONTACT ACTIVITY</span>
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">HISTORIQUE DES NOTES</span>
                       <span className="text-xs text-[var(--ink3)] font-semibold">
-                        {selectedLead.notes?.length || 0} event{(selectedLead.notes?.length || 0) > 1 ? 's' : ''}
+                        {selectedLead.notes?.length || 0} note{(selectedLead.notes?.length || 0) > 1 ? 's' : ''}
                       </span>
                     </div>
 
                     {/* Liste des notes */}
-                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                       {selectedLead.notes && selectedLead.notes.length > 0 ? (
                         selectedLead.notes.map((n: any, idx: number) => {
                           const noteId = n.id || `n-${idx}`;
@@ -1988,26 +1988,23 @@ export default function CRMEliosPage() {
                           );
                         })
                       ) : (
-                        <p className="text-xs text-[var(--ink3)] italic py-2">No contact activities have been added yet.</p>
+                        <p className="text-xs text-[var(--ink3)] italic py-2">Aucune note enregistrée pour ce prospect.</p>
                       )}
                     </div>
                   </div>
 
-                  {/* Carte New Activity / Ajouter une note */}
-                  <div className="bg-[var(--hover)]/60 border border-amber-500/30 rounded-2xl p-3.5 space-y-2.5">
+                  {/* Carte Clairement « Ajouter une note » en français */}
+                  <div className="bg-[var(--hover)]/60 border border-amber-500/30 rounded-2xl p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-amber-600 text-sm">📝</span>
-                      <div>
-                        <span className="text-xs font-bold text-[var(--ink)] block">New activity</span>
-                        <span className="text-[10px] text-[var(--ink3)]">Add a note and optional contact details</span>
-                      </div>
+                      <span className="text-xs font-bold text-[var(--ink)] block">Ajouter une note</span>
                     </div>
                     <textarea 
-                      placeholder="Write a note…"
+                      placeholder="Écrire une note…"
                       value={newNoteText}
                       onChange={(e) => setNewNoteText(e.target.value)}
                       className="w-full text-xs p-2.5 rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      rows={3}
+                      rows={2}
                     />
                     <div className="flex justify-end">
                       <button 
@@ -2016,7 +2013,7 @@ export default function CRMEliosPage() {
                         onClick={handleAddNote}
                         disabled={!newNoteText.trim() || isAddingNote}
                       >
-                        {isAddingNote ? 'Ajout...' : 'Save note'}
+                        {isAddingNote ? 'Ajout...' : 'Ajouter la note'}
                       </button>
                     </div>
                   </div>
@@ -2026,8 +2023,8 @@ export default function CRMEliosPage() {
               </div>
             </div>
 
-            {/* PIED DE MODALE PANORAMIQUE RESPONSIVE */}
-            <div className="px-5 py-3.5 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
+            {/* PIED DE MODALE PANORAMIQUE RESPONSIVE TOUT EN FRANÇAIS */}
+            <div className="px-5 py-3 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
               <button 
                 className={`btn del text-xs py-2 px-3.5 rounded-xl ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''}`} 
                 type="button" 
@@ -2051,7 +2048,7 @@ export default function CRMEliosPage() {
                 </button>
 
                 <button className="btn text-xs py-2 px-3.5 rounded-xl font-medium" type="button" onClick={handleRequestCloseFiche}>
-                  Cancel
+                  Annuler
                 </button>
 
                 <button 
@@ -2060,7 +2057,7 @@ export default function CRMEliosPage() {
                   onClick={handleSaveLead}
                   disabled={isSaving}
                 >
-                  {isSaving ? 'Saving...' : 'Save lead'}
+                  {isSaving ? 'Enregistrement...' : 'Enregistrer'}
                 </button>
               </div>
             </div>
