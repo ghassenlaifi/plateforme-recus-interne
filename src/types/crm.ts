@@ -22,6 +22,7 @@ export interface LeadItem {
   status: string;
   staff?: string;
   date: string | Date;
+  createdAt?: string | Date;
   updatedAt?: string | Date;
   lastModifiedBy?: string;
   notes?: LeadNote[];

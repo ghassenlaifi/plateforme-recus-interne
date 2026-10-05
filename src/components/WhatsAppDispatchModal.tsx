@@ -61,13 +61,13 @@ export function WhatsAppDispatchModal({
         }}
       >
         {/* Header */}
-        <div className="dh" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="dh" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 22px' }}>
           <div 
             style={{ 
-              width: 38, 
-              height: 38, 
-              borderRadius: '12px', 
-              background: '#25D36618', 
+              width: 42, 
+              height: 42, 
+              borderRadius: '14px', 
+              background: '#25D36622', 
               color: '#25D366',
               display: 'grid',
               placeItems: 'center',
@@ -79,10 +79,13 @@ export function WhatsAppDispatchModal({
             </svg>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--ink)' }}>
+            <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#16A34A', display: 'block' }}>
+              Communication WhatsApp
+            </span>
+            <h3 style={{ margin: '2px 0 0', fontSize: '18px', fontWeight: 800, color: 'var(--ink)' }}>
               {isApproved ? 'Envoyer les modes de paiement' : 'Envoyer un message de relance'}
             </h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
               <span 
                 style={{
                   display: 'inline-flex',
@@ -98,7 +101,6 @@ export function WhatsAppDispatchModal({
               >
                 Statut : {targetStatus}
               </span>
-              <span style={{ fontSize: '12px', color: 'var(--ink3)' }}>WhatsApp Direct</span>
             </div>
           </div>
           <button 

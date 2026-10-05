@@ -278,12 +278,28 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <Link href="/" className="btn inline-flex items-center gap-1.5 self-start sm:self-auto">
-            <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-              <path d="m15 18-6-6 6-6"/>
-            </svg>
-            <span>Retour à l'accueil</span>
-          </Link>
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button 
+              type="button" 
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-elios-welcome'));
+              }} 
+              className="btn inline-flex items-center gap-1.5"
+              title="Tester l'affichage de la modale d'accueil quotidienne (24h)"
+            >
+              <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              <span>Aperçu Accueil 24h</span>
+            </button>
+
+            <Link href="/" className="btn inline-flex items-center gap-1.5">
+              <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                <path d="m15 18-6-6 6-6"/>
+              </svg>
+              <span>Retour à l'accueil</span>
+            </Link>
+          </div>
         </div>
 
         {/* Barre d'onglets épurée & responsive */}

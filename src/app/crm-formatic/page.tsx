@@ -44,8 +44,24 @@ const IC = {
   warning: <><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
   chevronLeft: <path d="m15 18-6-6 6-6"/>,
   chevronRight: <path d="m9 18 6-6-6-6"/>,
-  usersGroup: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>
+  usersGroup: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
 };
+
+function getPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: (number | '...')[] = [1];
+  if (current > 3) pages.push('...');
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+  if (current < total - 2) pages.push('...');
+  pages.push(total);
+  return pages;
+}
 
 export default function CRMFormaticPage() {
   const [activeUser, setActiveUser] = useState<string | null>(null);
@@ -109,9 +125,29 @@ export default function CRMFormaticPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // Modales
+  // Modales & Fiche Prospect
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
+  const [lastInteractedLeadId, setLastInteractedLeadId] = useState<string | null>(null);
+
+  // Déterminer le dernier prospect modifié / consulté (conserve sa position dans la liste)
+  const effectiveLastModifiedId = useMemo(() => {
+    if (lastInteractedLeadId) return lastInteractedLeadId;
+    if (!leads || !Array.isArray(leads) || leads.length === 0) return null;
+    let latest = leads[0];
+    let latestTime = 0;
+    for (const l of leads) {
+      if (l.updatedAt) {
+        const t = new Date(l.updatedAt).getTime();
+        if (t > latestTime) {
+          latestTime = t;
+          latest = l;
+        }
+      }
+    }
+    return latestTime > 0 ? (latest._id || latest.id) : null;
+  }, [lastInteractedLeadId, leads]);
+
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -427,9 +463,11 @@ export default function CRMFormaticPage() {
 
       return true;
     }).sort((a, b) => {
-      const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : new Date(b.date).getTime();
-      const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : new Date(a.date).getTime();
-      return timeB - timeA;
+      // Tri stable par date de création : les modifications/consultations ne changent jamais l'ordre de la liste
+      const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.id || b._id).localeCompare(String(a.id || a._id));
     });
   }, [leads, filterQuery, activeCard, filterStatus, filterClasse, filterSection, filterStaff, filterDate, customStartDate, customEndDate]);
 
@@ -564,6 +602,9 @@ export default function CRMFormaticPage() {
         savedStatus.toLowerCase() === 'n/a'
       );
 
+      if (selectedLead) {
+        setLastInteractedLeadId(selectedLead._id || selectedLead.id);
+      }
       setSelectedLead(null);
       setShowUnsavedConfirm(false);
       mutate();
@@ -585,6 +626,7 @@ export default function CRMFormaticPage() {
     try {
       setIsAddingNote(true);
       const targetId = selectedLead._id || selectedLead.id;
+      setLastInteractedLeadId(targetId);
       const res = await fetch(`/api/leads/formatic/${targetId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -601,6 +643,7 @@ export default function CRMFormaticPage() {
       if (!res.ok) throw new Error('Impossible d’ajouter la note');
       const updated = await res.json();
       setSelectedLead(updated);
+      setLastInteractedLeadId(targetId);
       setNewNoteText('');
       mutate();
       showToast('Note ajoutée');
@@ -630,6 +673,7 @@ export default function CRMFormaticPage() {
       if (!res.ok) throw new Error('Impossible de modifier la note');
       const updated = await res.json();
       setSelectedLead(updated);
+      setLastInteractedLeadId(targetId);
       setEditingNoteId(null);
       setEditingNoteText('');
       mutate();
@@ -1090,21 +1134,51 @@ export default function CRMFormaticPage() {
                 const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
                 const isOverdueRappel = isLeadInRappels(l);
                 const statusColor = FORMATIC_STATUS_COLORS[l.status] || '#77766F';
+                const isLastModified = Boolean(effectiveLastModifiedId && (l._id === effectiveLastModifiedId || l.id === effectiveLastModifiedId));
+                const isRappelFilterActive = activeCard === 'rappels';
 
                 return (
                   <div 
                     key={l._id || l.id} 
-                    className="tr hover:bg-[var(--hover)] transition"
+                    className={`tr hover:bg-[var(--hover)] transition ${isLastModified ? 'is-last-modified' : ''}`}
                     style={{ '--i': n } as React.CSSProperties}
-                    onClick={() => setSelectedLead(l)}
+                    onClick={() => {
+                      setSelectedLead(l);
+                      setLastInteractedLeadId(l._id || l.id);
+                    }}
                   >
                     {/* Nom et Initiale (SANS LA REFERENCE PRO-XXXXX) */}
                     <div className="c1">
                       <span className="ini">{getInitials(l.name, l.firstName, l.lastName)}</span>
                       <div style={{ minWidth: 0 }}>
-                        <b className={hasFullName ? "text-[var(--ink)]" : "nn text-[var(--ink3)]"}>
-                          {hasFullName ? l.name : "Nom non renseigné"}
-                        </b>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {isRappelFilterActive && (
+                            <span 
+                              className="rappel-beacon" 
+                              title="Filtre Rappel actif : relance prioritaire requise pour cet élève"
+                            >
+                              <span className="rappel-beacon-ping"></span>
+                              <span className="rappel-beacon-dot"></span>
+                            </span>
+                          )}
+                          <b className={hasFullName ? "text-[var(--ink)]" : "nn text-[var(--ink3)]"}>
+                            {hasFullName ? l.name : "Nom non renseigné"}
+                          </b>
+                          {isLastModified && (
+                            <span 
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
+                              style={{
+                                backgroundColor: 'color-mix(in srgb, var(--acc, #5B45E0) 16%, transparent)',
+                                color: 'var(--acc, #5B45E0)',
+                                border: '1px solid color-mix(in srgb, var(--acc, #5B45E0) 32%, transparent)',
+                              }}
+                              title="Dernière modification enregistrée"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--acc, #5B45E0)' }}></span>
+                              Dernière modification
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                           {l.familyGroup && (
                             <span className="text-[11px] text-[var(--acc)] font-medium truncate" title={`Groupe : ${l.familyGroup}`}>
@@ -1219,12 +1293,17 @@ export default function CRMFormaticPage() {
               const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
               const isOverdueRappel = isLeadInRappels(l);
               const statusColor = FORMATIC_STATUS_COLORS[l.status] || '#77766F';
+              const isLastModified = Boolean(effectiveLastModifiedId && (l._id === effectiveLastModifiedId || l.id === effectiveLastModifiedId));
+              const isRappelFilterActive = activeCard === 'rappels';
 
               return (
                 <div 
                   key={l._id || l.id}
-                  onClick={() => setSelectedLead(l)}
-                  className="bg-[var(--card)] p-3.5 rounded-2xl border border-[var(--line)] shadow-xs active:bg-[var(--hover)] transition"
+                  onClick={() => {
+                    setSelectedLead(l);
+                    setLastInteractedLeadId(l._id || l.id);
+                  }}
+                  className={`bg-[var(--card)] p-3.5 rounded-2xl border border-[var(--line)] shadow-xs active:bg-[var(--hover)] transition ${isLastModified ? 'card-last-modified' : ''}`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -1232,9 +1311,34 @@ export default function CRMFormaticPage() {
                         {getInitials(l.name, l.firstName, l.lastName)}
                       </span>
                       <div className="min-w-0">
-                        <b className={`text-sm block truncate ${hasFullName ? 'text-[var(--ink)]' : 'text-[var(--ink3)]'}`}>
-                          {hasFullName ? l.name : "Nom non renseigné"}
-                        </b>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {isRappelFilterActive && (
+                            <span 
+                              className="rappel-beacon" 
+                              title="Filtre Rappel actif : relance prioritaire requise pour cet élève"
+                            >
+                              <span className="rappel-beacon-ping"></span>
+                              <span className="rappel-beacon-dot"></span>
+                            </span>
+                          )}
+                          <b className={`text-sm block truncate ${hasFullName ? 'text-[var(--ink)]' : 'text-[var(--ink3)]'}`}>
+                            {hasFullName ? l.name : "Nom non renseigné"}
+                          </b>
+                          {isLastModified && (
+                            <span 
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
+                              style={{
+                                backgroundColor: 'color-mix(in srgb, var(--acc, #5B45E0) 16%, transparent)',
+                                color: 'var(--acc, #5B45E0)',
+                                border: '1px solid color-mix(in srgb, var(--acc, #5B45E0) 32%, transparent)',
+                              }}
+                              title="Dernière modification enregistrée"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--acc, #5B45E0)' }}></span>
+                              Dernière modification
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {l.familyGroup && (
                             <span className="text-[10px] text-[var(--acc)] font-medium block truncate">
@@ -1308,26 +1412,89 @@ export default function CRMFormaticPage() {
           )}
         </div>
 
-        {/* PAGINATION */}
+        {/* Barre de Pagination Avancée avec Possibilité de Choisir Directement la Page */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-3 border-t border-[var(--line)] text-xs text-[var(--ink2)]">
-            <button 
-              className="btn py-1.5 px-3" 
-              type="button" 
-              disabled={currentPage <= 1} 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            >
-              Précédent
-            </button>
-            <span>Page {currentPage} sur {totalPages}</span>
-            <button 
-              className="btn py-1.5 px-3" 
-              type="button" 
-              disabled={currentPage >= totalPages} 
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            >
-              Suivant
-            </button>
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-4 pt-3 border-t border-[var(--line)] px-2 text-xs text-[var(--ink2)]">
+            <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+              <span className="text-[var(--ink3)]">
+                Affichage {((currentPage - 1) * pageSize + 1).toLocaleString('fr-FR')} - {Math.min(currentPage * pageSize, filteredLeads.length).toLocaleString('fr-FR')} sur {filteredLeads.length.toLocaleString('fr-FR')} prospects
+              </span>
+              <span className="hidden sm:inline text-[var(--line)]">|</span>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="formatic-page-select" className="text-[var(--ink3)] whitespace-nowrap font-medium">
+                  Aller à la page :
+                </label>
+                <select
+                  id="formatic-page-select"
+                  value={currentPage}
+                  onChange={(e) => setCurrentPage(Number(e.target.value))}
+                  className="py-1 px-2.5 text-xs font-semibold rounded-lg border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] cursor-pointer hover:border-[var(--acc)] transition focus:outline-none focus:ring-1 focus:ring-[var(--acc)] shadow-2xs"
+                >
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <option key={p} value={p}>
+                      Page {p} sur {totalPages}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 flex-wrap justify-center">
+              <button
+                type="button"
+                className="btn py-1 px-2 text-xs font-medium"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(1)}
+                title="Première page"
+              >
+                «
+              </button>
+              <button
+                type="button"
+                className="btn py-1 px-2.5 text-xs font-medium"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              >
+                Précédent
+              </button>
+
+              {getPageNumbers(currentPage, totalPages).map((p, idx) => (
+                p === '...' ? (
+                  <span key={`dots-${idx}`} className="px-1 text-[var(--ink3)] select-none">...</span>
+                ) : (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`py-1 px-2.5 text-xs font-semibold rounded-lg transition ${
+                      currentPage === p
+                        ? 'bg-[var(--acc)] text-white shadow-xs'
+                        : 'hover:bg-[var(--hover)] text-[var(--ink)] border border-transparent'
+                    }`}
+                    onClick={() => setCurrentPage(Number(p))}
+                  >
+                    {p}
+                  </button>
+                )
+              ))}
+
+              <button
+                type="button"
+                className="btn py-1 px-2.5 text-xs font-medium"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              >
+                Suivant
+              </button>
+              <button
+                type="button"
+                className="btn py-1 px-2 text-xs font-medium"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                title="Dernière page"
+              >
+                »
+              </button>
+            </div>
           </div>
         )}
       </main>
@@ -1543,13 +1710,15 @@ export default function CRMFormaticPage() {
                       className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 font-mono"
                     />
                     <a 
-                      className="p-2 rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-emerald-500/15 hover:text-emerald-600 transition flex items-center justify-center flex-shrink-0"
-                      href={`https://wa.me/216${editPhone.replace(/\D/g, '')}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      title="Ouvrir WhatsApp"
+                      className="p-2 rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-emerald-500/15 hover:text-emerald-600 text-emerald-600 transition flex items-center justify-center flex-shrink-0 shadow-2xs"
+                      href={editPhone.trim() ? `tel:+216${editPhone.replace(/\D/g, '')}` : '#'} 
+                      title="Appeler le client" 
+                      aria-label="Appeler le client"
+                      onClick={(e) => {
+                        if (!editPhone.trim()) e.preventDefault();
+                      }}
                     >
-                      <svg className="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.chat}</svg>
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.phone}</svg>
                     </a>
                   </div>
                 </label>

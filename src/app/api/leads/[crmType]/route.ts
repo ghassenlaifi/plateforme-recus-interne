@@ -11,8 +11,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 
-    // Sort by latest update first, then creation date
-    const leads = await Lead.find({ crmType }).sort({ updatedAt: -1, date: -1 });
+    // Sort by creation date so modifications keep leads strictly in their place
+    const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 });
     return NextResponse.json(leads);
   } catch (error) {
     console.error('Failed to fetch leads:', error);

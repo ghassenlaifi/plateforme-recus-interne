@@ -4052,3 +4052,72 @@ input:disabled, select:disabled, textarea:disabled {
     display: none !important;
   }
 }
+
+/* Point clignotant stylisé pour le filtre Rappels */
+.rappel-beacon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.rappel-beacon-ping {
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  background-color: #f59e0b;
+  opacity: 0.8;
+  animation: rappelBeaconPing 1.25s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.rappel-beacon-dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background-color: #d97706;
+  box-shadow: 0 0 6px rgba(217, 119, 6, 0.7);
+}
+@keyframes rappelBeaconPing {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  70%, 100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* Surlignage et sélection de la dernière fiche prospect modifiée / consultée */
+.tr.is-last-modified {
+  background: color-mix(in srgb, var(--brand, #3B4BD8) 8%, var(--card)) !important;
+  box-shadow: inset 3px 0 0 var(--brand, #3B4BD8) !important;
+}
+
+[data-crm="elios"] .tr.is-last-modified {
+  background: color-mix(in srgb, #C2620A 9%, var(--card)) !important;
+  box-shadow: inset 3px 0 0 #C2620A !important;
+}
+
+[data-crm="formatic"] .tr.is-last-modified {
+  background: color-mix(in srgb, #5B45E0 9%, var(--card)) !important;
+  box-shadow: inset 3px 0 0 #5B45E0 !important;
+}
+
+.card-last-modified {
+  background: color-mix(in srgb, var(--brand, #3B4BD8) 8%, var(--card)) !important;
+  border-left: 3px solid var(--brand, #3B4BD8) !important;
+}
+
+[data-crm="elios"] .card-last-modified {
+  background: color-mix(in srgb, #C2620A 9%, var(--card)) !important;
+  border-left: 3px solid #C2620A !important;
+}
+
+[data-crm="formatic"] .card-last-modified {
+  background: color-mix(in srgb, #5B45E0 9%, var(--card)) !important;
+  border-left: 3px solid #5B45E0 !important;
+}
