@@ -210,7 +210,7 @@ export default function CRMEliosPage() {
   const triggerWhatsAppPopup = (studentName: string, phone: string, status: string) => {
     let msg = '';
     const st = (status || '').trim().toLowerCase();
-    if (st === 'approved prospect' || st === 'approved' || st === 'converti') {
+    if (st === 'approved prospect') {
       msg = buildApprovedProspectMessage(
         whatsappTemplates.approvedProspectHeader,
         whatsappTemplates.approvedProspectFooter,
@@ -612,9 +612,7 @@ export default function CRMEliosPage() {
 
       const savedStatus = (editStatus || '').trim();
       const shouldTrigger = (
-        savedStatus.toLowerCase() === 'approved prospect' ||
-        savedStatus.toLowerCase() === 'approved' ||
-        savedStatus.toLowerCase() === 'n/a'
+        savedStatus.toLowerCase() === 'approved prospect'
       );
 
       if (selectedLead) {

@@ -210,7 +210,7 @@ export default function CRMFormaticPage() {
   const triggerWhatsAppPopup = (studentName: string, phone: string, status: string) => {
     let msg = '';
     const st = (status || '').trim().toLowerCase();
-    if (st === 'approved prospect' || st === 'approved' || st === 'converti') {
+    if (st === 'approved prospect') {
       msg = buildApprovedProspectMessage(
         whatsappTemplates.approvedProspectHeader,
         whatsappTemplates.approvedProspectFooter,
@@ -621,10 +621,7 @@ export default function CRMFormaticPage() {
 
       const savedStatus = (editStatus || '').trim();
       const shouldTrigger = (
-        savedStatus.toLowerCase() === 'approved prospect' ||
-        savedStatus.toLowerCase() === 'approved' ||
-        savedStatus.toLowerCase() === 'converti' ||
-        savedStatus.toLowerCase() === 'n/a'
+        savedStatus.toLowerCase() === 'approved prospect'
       );
 
       if (selectedLead) {
