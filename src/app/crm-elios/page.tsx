@@ -653,9 +653,15 @@ export default function CRMEliosPage() {
     }
   };
 
-  // Modification atomique d'une note
+  // Modification atomique d'une note (réservée à l'auteur de la note)
   const handleSaveEditedNote = async (noteId: string) => {
     if (!selectedLead || !noteId || !editingNoteText.trim()) return;
+    const targetNote = (selectedLead.notes || []).find((n: any, idx: number) => (n.id || `n-${idx}`) === noteId);
+    const author = targetNote?.by || targetNote?.addedBy || 'Système';
+    if (!activeUser || author.trim().toLowerCase() !== activeUser.trim().toLowerCase()) {
+      showToast('Seul l\'auteur de cette note peut la modifier');
+      return;
+    }
     try {
       const targetId = selectedLead._id || selectedLead.id;
       const res = await fetch(`/api/leads/elios/${targetId}`, {
@@ -682,9 +688,15 @@ export default function CRMEliosPage() {
     }
   };
 
-  // Suppression atomique d'une note
+  // Suppression atomique d'une note (réservée à l'auteur de la note)
   const handleDeleteNote = async (noteId: string) => {
     if (!selectedLead || !noteId) return;
+    const targetNote = (selectedLead.notes || []).find((n: any, idx: number) => (n.id || `n-${idx}`) === noteId);
+    const author = targetNote?.by || targetNote?.addedBy || 'Système';
+    if (!activeUser || author.trim().toLowerCase() !== activeUser.trim().toLowerCase()) {
+      showToast('Seul l\'auteur de cette note peut la supprimer');
+      return;
+    }
     try {
       const targetId = selectedLead._id || selectedLead.id;
       const res = await fetch(`/api/leads/elios/${targetId}`, {
@@ -1915,6 +1927,12 @@ export default function CRMEliosPage() {
                           const author = n.by || n.addedBy || 'Système';
                           const authorTheme = getOperatorColors(author, safeOperators);
                           const isBeingEdited = editingNoteId === noteId;
+                          // Seul l'opérateur qui a écrit la note peut la modifier ou la supprimer
+                          const isAuthor = Boolean(
+                            activeUser && 
+                            author && 
+                            activeUser.trim().toLowerCase() === author.trim().toLowerCase()
+                          );
 
                           return (
                             <div key={noteId} className="bg-[var(--card)] p-2.5 sm:p-3 rounded-xl border border-[var(--line)] shadow-2xs">
@@ -1934,25 +1952,29 @@ export default function CRMEliosPage() {
                                   <small className="text-[10px] sm:text-xs text-[var(--ink3)]">
                                     {formatDateTimeFr(n.addedAt || n.date)}
                                   </small>
-                                  <button 
-                                    type="button" 
-                                    onClick={() => {
-                                      setEditingNoteId(noteId);
-                                      setEditingNoteText(n.text || '');
-                                    }}
-                                    className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5"
-                                    title="Modifier"
-                                  >
-                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
-                                  </button>
-                                  <button 
-                                    type="button" 
-                                    onClick={() => handleDeleteNote(noteId)}
-                                    className="text-[var(--ink3)] hover:text-red-500 p-0.5"
-                                    title="Supprimer"
-                                  >
-                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                                  </button>
+                                  {isAuthor && (
+                                    <>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => {
+                                          setEditingNoteId(noteId);
+                                          setEditingNoteText(n.text || '');
+                                        }}
+                                        className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5 transition"
+                                        title="Modifier votre note"
+                                      >
+                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
+                                      </button>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => handleDeleteNote(noteId)}
+                                        className="text-[var(--ink3)] hover:text-red-500 p-0.5 transition"
+                                        title="Supprimer votre note"
+                                      >
+                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </header>
 
@@ -1996,7 +2018,6 @@ export default function CRMEliosPage() {
                   {/* Carte Clairement « Ajouter une note » en français */}
                   <div className="bg-[var(--hover)]/60 border border-amber-500/30 rounded-2xl p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-amber-600 text-sm">📝</span>
                       <span className="text-xs font-bold text-[var(--ink)] block">Ajouter une note</span>
                     </div>
                     <textarea 

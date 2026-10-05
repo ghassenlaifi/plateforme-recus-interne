@@ -47,6 +47,10 @@ export async function PATCH(
       const notes = Array.isArray(existing.notes) ? [...existing.notes] : [];
       const noteIdx = notes.findIndex((n: any) => (n.id === body.noteId || n._id?.toString() === body.noteId));
       if (noteIdx !== -1) {
+        const noteAuthor = notes[noteIdx].by || notes[noteIdx].addedBy || '';
+        if (noteAuthor && operator && noteAuthor.toLowerCase() !== operator.toLowerCase()) {
+          return NextResponse.json({ error: "Seul l'auteur de cette note peut la modifier" }, { status: 403 });
+        }
         notes[noteIdx] = {
           ...notes[noteIdx],
           text: body.noteText,
@@ -68,6 +72,14 @@ export async function PATCH(
       const existing = await Lead.findOne({ ...query, crmType });
       if (!existing) return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
       
+      const noteToDelete = (existing.notes || []).find((n: any) => n.id === body.noteId || n._id?.toString() === body.noteId);
+      if (noteToDelete) {
+        const noteAuthor = noteToDelete.by || noteToDelete.addedBy || '';
+        if (noteAuthor && operator && noteAuthor.toLowerCase() !== operator.toLowerCase()) {
+          return NextResponse.json({ error: "Seul l'auteur de cette note peut la supprimer" }, { status: 403 });
+        }
+      }
+
       existing.notes = (existing.notes || []).filter(
         (n: any) => n.id !== body.noteId && n._id?.toString() !== body.noteId
       );

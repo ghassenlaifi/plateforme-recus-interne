@@ -654,9 +654,15 @@ export default function CRMFormaticPage() {
     }
   };
 
-  // Modification atomique d'une note
+  // Modification atomique d'une note (réservée à l'auteur de la note)
   const handleSaveEditedNote = async (noteId: string) => {
     if (!selectedLead || !editingNoteText.trim()) return;
+    const targetNote = (selectedLead.notes || []).find((n: any, idx: number) => (n.id || `n-${idx}`) === noteId);
+    const author = targetNote?.by || targetNote?.addedBy || 'Système';
+    if (!activeUser || author.trim().toLowerCase() !== activeUser.trim().toLowerCase()) {
+      showToast('Seul l\'auteur de cette note peut la modifier');
+      return;
+    }
     try {
       const targetId = selectedLead._id || selectedLead.id;
       const res = await fetch(`/api/leads/formatic/${targetId}`, {
@@ -683,9 +689,15 @@ export default function CRMFormaticPage() {
     }
   };
 
-  // Suppression atomique d'une note
+  // Suppression atomique d'une note (réservée à l'auteur de la note)
   const handleDeleteNote = async (noteId: string) => {
     if (!selectedLead) return;
+    const targetNote = (selectedLead.notes || []).find((n: any, idx: number) => (n.id || `n-${idx}`) === noteId);
+    const author = targetNote?.by || targetNote?.addedBy || 'Système';
+    if (!activeUser || author.trim().toLowerCase() !== activeUser.trim().toLowerCase()) {
+      showToast('Seul l\'auteur de cette note peut la supprimer');
+      return;
+    }
     try {
       const targetId = selectedLead._id || selectedLead.id;
       const res = await fetch(`/api/leads/formatic/${targetId}`, {
@@ -1733,26 +1745,26 @@ export default function CRMFormaticPage() {
                 {/* COLONNE 2 : FORMULAIRE PRINCIPAL ÉLARGI (lg:col-span-6) AVEC PETIT BOUTON TO ELIOS STYLISÉ */}
                 <div className="lg:col-span-6 space-y-3.5">
                   {/* Bannière profil lié avec petit bouton TO ELIOS interactif élégant */}
-                  <div className="bg-[var(--hover)]/60 border border-[var(--line)] rounded-xl py-2 px-3 flex items-center justify-between gap-2">
-                    <div>
-                      <span className="text-xs font-bold text-[var(--ink)] block">Profil étudiant Formatic</span>
-                      <span className="text-[10px] text-[var(--ink3)]">Synchronisation active avec le CRM</span>
-                    </div>
+                  <div className="bg-[var(--hover)]/70 border border-[var(--line)] rounded-xl py-2.5 px-3.5 flex items-center justify-between shadow-2xs">
+                    <span className="text-xs sm:text-sm font-bold text-[var(--ink)] tracking-tight">
+                      To Elios
+                    </span>
+                    {/* Bouton switch style iPhone (Hotspot iOS) */}
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={editToElios}
                       onClick={() => setEditToElios(!editToElios)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs border ${
-                        editToElios
-                          ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
-                          : 'bg-[var(--card)] text-[var(--ink3)] border-[var(--line)] hover:border-indigo-400 hover:text-indigo-600'
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500/30 ${
+                        editToElios ? 'bg-[#34C759]' : 'bg-[#E9E9EA] dark:bg-slate-600'
                       }`}
-                      title={editToElios ? "Cliquez pour désactiver To Elios" : "Cliquez pour activer To Elios"}
+                      title={editToElios ? "To Elios : Activé (Cliquer pour désactiver)" : "To Elios : Désactivé (Cliquer pour activer)"}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${editToElios ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></span>
-                      <span>To Elios</span>
-                      <span className={`text-[9px] px-1 py-0.2 rounded font-semibold ${editToElios ? 'bg-white/20 text-white' : 'bg-[var(--hover)] text-[var(--ink3)]'}`}>
-                        {editToElios ? 'Actif' : 'Off'}
-                      </span>
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          editToElios ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
                     </button>
                   </div>
 
@@ -1951,6 +1963,12 @@ export default function CRMFormaticPage() {
                           const author = n.by || n.addedBy || 'Système';
                           const authorTheme = getOperatorColors(author, safeOperators);
                           const isBeingEdited = editingNoteId === noteId;
+                          // Seul l'opérateur qui a écrit la note peut la modifier ou la supprimer
+                          const isAuthor = Boolean(
+                            activeUser && 
+                            author && 
+                            activeUser.trim().toLowerCase() === author.trim().toLowerCase()
+                          );
 
                           return (
                             <div key={noteId} className="bg-[var(--card)] p-2.5 sm:p-3 rounded-xl border border-[var(--line)] shadow-2xs">
@@ -1970,25 +1988,29 @@ export default function CRMFormaticPage() {
                                   <small className="text-[10px] sm:text-xs text-[var(--ink3)]">
                                     {formatDateTimeFr(n.addedAt || n.date)}
                                   </small>
-                                  <button 
-                                    type="button" 
-                                    onClick={() => {
-                                      setEditingNoteId(noteId);
-                                      setEditingNoteText(n.text || '');
-                                    }}
-                                    className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5"
-                                    title="Modifier"
-                                  >
-                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
-                                  </button>
-                                  <button 
-                                    type="button" 
-                                    onClick={() => handleDeleteNote(noteId)}
-                                    className="text-[var(--ink3)] hover:text-red-500 p-0.5"
-                                    title="Supprimer"
-                                  >
-                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                                  </button>
+                                  {isAuthor && (
+                                    <>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => {
+                                          setEditingNoteId(noteId);
+                                          setEditingNoteText(n.text || '');
+                                        }}
+                                        className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5 transition"
+                                        title="Modifier votre note"
+                                      >
+                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
+                                      </button>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => handleDeleteNote(noteId)}
+                                        className="text-[var(--ink3)] hover:text-red-500 p-0.5 transition"
+                                        title="Supprimer votre note"
+                                      >
+                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </header>
 
@@ -2032,7 +2054,6 @@ export default function CRMFormaticPage() {
                   {/* Carte Clairement « Ajouter une note » en français */}
                   <div className="bg-[var(--hover)]/60 border border-amber-500/30 rounded-2xl p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-amber-600 text-sm">📝</span>
                       <span className="text-xs font-bold text-[var(--ink)] block">Ajouter une note</span>
                     </div>
                     <textarea 
