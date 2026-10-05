@@ -303,10 +303,10 @@ export default function CRMFormaticPage() {
     }
   }, [selectedLead]);
 
-  // Détection des modifications non enregistrées
+  // Détection des modifications non enregistrées (champs, toElios ou note en cours)
   const hasUnsavedChanges = useMemo(() => {
     if (!initialFormValues) return false;
-    return (
+    const formFieldsChanged = (
       editFirst !== initialFormValues.firstName ||
       editLast !== initialFormValues.lastName ||
       editPhone !== initialFormValues.phone ||
@@ -319,7 +319,26 @@ export default function CRMFormaticPage() {
       editFamilyGroup !== initialFormValues.familyGroup ||
       editToElios !== initialFormValues.toElios
     );
-  }, [initialFormValues, editFirst, editLast, editPhone, editOffer, editAmount, editSource, editGrade, editSection, editStatus, editFamilyGroup, editToElios]);
+    const hasPendingNewNote = Boolean(newNoteText.trim().length > 0);
+    const hasPendingNoteEdit = Boolean(editingNoteId && editingNoteText.trim().length > 0);
+    return formFieldsChanged || hasPendingNewNote || hasPendingNoteEdit;
+  }, [initialFormValues, editFirst, editLast, editPhone, editOffer, editAmount, editSource, editGrade, editSection, editStatus, editFamilyGroup, editToElios, newNoteText, editingNoteId, editingNoteText]);
+
+  // Écoute de la touche Échap pour la fermeture sécurisée
+  useEffect(() => {
+    if (!selectedLead) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showUnsavedConfirm) {
+          setShowUnsavedConfirm(false);
+        } else {
+          handleRequestCloseFiche();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedLead, showUnsavedConfirm, hasUnsavedChanges]);
 
   // Fermeture sécurisée
   const handleRequestCloseFiche = () => {
@@ -2122,48 +2141,77 @@ export default function CRMFormaticPage() {
         </div>
       )}
 
-      {/* MODALE ALERTE DIRTY GUARD */}
+      {/* MODALE : AVERTISSEMENT MODIFICATIONS NON ENREGISTREES (DIRTY GUARD) */}
       {showUnsavedConfirm && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/70 backdrop-blur-xs">
-          <div className="box max-w-md w-full p-5 sm:p-6 bg-[var(--card)] rounded-2xl shadow-2xl border border-amber-500/40">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 flex-shrink-0">
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div 
+          className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowUnsavedConfirm(false);
+          }}
+        >
+          <div className="max-w-md w-full p-5 sm:p-6 bg-[var(--card)] rounded-2xl sm:rounded-3xl shadow-2xl border border-amber-500/40 animate-pop">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   {IC.warning}
                 </svg>
               </div>
-              <div>
-                <h3 className="text-sm sm:text-base font-bold text-[var(--ink)]">Modifications non enregistrées !</h3>
-                <p className="text-xs text-[var(--ink2)] mt-1 leading-relaxed">
-                  Vous avez des modifications en cours pour ce prospect. Voulez-vous quitter sans enregistrer ou enregistrer vos modifications ?
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-[var(--ink)]">
+                  Modifications non enregistrées
+                </h3>
+                <p className="text-xs text-[var(--ink2)] mt-1.5 leading-relaxed">
+                  Des modifications ou une note sont en cours pour <strong className="text-[var(--ink)]">{[editFirst, editLast].filter(Boolean).join(' ') || selectedLead?.name || 'ce prospect'}</strong>. Si vous quittez sans enregistrer, vos changements seront perdus.
                 </p>
+                {newNoteText.trim() && (
+                  <div className="mt-2 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                    ⚠️ Une note en cours de rédaction n'a pas encore été enregistrée.
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-[var(--line)]">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 mt-6 pt-4 border-t border-[var(--line)]">
+              {/* Option 1 : Quitter sans enregistrer */}
               <button 
                 type="button" 
-                className="btn text-xs text-red-600 hover:bg-red-500/10 py-1.5 px-3"
+                className="btn text-xs py-2 px-3.5 rounded-xl text-red-600 hover:bg-red-500/10 border border-red-500/20 font-medium transition order-3 sm:order-1"
                 onClick={() => {
                   setShowUnsavedConfirm(false);
                   setSelectedLead(null);
+                  setNewNoteText('');
+                  setEditingNoteId(null);
+                  setEditingNoteText('');
                 }}
               >
-                Quitter
+                Quitter sans enregistrer
               </button>
+
+              {/* Option 2 : Revenir à la fiche */}
               <button 
                 type="button" 
-                className="btn text-xs py-1.5 px-3"
+                className="btn text-xs py-2 px-3.5 rounded-xl border border-[var(--line)] hover:bg-[var(--hover)] font-medium transition order-2"
                 onClick={() => setShowUnsavedConfirm(false)}
               >
-                Continuer
+                Revenir
               </button>
+
+              {/* Option 3 : Enregistrer et quitter */}
               <button 
                 type="button" 
-                className="btn pri text-xs font-semibold py-1.5 px-3"
-                onClick={handleSaveLead}
+                className="btn pri text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 order-1 sm:order-3"
+                onClick={async () => {
+                  if (newNoteText.trim()) {
+                    await handleAddNote();
+                  }
+                  if (editingNoteId && editingNoteText.trim()) {
+                    await handleSaveEditedNote(editingNoteId);
+                  }
+                  await handleSaveLead();
+                }}
+                disabled={isSaving || isAddingNote}
               >
-                Enregistrer et quitter
+                {isSaving ? 'Enregistrement...' : 'Enregistrer'}
               </button>
             </div>
           </div>
