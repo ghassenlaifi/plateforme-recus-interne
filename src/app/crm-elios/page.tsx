@@ -1477,7 +1477,7 @@ export default function CRMEliosPage() {
       </main>
 
       {/* ========================================================= */}
-      {/* MODALE : NOUVEAU PROSPECT (Création rapide avec Lead & Facebook) */}
+      {/* MODALE : NOUVEAU PROSPECT (DESIGN EXECUTIVE INSPIRÉ DE LA NOUVELLE IDENTITÉ) */}
       {/* ========================================================= */}
       {isNewLeadOpen && (
         <div 
@@ -1486,21 +1486,28 @@ export default function CRMEliosPage() {
             if (e.target === e.currentTarget) setIsNewLeadOpen(false);
           }}
         >
-          <div className="max-w-md w-full p-5 sm:p-6 bg-[var(--card)] rounded-2xl shadow-xl border border-[var(--line)]">
-            <div className="flex items-center justify-between pb-3.5 border-b border-[var(--line)]">
+          <div className="max-w-lg w-full bg-[var(--card)] rounded-2xl sm:rounded-3xl shadow-2xl border border-[var(--line)] overflow-hidden animate-pop">
+            <div className="px-5 py-4 border-b border-[var(--line)] flex items-center justify-between">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-[var(--ink)]">Nouveau prospect Elios</h2>
-                <p className="text-xs text-[var(--ink3)]">Enregistrement immédiat dans le pipeline</p>
+                <span className="text-[11px] font-bold tracking-widest text-amber-600 dark:text-amber-400 uppercase block">
+                  NOUVEAU PROSPECT
+                </span>
+                <h2 className="text-lg sm:text-xl font-black text-[var(--ink)] mt-0.5">Nouveau prospect Elios</h2>
               </div>
-              <button className="text-[var(--ink3)] hover:text-[var(--ink)] p-1" type="button" aria-label="Fermer" onClick={() => setIsNewLeadOpen(false)}>
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.x}</svg>
+              <button 
+                className="w-8 h-8 rounded-lg border border-[var(--line)] bg-[var(--card)] hover:bg-[var(--hover)] text-[var(--ink3)] hover:text-[var(--ink)] flex items-center justify-center transition shadow-2xs" 
+                type="button" 
+                aria-label="Fermer" 
+                onClick={() => setIsNewLeadOpen(false)}
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.x}</svg>
               </button>
             </div>
 
-            <form onSubmit={handleCreateLead} noValidate className="mt-4 space-y-4">
+            <form onSubmit={handleCreateLead} noValidate className="p-5 sm:p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[var(--ink2)] mb-1">
-                  Numéro de téléphone
+                <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                  NUMÉRO DE TÉLÉPHONE
                 </label>
                 <input 
                   id="new-phone" 
@@ -1515,12 +1522,12 @@ export default function CRMEliosPage() {
                     setNewPhone(raw);
                     if (newErr) setNewErr('');
                   }}
-                  className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${newErr ? 'border-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)]`}
+                  className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${newErr ? 'border-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
                 />
                 {newPhone.length > 0 && (
                   <div className="flex justify-end mt-1 text-[11px]">
                     <span className={newPhone.length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                      {newPhone.length === 8 ? "✓ Valide" : `${newPhone.length} / 8`}
+                      {newPhone.length === 8 ? "✓ Valide (8 chiffres)" : `${newPhone.length} / 8`}
                     </span>
                   </div>
                 )}
@@ -1528,11 +1535,11 @@ export default function CRMEliosPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--ink2)] mb-1">Classe</label>
+                  <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">CLASSE</label>
                   <select 
                     value={newGrade}
                     onChange={(e) => setNewGrade(e.target.value)}
-                    className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
+                    className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
                     <option value="">Sélectionner…</option>
                     {ELIOS_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1540,11 +1547,11 @@ export default function CRMEliosPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--ink2)] mb-1">Section</label>
+                  <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">SECTION</label>
                   <select 
                     value={newSection}
                     onChange={(e) => setNewSection(e.target.value)}
-                    className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
+                    className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
                     <option value="">Sélectionner…</option>
                     {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1554,12 +1561,12 @@ export default function CRMEliosPage() {
 
               {newErr && <p className="text-xs text-red-500 font-semibold">{newErr}</p>}
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--line)]">
-                <button type="button" className="btn text-xs py-1.5 px-3" onClick={() => setIsNewLeadOpen(false)}>
-                  Annuler
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--line)]">
+                <button type="button" className="btn text-xs py-2 px-3.5 rounded-xl font-medium" onClick={() => setIsNewLeadOpen(false)}>
+                  Cancel
                 </button>
-                <button className="btn pri text-xs py-1.5 px-3" type="submit" disabled={isCreating}>
-                  {isCreating ? 'Enregistrement...' : 'Enregistrer'}
+                <button className="btn text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50" type="submit" disabled={isCreating}>
+                  {isCreating ? 'Saving...' : 'Save lead'}
                 </button>
               </div>
             </form>
@@ -1568,7 +1575,7 @@ export default function CRMEliosPage() {
       )}
 
       {/* ========================================================= */}
-      {/* MODALE : FICHE PROSPECT COMPLETE (DESIGN MODERNE ET RESPONSIVE) */}
+      {/* MODALE : FICHE PROSPECT COMPLETE (DESIGN PANORAMIQUE 3 COLONNES) */}
       {/* ========================================================= */}
       {selectedLead && (
         <div 
@@ -1577,321 +1584,452 @@ export default function CRMEliosPage() {
             if (e.target === e.currentTarget) handleRequestCloseFiche();
           }}
         >
-          <div className="max-w-3xl w-full max-h-[92vh] flex flex-col bg-[var(--card)] rounded-2xl shadow-2xl border border-[var(--line)] overflow-hidden animate-pop">
+          <div className="w-full max-w-6xl xl:max-w-7xl max-h-[92vh] flex flex-col bg-[var(--card)] rounded-2xl sm:rounded-3xl shadow-2xl border border-[var(--line)] overflow-hidden animate-pop">
             
-            {/* EN-TETE MODERNE ET EPURE (AVATAR CERCLE + NOM + LABEL STATUT SEUL) */}
-            <div className="p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--card)] flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                {/* Petit cercle élégant avec PS ou initiales nom/prénom */}
-                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[var(--acc-s)] text-[var(--acc)] border border-[var(--acc)]/30 flex items-center justify-center font-bold text-sm sm:text-base flex-shrink-0 shadow-2xs">
-                  {getInitials(selectedLead.name, editFirst, editLast)}
-                </div>
-                
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-base sm:text-lg font-bold text-[var(--ink)] truncate">
-                      {[editFirst, editLast].filter(Boolean).join(' ') || selectedLead.name || 'Prospect sans nom'}
-                    </h2>
+            {/* EN-TETE EXECUTIVE (EYEBROW + NOM + BADGES + BOUTON FERMER SQUIRCLE) */}
+            <div className="px-5 py-4 border-b border-[var(--line)] bg-[var(--card)] flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <span className="text-[11px] font-bold tracking-widest text-amber-600 dark:text-amber-400 uppercase block">
+                  LEAD DETAILS
+                </span>
+                <div className="flex items-center gap-2.5 flex-wrap mt-0.5">
+                  <h2 className="text-xl sm:text-2xl font-black text-[var(--ink)] truncate">
+                    {[editFirst, editLast].filter(Boolean).join(' ') || selectedLead.name || 'Prospect sans nom'}
+                  </h2>
 
-                    {/* LABEL STATUT PUR (SANS LA MENTION "STATUT ACTUEL") */}
-                    <span 
-                      className="px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5"
-                      style={{
-                        backgroundColor: `color-mix(in srgb, ${ELIOS_STATUS_COLORS[editStatus] || '#77766F'} 14%, transparent)`,
-                        color: ELIOS_STATUS_COLORS[editStatus] || '#77766F'
-                      }}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
-                      {editStatus}
-                    </span>
-
-                    {/* Badge Rappel si délai dépassé */}
-                    {isLeadInRappels(selectedLead) && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                        ⚠️ Rappel
-                      </span>
-                    )}
-
-                    {/* Étiquette From Formatic */}
-                    {(selectedLead.fromFormatic || selectedLead.source === 'From Formatic') && (
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-600 border border-indigo-500/30 flex items-center gap-1 shadow-2xs">
-                        <span>From Formatic</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <span className="font-mono text-xs text-[var(--ink3)] block mt-0.5">
-                    {formatPhone(editPhone)}
+                  {/* LABEL STATUT PUR */}
+                  <span 
+                    className="px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5"
+                    style={{
+                      backgroundColor: `color-mix(in srgb, ${ELIOS_STATUS_COLORS[editStatus] || '#77766F'} 14%, transparent)`,
+                      color: ELIOS_STATUS_COLORS[editStatus] || '#77766F'
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
+                    {editStatus}
                   </span>
+
+                  {/* Badge Rappel si délai dépassé */}
+                  {isLeadInRappels(selectedLead) && (
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                      ⚠️ Rappel
+                    </span>
+                  )}
+
+                  {/* Étiquette From Formatic */}
+                  {(selectedLead.fromFormatic || selectedLead.source === 'From Formatic') && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-600 border border-indigo-500/30 flex items-center gap-1 shadow-2xs">
+                      <span>From Formatic</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
+              {/* Bouton fermer Squircle design */}
               <button 
-                className="text-[var(--ink3)] hover:text-[var(--ink)] p-1.5 rounded-xl hover:bg-[var(--hover)] transition"
+                className="w-8 h-8 rounded-lg border border-[var(--line)] bg-[var(--card)] hover:bg-[var(--hover)] text-[var(--ink3)] hover:text-[var(--ink)] flex items-center justify-center transition shadow-2xs flex-shrink-0"
                 type="button" 
                 aria-label="Fermer" 
                 onClick={handleRequestCloseFiche}
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.x}</svg>
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.x}</svg>
               </button>
             </div>
 
-            {/* CORPS DE LA MODALE SCROLLABLE (GRILLE ULTRA RESPONSIVE) */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-              
-              {/* Grille des informations prospect (1 col mobile, 2 col tablette, 3 col desktop) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Prénom
-                  <input 
-                    value={editFirst} 
-                    onChange={(e) => setEditFirst(e.target.value)}
-                    placeholder="Ex : Mohamed"
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  />
-                </label>
-
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Nom
-                  <input 
-                    value={editLast} 
-                    onChange={(e) => setEditLast(e.target.value)}
-                    placeholder="Ex : Ben Ali"
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  />
-                </label>
-
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Téléphone
-                  <div className="flex gap-2">
-                    <input 
-                      inputMode="tel" 
-                      maxLength={8}
-                      value={editPhone} 
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
-                        setEditPhone(raw);
-                      }}
-                      className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 font-mono"
-                    />
-                    <a 
-                      className="p-2 rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-emerald-500/15 hover:text-emerald-600 text-emerald-600 transition flex items-center justify-center flex-shrink-0 shadow-2xs"
-                      href={editPhone.trim() ? `tel:+216${editPhone.replace(/\D/g, '')}` : '#'} 
-                      title="Appeler le client" 
-                      aria-label="Appeler le client"
-                      onClick={(e) => {
-                        if (!editPhone.trim()) e.preventDefault();
-                      }}
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.phone}</svg>
-                    </a>
+            {/* CORPS PANORAMIQUE 3 COLONNES DEVANT L'OPERATEUR */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
+                
+                {/* COLONNE 1 : SIDEBAR IDENTITE & METRIQUES CLES (lg:col-span-3) */}
+                <div className="lg:col-span-3 space-y-4">
+                  {/* Avatar Grand Format */}
+                  <div className="w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                    {getInitials(selectedLead.name, editFirst, editLast)}
                   </div>
-                </label>
 
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Statut
-                  <select 
-                    value={editStatus} 
-                    onChange={(e) => setEditStatus(e.target.value)}
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] font-semibold"
-                  >
-                    {ELIOS_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
+                  {/* Key-Value Summary Stack */}
+                  <div className="space-y-3 pt-2">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">STATUS</span>
+                      <div 
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                        style={{
+                          backgroundColor: `color-mix(in srgb, ${ELIOS_STATUS_COLORS[editStatus] || '#77766F'} 14%, transparent)`,
+                          color: ELIOS_STATUS_COLORS[editStatus] || '#77766F'
+                        }}
+                      >
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
+                        <span>{editStatus}</span>
+                      </div>
+                    </div>
 
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Source
-                  <select 
-                    value={editSource} 
-                    onChange={(e) => setEditSource(e.target.value)}
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  >
-                    {ELIOS_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">GRADE SPECIALITY</span>
+                      <p className="text-xs font-semibold text-[var(--ink)]">
+                        {[editGrade, editSection].filter(Boolean).join(' • ') || 'Non renseigné'}
+                      </p>
+                    </div>
 
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Classe
-                  <select 
-                    value={editGrade} 
-                    onChange={(e) => setEditGrade(e.target.value)}
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  >
-                    <option value="">Sélectionner…</option>
-                    {ELIOS_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </label>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">SOURCE</span>
+                      <p className="text-xs font-semibold text-[var(--ink)]">
+                        {editSource || 'Inconnue'}
+                      </p>
+                    </div>
 
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Section
-                  <select 
-                    value={editSection} 
-                    onChange={(e) => setEditSection(e.target.value)}
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  >
-                    <option value="">Sélectionner…</option>
-                    {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">ASSIGNED TO</span>
+                      <p className="text-xs font-semibold text-[var(--ink)]">
+                        {selectedLead.staff || activeUser || 'Unassigned'}
+                      </p>
+                    </div>
 
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Offre
-                  <select 
-                    value={editOffer} 
-                    onChange={(e) => setEditOffer(e.target.value)}
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  >
-                    <option value="">Aucune</option>
-                    {ELIOS_OFFERS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </label>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">CREATED AT</span>
+                      <p className="text-xs text-[var(--ink2)] font-mono">
+                        {formatDateTimeFr(selectedLead.createdAt || selectedLead.date)}
+                      </p>
+                    </div>
 
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1">
-                  Montant payé (DT)
-                  <input 
-                    inputMode="decimal" 
-                    placeholder="Ex : 500"
-                    value={editAmount} 
-                    onChange={(e) => setEditAmount(e.target.value)}
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] font-mono"
-                  />
-                </label>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">RECALL</span>
+                      <p className="text-xs text-[var(--ink2)]">
+                        {isLeadInRappels(selectedLead) ? '⚠️ Relance prioritaire' : 'No recall'}
+                      </p>
+                    </div>
 
-                {/* CHAMP : FAMILY GROUP (FACULTATIF) */}
-                <label className="text-xs font-semibold text-[var(--ink2)] flex flex-col gap-1 col-span-full">
-                  Family Group (Facultatif)
-                  <input 
-                    value={editFamilyGroup} 
-                    onChange={(e) => setEditFamilyGroup(e.target.value)}
-                    placeholder="Ex : Famille Ben Ali / Groupe 1"
-                    className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                  />
-                </label>
-              </div>
-
-              {editErr && <p className="text-xs text-red-500 font-semibold" role="alert">{editErr}</p>}
-
-              {/* Section Notes & Historique avec Concurrence Atomique */}
-              <section className="bg-[var(--hover)] p-3.5 sm:p-4 rounded-2xl border border-[var(--line)]">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs sm:text-sm font-bold text-[var(--ink)]">Historique des notes</h3>
-                  <small className="text-xs text-[var(--ink3)]">
-                    {selectedLead.notes?.length || 0} note{(selectedLead.notes?.length || 0) > 1 ? 's' : ''}
-                  </small>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">OFFER HISTORY</span>
+                      <p className="text-xs font-medium text-[var(--ink)]">
+                        {editOffer || '0 offers'} {editAmount ? `• ${editAmount} DT` : ''}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Liste des notes */}
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {selectedLead.notes && selectedLead.notes.length > 0 ? (
-                    selectedLead.notes.map((n: any, idx: number) => {
-                      const noteId = n.id || `n-${idx}`;
-                      const author = n.by || n.addedBy || 'Système';
-                      const authorTheme = getOperatorColors(author, safeOperators);
-                      const isBeingEdited = editingNoteId === noteId;
+                {/* COLONNE 2 : FORMULAIRE PRINCIPAL DE MODIFICATION (lg:col-span-5) */}
+                <div className="lg:col-span-5 space-y-4">
+                  {/* Banniere profil lie */}
+                  <div className="bg-[var(--hover)]/60 border border-[var(--line)] rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-[var(--ink)] block">Linked student profile</span>
+                      <span className="text-[10px] text-[var(--ink3)]">The identity is verified and synchronized.</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                      ● Active
+                    </span>
+                  </div>
 
-                      return (
-                        <div key={noteId} className="bg-[var(--card)] p-2.5 sm:p-3 rounded-xl border border-[var(--line)] shadow-2xs">
-                          <header className="flex items-center justify-between text-xs mb-1">
-                            <span 
-                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold transition"
-                              style={{
-                                backgroundColor: `color-mix(in srgb, ${authorTheme.dot} 14%, var(--card))`,
-                                color: authorTheme.dot,
-                                border: `1px solid color-mix(in srgb, ${authorTheme.dot} 32%, transparent)`
-                              }}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: authorTheme.dot }}></span>
-                              <span>{author}</span>
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <small className="text-[10px] sm:text-xs text-[var(--ink3)]">
-                                {formatDateTimeFr(n.addedAt || n.date)}
-                              </small>
-                              <button 
-                                type="button" 
-                                onClick={() => {
-                                  setEditingNoteId(noteId);
-                                  setEditingNoteText(n.text || '');
-                                }}
-                                className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5"
-                                title="Modifier"
-                              >
-                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
-                              </button>
-                              <button 
-                                type="button" 
-                                onClick={() => handleDeleteNote(noteId)}
-                                className="text-[var(--ink3)] hover:text-red-500 p-0.5"
-                                title="Supprimer"
-                              >
-                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                              </button>
-                            </div>
-                          </header>
+                  {/* Grille 2 colonnes des champs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        FIRST NAME
+                      </label>
+                      <input 
+                        value={editFirst} 
+                        onChange={(e) => setEditFirst(e.target.value)}
+                        placeholder="Ex : Mohamed"
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
 
-                          {isBeingEdited ? (
-                            <div className="mt-2 space-y-2">
-                              <textarea 
-                                value={editingNoteText}
-                                onChange={(e) => setEditingNoteText(e.target.value)}
-                                className="w-full text-xs p-2 rounded-lg border border-[var(--line)] bg-[var(--hover)]"
-                                rows={2}
-                              />
-                              <div className="flex justify-end gap-1">
-                                <button 
-                                  type="button" 
-                                  className="btn py-0.5 px-2 text-xs" 
-                                  onClick={() => setEditingNoteId(null)}
-                                >
-                                  Annuler
-                                </button>
-                                <button 
-                                  type="button" 
-                                  className="btn pri py-0.5 px-2 text-xs" 
-                                  onClick={() => handleSaveEditedNote(noteId)}
-                                >
-                                  Enregistrer
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-[var(--ink)] leading-relaxed whitespace-pre-wrap">{n.text}</p>
-                          )}
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        LAST NAME
+                      </label>
+                      <input 
+                        value={editLast} 
+                        onChange={(e) => setEditLast(e.target.value)}
+                        placeholder="Ex : Ben Ali"
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        PHONE NUMBER
+                      </label>
+                      <div className="flex gap-2">
+                        <input 
+                          inputMode="tel" 
+                          maxLength={8}
+                          value={editPhone} 
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
+                            setEditPhone(raw);
+                          }}
+                          className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                        <a 
+                          className="p-2 rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-emerald-500/15 hover:text-emerald-600 text-emerald-600 transition flex items-center justify-center flex-shrink-0 shadow-2xs"
+                          href={editPhone.trim() ? `tel:+216${editPhone.replace(/\D/g, '')}` : '#'} 
+                          title="Appeler le client" 
+                          aria-label="Appeler le client"
+                          onClick={(e) => {
+                            if (!editPhone.trim()) e.preventDefault();
+                          }}
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.phone}</svg>
+                        </a>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        GRADE
+                      </label>
+                      <select 
+                        value={editGrade} 
+                        onChange={(e) => setEditGrade(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        <option value="">Sélectionner…</option>
+                        {ELIOS_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        SPECIALITY
+                      </label>
+                      <select 
+                        value={editSection} 
+                        onChange={(e) => setEditSection(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        <option value="">Sélectionner…</option>
+                        {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        SOURCE
+                      </label>
+                      <select 
+                        value={editSource} 
+                        onChange={(e) => setEditSource(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        {ELIOS_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        STATUS
+                      </label>
+                      <select 
+                        value={editStatus} 
+                        onChange={(e) => setEditStatus(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        {ELIOS_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        OFFRE
+                      </label>
+                      <select 
+                        value={editOffer} 
+                        onChange={(e) => setEditOffer(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        <option value="">Aucune</option>
+                        {ELIOS_OFFERS.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        MONTANT PAYÉ (DT)
+                      </label>
+                      <input 
+                        inputMode="decimal" 
+                        placeholder="Ex : 500"
+                        value={editAmount} 
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        FAMILY GROUP (FACULTATIF)
+                      </label>
+                      <input 
+                        value={editFamilyGroup} 
+                        onChange={(e) => setEditFamilyGroup(e.target.value)}
+                        placeholder="Ex : Famille Ben Ali / Groupe 1"
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {editErr && <p className="text-xs text-red-500 font-semibold" role="alert">{editErr}</p>}
+                </div>
+
+                {/* COLONNE 3 : CONTACT & ACTIVITE / NOTES (lg:col-span-4) */}
+                <div className="lg:col-span-4 space-y-4">
+                  
+                  {/* Carte Contact WhatsApp rapide */}
+                  <div className="bg-[var(--card)] border border-[var(--line)] rounded-2xl p-3.5 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.chat}</svg>
                         </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-xs text-[var(--ink3)] italic py-2">Aucune note enregistrée pour ce prospect.</p>
-                  )}
+                        <div>
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest block">CONTACT</span>
+                          <span className="text-xs font-bold text-[var(--ink)]">WhatsApp message</span>
+                        </div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => triggerWhatsAppPopup([editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name, editPhone, editStatus)}
+                        className="text-xs font-mono font-semibold text-[var(--ink2)] hover:text-[var(--acc)] px-2.5 py-1 rounded-lg hover:bg-[var(--hover)] transition border border-[var(--line)]"
+                        title="Ouvrir le module WhatsApp"
+                      >
+                        {formatPhone(editPhone) ? `+216 ${formatPhone(editPhone)}` : 'Envoyer'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Section Contact Activity / Historique des notes */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">CONTACT ACTIVITY</span>
+                      <span className="text-xs text-[var(--ink3)] font-semibold">
+                        {selectedLead.notes?.length || 0} event{(selectedLead.notes?.length || 0) > 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    {/* Liste des notes */}
+                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                      {selectedLead.notes && selectedLead.notes.length > 0 ? (
+                        selectedLead.notes.map((n: any, idx: number) => {
+                          const noteId = n.id || `n-${idx}`;
+                          const author = n.by || n.addedBy || 'Système';
+                          const authorTheme = getOperatorColors(author, safeOperators);
+                          const isBeingEdited = editingNoteId === noteId;
+
+                          return (
+                            <div key={noteId} className="bg-[var(--card)] p-2.5 sm:p-3 rounded-xl border border-[var(--line)] shadow-2xs">
+                              <header className="flex items-center justify-between text-xs mb-1">
+                                <span 
+                                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold transition"
+                                  style={{
+                                    backgroundColor: `color-mix(in srgb, ${authorTheme.dot} 14%, var(--card))`,
+                                    color: authorTheme.dot,
+                                    border: `1px solid color-mix(in srgb, ${authorTheme.dot} 32%, transparent)`
+                                  }}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: authorTheme.dot }}></span>
+                                  <span>{author}</span>
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <small className="text-[10px] sm:text-xs text-[var(--ink3)]">
+                                    {formatDateTimeFr(n.addedAt || n.date)}
+                                  </small>
+                                  <button 
+                                    type="button" 
+                                    onClick={() => {
+                                      setEditingNoteId(noteId);
+                                      setEditingNoteText(n.text || '');
+                                    }}
+                                    className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5"
+                                    title="Modifier"
+                                  >
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    onClick={() => handleDeleteNote(noteId)}
+                                    className="text-[var(--ink3)] hover:text-red-500 p-0.5"
+                                    title="Supprimer"
+                                  >
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
+                                  </button>
+                                </div>
+                              </header>
+
+                              {isBeingEdited ? (
+                                <div className="mt-2 space-y-2">
+                                  <textarea 
+                                    value={editingNoteText}
+                                    onChange={(e) => setEditingNoteText(e.target.value)}
+                                    className="w-full text-xs p-2 rounded-lg border border-[var(--line)] bg-[var(--hover)]"
+                                    rows={2}
+                                  />
+                                  <div className="flex justify-end gap-1">
+                                    <button 
+                                      type="button" 
+                                      className="btn py-0.5 px-2 text-xs" 
+                                      onClick={() => setEditingNoteId(null)}
+                                    >
+                                      Annuler
+                                    </button>
+                                    <button 
+                                      type="button" 
+                                      className="btn pri py-0.5 px-2 text-xs" 
+                                      onClick={() => handleSaveEditedNote(noteId)}
+                                    >
+                                      Enregistrer
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-[var(--ink)] leading-relaxed whitespace-pre-wrap">{n.text}</p>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-[var(--ink3)] italic py-2">No contact activities have been added yet.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Carte New Activity / Ajouter une note */}
+                  <div className="bg-[var(--hover)]/60 border border-amber-500/30 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-600 text-sm">📝</span>
+                      <div>
+                        <span className="text-xs font-bold text-[var(--ink)] block">New activity</span>
+                        <span className="text-[10px] text-[var(--ink3)]">Add a note and optional contact details</span>
+                      </div>
+                    </div>
+                    <textarea 
+                      placeholder="Write a note…"
+                      value={newNoteText}
+                      onChange={(e) => setNewNoteText(e.target.value)}
+                      className="w-full text-xs p-2.5 rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      rows={3}
+                    />
+                    <div className="flex justify-end">
+                      <button 
+                        type="button"
+                        className="btn text-xs font-bold py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow-2xs transition disabled:opacity-50"
+                        onClick={handleAddNote}
+                        disabled={!newNoteText.trim() || isAddingNote}
+                      >
+                        {isAddingNote ? 'Ajout...' : 'Save note'}
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
 
-                {/* Zone d'ajout d'une nouvelle note */}
-                <div className="mt-3 pt-3 border-t border-[var(--line)]">
-                  <textarea 
-                    placeholder={`Ajouter une note (signé par ${activeUser || 'Système'})…`}
-                    value={newNoteText}
-                    onChange={(e) => setNewNoteText(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
-                    rows={2}
-                  />
-                  <div className="flex justify-end mt-2">
-                    <button 
-                      className="btn text-xs font-semibold py-1.5 px-3" 
-                      type="button" 
-                      onClick={handleAddNote}
-                      disabled={!newNoteText.trim() || isAddingNote}
-                    >
-                      {isAddingNote ? 'Ajout...' : 'Ajouter la note'}
-                    </button>
-                  </div>
-                </div>
-              </section>
+              </div>
             </div>
 
-            {/* PIED DE MODALE RESPONSIVE */}
-            <div className="p-3 sm:p-4 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
+            {/* PIED DE MODALE PANORAMIQUE RESPONSIVE */}
+            <div className="px-5 py-3.5 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
               <button 
-                className={`btn del text-xs py-1.5 px-3 ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''}`} 
+                className={`btn del text-xs py-2 px-3.5 rounded-xl ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''}`} 
                 type="button" 
                 onClick={handleDeleteLead}
               >
@@ -1899,30 +2037,30 @@ export default function CRMEliosPage() {
                 <span>{isDeleteArmed ? 'Confirmer ?' : 'Supprimer'}</span>
               </button>
 
-              <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2.5 ml-auto">
                 <button 
                   type="button" 
                   onClick={() => triggerWhatsAppPopup([editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name, editPhone, editStatus)}
-                  className="btn text-xs py-1.5 px-3 hover:bg-emerald-500 hover:text-white transition flex items-center gap-1.5"
+                  className="btn text-xs py-2 px-3.5 rounded-xl hover:bg-emerald-500 hover:text-white transition flex items-center gap-1.5 border border-emerald-500/30 text-emerald-600"
                   title="Envoyer un message WhatsApp avec aperçu"
                 >
-                  <svg className="w-3.5 h-3.5 text-emerald-500 hover:text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     {IC.chat}
                   </svg>
                   <span>WhatsApp</span>
                 </button>
 
-                <button className="btn text-xs py-1.5 px-3" type="button" onClick={handleRequestCloseFiche}>
-                  Annuler
+                <button className="btn text-xs py-2 px-3.5 rounded-xl font-medium" type="button" onClick={handleRequestCloseFiche}>
+                  Cancel
                 </button>
 
                 <button 
-                  className="btn pri text-xs py-1.5 px-3 font-semibold" 
+                  className="btn text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 flex items-center gap-1.5" 
                   type="button" 
                   onClick={handleSaveLead}
                   disabled={isSaving}
                 >
-                  {isSaving ? 'Enregistrement...' : 'Enregistrer'}
+                  {isSaving ? 'Saving...' : 'Save lead'}
                 </button>
               </div>
             </div>
