@@ -127,6 +127,7 @@ export default function SessionsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ text: string; action: () => Promise<void> } | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
   const [showAllActions, setShowAllActions] = useState(false);
@@ -282,6 +283,19 @@ export default function SessionsPage() {
     }
   };
 
+  // Sélection et validation du fichier d'import
+  const handleSelectFile = (file: File) => {
+    const validExts = ['.csv', '.xlsx', '.xls'];
+    const lowerName = file.name.toLowerCase();
+    const isValid = validExts.some(ext => lowerName.endsWith(ext));
+    if (!isValid) {
+      setImportMsg({ text: 'Format non supporté. Veuillez déposer un fichier .csv ou .xlsx', type: 'err' });
+      return;
+    }
+    setImportFile(file);
+    setImportMsg(null);
+  };
+
   // Import de fichier
   const handleImportFile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,10 +446,13 @@ export default function SessionsPage() {
             type="button" 
             className="btn pri" 
             style={{ fontWeight: 600 }}
-            onClick={() => setIsImportOpen(true)}
+            onClick={() => {
+              setImportMsg(null);
+              setIsImportOpen(true);
+            }}
           >
             <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
             </svg>
             Importer séances (CSV / Excel)
           </button>
@@ -1972,38 +1989,107 @@ export default function SessionsPage() {
       {/* MODALE : IMPORT DE FICHIER CSV / EXCEL                                    */}
       {/* ========================================================================= */}
       {isImportOpen && (
-        <div className="modal-overlay" style={{ zIndex: 70 }} onClick={(e) => { if (e.target === e.currentTarget && !isImporting) setIsImportOpen(false); }}>
+        <div className="modal-overlay" style={{ zIndex: 70 }} onClick={(e) => { if (e.target === e.currentTarget && !isImporting) { setIsImportOpen(false); setIsDragging(false); } }}>
           <div className="modal-dialog" style={{ width: 'min(500px, 94vw)' }}>
             <div className="dh">
               <h2>Importer des séances (CSV ou Excel)</h2>
-              <button type="button" className="x" onClick={() => setIsImportOpen(false)} disabled={isImporting}>✕</button>
+              <button type="button" className="x" onClick={() => { setIsImportOpen(false); setIsDragging(false); }} disabled={isImporting}>✕</button>
             </div>
             <form onSubmit={handleImportFile}>
               <div className="db">
                 <p style={{ fontSize: '13.5px', color: 'var(--ink2)', margin: 0, lineHeight: 1.5 }}>
-                  Sélectionnez un fichier <strong>.csv</strong> ou <strong>.xlsx</strong> contenant les colonnes de planification (ex. <em>live-sessions-2026-09-30.csv</em>). Les séances, enseignants et liens Zoom seront automatiquement importés et synchronisés dans la base.
+                  Sélectionnez ou glissez-déposez un fichier <strong>.csv</strong> ou <strong>.xlsx</strong> contenant les colonnes de planification. Les séances, enseignants et liens Zoom seront automatiquement importés et synchronisés dans la base.
                 </p>
 
                 <div 
                   style={{
-                    border: '2px dashed var(--line)',
+                    border: isDragging ? '2px dashed var(--acc)' : '2px dashed var(--line)',
                     borderRadius: '14px',
-                    padding: '24px',
+                    padding: '28px 20px',
                     textAlign: 'center',
-                    background: 'var(--hover)',
-                    cursor: 'pointer'
+                    background: isDragging ? 'rgba(79, 70, 229, 0.08)' : 'var(--hover)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    position: 'relative'
                   }}
                   onClick={() => document.getElementById('import-file-input')?.click()}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(true);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      handleSelectFile(e.dataTransfer.files[0]);
+                    }
+                  }}
                 >
-                  <svg viewBox="0 0 24 24" style={{ width: 32, height: 32, fill: 'none', stroke: 'var(--acc)', strokeWidth: 1.8, margin: '0 auto 8px', display: 'block' }}>
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                  <svg viewBox="0 0 24 24" style={{ width: 34, height: 34, fill: 'none', stroke: 'var(--acc)', strokeWidth: 1.8, margin: '0 auto 10px', display: 'block', transition: 'transform 0.2s ease', transform: isDragging ? 'scale(1.15) translateY(-2px)' : 'none' }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                   </svg>
-                  <b style={{ display: 'block', fontSize: '14px', marginBottom: '4px' }}>
-                    {importFile ? importFile.name : 'Cliquez pour choisir un fichier'}
-                  </b>
-                  <small style={{ color: 'var(--ink3)' }}>
-                    {importFile ? `${(importFile.size / 1024).toFixed(1)} Ko` : 'Formats supportés : CSV, XLSX, XLS'}
-                  </small>
+                  {isDragging ? (
+                    <b style={{ display: 'block', fontSize: '14px', color: 'var(--acc)', marginBottom: '4px' }}>
+                      Déposez votre fichier ici...
+                    </b>
+                  ) : importFile ? (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--ink)' }}>{importFile.name}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setImportFile(null);
+                          }}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: 'none',
+                            color: '#DC2626',
+                            borderRadius: '50%',
+                            width: '20px',
+                            height: '20px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            padding: 0
+                          }}
+                          title="Supprimer le fichier"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <small style={{ color: 'var(--ink3)' }}>
+                        {(importFile.size / 1024 < 1024) 
+                          ? `${(importFile.size / 1024).toFixed(1)} Ko` 
+                          : `${(importFile.size / (1024 * 1024)).toFixed(2)} Mo`} • Cliquez ou glissez pour remplacer
+                      </small>
+                    </div>
+                  ) : (
+                    <>
+                      <b style={{ display: 'block', fontSize: '14px', marginBottom: '4px' }}>
+                        Glissez-déposez votre fichier ici ou cliquez pour choisir
+                      </b>
+                      <small style={{ color: 'var(--ink3)' }}>
+                        Formats supportés : CSV, XLSX, XLS
+                      </small>
+                    </>
+                  )}
                 </div>
 
                 <input 
@@ -2013,8 +2099,9 @@ export default function SessionsPage() {
                   hidden 
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0]) {
-                      setImportFile(e.target.files[0]);
+                      handleSelectFile(e.target.files[0]);
                     }
+                    e.target.value = '';
                   }}
                 />
 
@@ -2033,7 +2120,7 @@ export default function SessionsPage() {
               </div>
 
               <div className="df">
-                <button type="button" className="btn" onClick={() => setIsImportOpen(false)} disabled={isImporting}>
+                <button type="button" className="btn" onClick={() => { setIsImportOpen(false); setIsDragging(false); }} disabled={isImporting}>
                   Annuler
                 </button>
                 <button type="submit" className="btn pri" disabled={!importFile || isImporting}>
