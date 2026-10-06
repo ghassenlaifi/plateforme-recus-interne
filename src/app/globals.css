@@ -576,10 +576,16 @@ h1 {
   gap: 12px;
   margin-top: 24px;
 }
-[data-page="payment-receipts"] .stats, .stats.stats-3 {
+[data-page="payment-receipts"] .stats {
+  grid-template-columns: repeat(2, 1fr);
+}
+.stats.stats-3 {
   grid-template-columns: repeat(3, 1fr);
 }
-[data-page="receipts"] .stats, .stats.stats-enc {
+[data-page="receipts"] .stats {
+  grid-template-columns: repeat(2, 1fr);
+}
+.stats.stats-enc {
   grid-template-columns: 1.4fr 1fr 1fr;
 }
 [data-crm] .stats, .stats.stats-4 {

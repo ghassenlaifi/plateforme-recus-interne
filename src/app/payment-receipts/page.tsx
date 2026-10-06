@@ -218,7 +218,7 @@ export default function PaymentReceiptsPage() {
         </div>
 
         {/* Section Stats */}
-        <section className="stats stats-3" aria-label="Résumé">
+        <section className="stats" aria-label="Résumé">
           <div className="stat" style={{ '--c': 'var(--fin)' } as React.CSSProperties}>
             <small><i/>Reçus</small>
             <b>{stats.totalCount}</b>
@@ -226,13 +226,6 @@ export default function PaymentReceiptsPage() {
           <div className="stat" style={{ '--c': '#3B6BF0' } as React.CSSProperties}>
             <small><i/>Élèves</small>
             <b>{stats.uniqueStudents}</b>
-          </div>
-          <div className="stat" style={{ '--c': 'var(--fin)' } as React.CSSProperties}>
-            <small><i/>Total encaissé</small>
-            <b>
-              {stats.totalAmount.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
-              <small style={{ display: 'inline', fontSize: '14px', color: 'var(--ink3)', marginLeft: '4px' }}>DT</small>
-            </b>
           </div>
         </section>
 

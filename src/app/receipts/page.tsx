@@ -532,11 +532,7 @@ export default function ReceiptsPage() {
         </div>
 
         {/* Section Stats */}
-        <section className="stats stats-enc" aria-label="Résumé">
-          <div className="stat" style={{ '--c': 'var(--fin)' } as React.CSSProperties}>
-            <small><i/>Total encaissé</small>
-            <b id="sTotal">{stats.totalAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DT</b>
-          </div>
+        <section className="stats" aria-label="Résumé">
           <div className="stat" style={{ '--c': 'var(--fin)' } as React.CSSProperties}>
             <small><i/>Reçus traités</small>
             <b id="sDone">{stats.doneCount}</b>
