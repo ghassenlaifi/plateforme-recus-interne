@@ -1782,7 +1782,7 @@ export default function CRMEliosPage() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
                         NUMÉRO DE TÉLÉPHONE
                       </label>
@@ -1795,7 +1795,7 @@ export default function CRMEliosPage() {
                             const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
                             setEditPhone(raw);
                           }}
-                          className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 min-w-0 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
                         />
                         <a 
                           className="p-2 rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-emerald-500/15 hover:text-emerald-600 text-emerald-600 transition flex items-center justify-center flex-shrink-0 shadow-2xs"
@@ -1809,6 +1809,19 @@ export default function CRMEliosPage() {
                           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.phone}</svg>
                         </a>
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
+                        SOURCE
+                      </label>
+                      <select 
+                        value={editSource} 
+                        onChange={(e) => setEditSource(e.target.value)}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        {ELIOS_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
                     </div>
 
                     <div>
@@ -1836,19 +1849,6 @@ export default function CRMEliosPage() {
                       >
                         <option value="">Sélectionner…</option>
                         {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        SOURCE
-                      </label>
-                      <select 
-                        value={editSource} 
-                        onChange={(e) => setEditSource(e.target.value)}
-                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      >
-                        {ELIOS_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
 
@@ -1892,7 +1892,7 @@ export default function CRMEliosPage() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
                         GROUPE FAMILIAL (FACULTATIF)
                       </label>
