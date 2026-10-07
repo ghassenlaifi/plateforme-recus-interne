@@ -1,6 +1,7 @@
 import { Session } from '@/types/session';
 import { 
   formatPhone as formatPhoneUtil, 
+  formatPhoneInput as formatPhoneInputUtil,
   extractPhoneDigits, 
   normalizePhoneForUrl,
   extractPhoneData 
@@ -60,12 +61,10 @@ export const SUBJECTS = [
 
 /**
  * Nettoie la saisie utilisateur et applique le masque en temps réel.
- * En Tunisie, les numéros comptent exactement 8 chiffres (mobiles: 2X, 5X, 9X, 4X; fixes: 7X, 3X).
- * Empêche physiquement de saisir plus de 8 chiffres pour un numéro local
- * et formate automatiquement au format 'XX XXX XXX' ou '+216 XX XXX XXX'.
+ * Supporte avec fluidité absolue la Tunisie (+216 ou direct 8 chiffres) et Oman (+968 XXXX XXXX).
  */
 export function formatPhoneInput(value: string): string {
-  return formatPhoneUtil(value);
+  return formatPhoneInputUtil(value);
 }
 
 /**

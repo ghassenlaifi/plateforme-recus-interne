@@ -210,7 +210,7 @@ export default function CRMFormaticPage() {
 
   // Données de configuration pour WhatsApp et Modes de paiement
   const { data: paymentsConfig } = useSWR<{ methods: PaymentMethod[] }>('/api/settings/payments', fetcher);
-  const { data: whatsappConfig } = useSWR<{ templates: WhatsAppTemplates }>('/api/settings/whatsapp', fetcher);
+  const { data: whatsappConfig } = useSWR<{ templates: WhatsAppTemplates }>('/api/settings/whatsapp', fetcher, { revalidateOnFocus: true });
 
   const paymentMethods = useMemo(() => paymentsConfig?.methods || DEFAULT_PAYMENT_METHODS, [paymentsConfig]);
   const whatsappTemplates = useMemo(() => whatsappConfig?.templates || DEFAULT_WHATSAPP_TEMPLATES, [whatsappConfig]);
@@ -2396,6 +2396,13 @@ export default function CRMFormaticPage() {
         defaultMessage={whatsAppModal.message}
         frenchMessage={whatsAppModal.frenchMessage}
         arabicMessage={whatsAppModal.arabicMessage}
+        defaultLanguage={
+          (whatsAppModal.targetStatus?.trim().toLowerCase() === 'approved prospect' || whatsAppModal.targetStatus?.trim().toLowerCase() === 'approved' || whatsAppModal.targetStatus?.trim().toLowerCase() === 'converti')
+            ? (whatsappTemplates.approvedProspectLang || 'fr')
+            : (whatsAppModal.targetStatus?.trim().toLowerCase() === 'n/a')
+            ? (whatsappTemplates.naMessageLang || 'fr')
+            : 'fr'
+        }
         onSent={() => showToast('WhatsApp ouvert avec succès !')}
       />
 

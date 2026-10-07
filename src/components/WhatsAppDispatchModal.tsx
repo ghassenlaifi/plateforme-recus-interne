@@ -13,6 +13,7 @@ interface WhatsAppDispatchModalProps {
   defaultMessage: string;
   frenchMessage?: string;
   arabicMessage?: string;
+  defaultLanguage?: 'fr' | 'ar';
   onSent?: () => void;
 }
 
@@ -25,6 +26,7 @@ export function WhatsAppDispatchModal({
   defaultMessage,
   frenchMessage,
   arabicMessage,
+  defaultLanguage,
   onSent
 }: WhatsAppDispatchModalProps) {
   const [selectedLang, setSelectedLang] = useState<'fr' | 'ar'>('fr');
@@ -32,9 +34,14 @@ export function WhatsAppDispatchModal({
   const [phone, setPhone] = useState(() => formatPhone(studentPhone));
 
   useEffect(() => {
-    setSelectedLang('fr');
-    setMessage(frenchMessage || defaultMessage);
-  }, [defaultMessage, frenchMessage, isOpen]);
+    const initLang = defaultLanguage === 'ar' ? 'ar' : 'fr';
+    setSelectedLang(initLang);
+    if (initLang === 'ar' && arabicMessage) {
+      setMessage(arabicMessage);
+    } else {
+      setMessage(frenchMessage || defaultMessage);
+    }
+  }, [defaultMessage, frenchMessage, arabicMessage, defaultLanguage, isOpen]);
 
   useEffect(() => {
     setPhone(formatPhone(studentPhone));

@@ -15,16 +15,25 @@ export async function GET() {
       try {
         const parsed = JSON.parse((doc as any).value);
         templates = {
+          approvedProspectLang: parsed.approvedProspectLang === 'ar' ? 'ar' : 'fr',
           approvedProspectHeader: parsed.approvedProspectHeader || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader,
           approvedProspectFooter: parsed.approvedProspectFooter || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter,
           approvedProspectHeader_ar: parsed.approvedProspectHeader_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader_ar,
           approvedProspectFooter_ar: parsed.approvedProspectFooter_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter_ar,
+
+          naMessageLang: parsed.naMessageLang === 'ar' ? 'ar' : 'fr',
           naMessage: parsed.naMessage || DEFAULT_WHATSAPP_TEMPLATES.naMessage,
           naMessage_ar: parsed.naMessage_ar || DEFAULT_WHATSAPP_TEMPLATES.naMessage_ar,
+
+          groupReminderLang: parsed.groupReminderLang === 'ar' ? 'ar' : 'fr',
           groupReminder: parsed.groupReminder || DEFAULT_WHATSAPP_TEMPLATES.groupReminder,
           groupReminder_ar: parsed.groupReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.groupReminder_ar,
+
+          teacherReminderLang: parsed.teacherReminderLang === 'ar' ? 'ar' : 'fr',
           teacherReminder: parsed.teacherReminder || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder,
           teacherReminder_ar: parsed.teacherReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder_ar,
+
+          defaultLanguage: parsed.defaultLanguage === 'ar' ? 'ar' : 'fr',
         };
       } catch (e) {
         console.error('Error parsing whatsapp templates from DB:', e);
@@ -44,16 +53,25 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const templates: WhatsAppTemplates = {
+      approvedProspectLang: body.approvedProspectLang === 'ar' ? 'ar' : 'fr',
       approvedProspectHeader: body.approvedProspectHeader || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader,
       approvedProspectFooter: body.approvedProspectFooter || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter,
       approvedProspectHeader_ar: body.approvedProspectHeader_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader_ar,
       approvedProspectFooter_ar: body.approvedProspectFooter_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter_ar,
+
+      naMessageLang: body.naMessageLang === 'ar' ? 'ar' : 'fr',
       naMessage: body.naMessage || DEFAULT_WHATSAPP_TEMPLATES.naMessage,
       naMessage_ar: body.naMessage_ar || DEFAULT_WHATSAPP_TEMPLATES.naMessage_ar,
+
+      groupReminderLang: body.groupReminderLang === 'ar' ? 'ar' : 'fr',
       groupReminder: body.groupReminder || DEFAULT_WHATSAPP_TEMPLATES.groupReminder,
       groupReminder_ar: body.groupReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.groupReminder_ar,
+
+      teacherReminderLang: body.teacherReminderLang === 'ar' ? 'ar' : 'fr',
       teacherReminder: body.teacherReminder || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder,
       teacherReminder_ar: body.teacherReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder_ar,
+
+      defaultLanguage: body.groupReminderLang === 'ar' ? 'ar' : 'fr',
     };
 
     await Settings.findOneAndUpdate(

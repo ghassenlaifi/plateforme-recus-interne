@@ -11,7 +11,7 @@ import {
 } from '@/lib/sessionHelpers';
 import { CommunicationGroup } from '@/types/communicationGroup';
 import { resolveCommunicationGroup } from '@/lib/communicationGroupHelper';
-import { WhatsAppTemplates } from '@/types/settings';
+import { WhatsAppTemplates, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 
 const fetcher = (url: string) => fetch(url).then(res => res.ok ? res.json() : null);
 
@@ -31,13 +31,14 @@ export function SessionReminderAlert() {
   const { data: whatsappData } = useSWR<{ templates: WhatsAppTemplates }>(
     '/api/settings/whatsapp',
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: true, refreshInterval: 10000 }
   );
 
   const [activeAlertSession, setActiveAlertSession] = useState<Session | null>(null);
   const [remindedTeacher, setRemindedTeacher] = useState<Record<string, boolean>>({});
   const [remindedGroup, setRemindedGroup] = useState<Record<string, boolean>>({});
   const [isCopiedZoom, setIsCopiedZoom] = useState(false);
+  const [selectedLang, setSelectedLang] = useState<'fr' | 'ar' | null>(null);
 
   const sessions = useMemo(() => sessionData?.sessions || [], [sessionData]);
   const commGroups = useMemo(() => groupsData?.groups || [], [groupsData]);
@@ -108,7 +109,11 @@ export function SessionReminderAlert() {
   };
 
   const handleSendTeacherReminder = async () => {
-    const text = formatTeacherReminder(activeAlertSession, 'fr', whatsappData?.templates?.teacherReminder);
+    const teacherLang = selectedLang || (whatsappData?.templates?.teacherReminderLang || 'fr');
+    const customTemplate = teacherLang === 'ar'
+      ? (whatsappData?.templates?.teacherReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder_ar)
+      : (whatsappData?.templates?.teacherReminder || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder);
+    const text = formatTeacherReminder(activeAlertSession, teacherLang, customTemplate);
     const cleanPhone = normalizePhone(activeAlertSession.teacherPhone);
 
     if (cleanPhone) {
@@ -132,7 +137,11 @@ export function SessionReminderAlert() {
 
   const handleSendGroupReminder = async () => {
     if (!activeAlertSession) return;
-    const text = formatGroupReminder(activeAlertSession, 'fr', whatsappData?.templates?.groupReminder);
+    const groupLang = selectedLang || (whatsappData?.templates?.groupReminderLang || 'fr');
+    const customTemplate = groupLang === 'ar'
+      ? (whatsappData?.templates?.groupReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.groupReminder_ar)
+      : (whatsappData?.templates?.groupReminder || DEFAULT_WHATSAPP_TEMPLATES.groupReminder);
+    const text = formatGroupReminder(activeAlertSession, groupLang, customTemplate);
     navigator.clipboard.writeText(text);
 
     const targetGroup = resolveCommunicationGroup(activeAlertSession, commGroups);
@@ -307,60 +316,136 @@ export function SessionReminderAlert() {
           )}
         </div>
 
+        {/* Sélecteur de langue du message WhatsApp */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 12px', padding: '0 2px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span>🌐</span> Langue du rappel :
+          </span>
+          <div style={{ display: 'inline-flex', padding: '3px', borderRadius: '10px', background: 'var(--hover)', border: '1px solid var(--line)', gap: '3px' }}>
+            <button
+              type="button"
+              onClick={() => setSelectedLang(null)}
+              title="Utiliser la langue configurée par défaut pour chaque modèle dans Paramètres"
+              style={{
+                border: 'none',
+                background: selectedLang === null ? 'var(--card)' : 'transparent',
+                color: selectedLang === null ? 'var(--pri)' : 'var(--ink3)',
+                fontWeight: 700,
+                fontSize: '11px',
+                padding: '4px 8px',
+                borderRadius: '7px',
+                cursor: 'pointer',
+                boxShadow: selectedLang === null ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              ⚙️ Défaut {selectedLang === null ? '✓' : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedLang('fr')}
+              title="Forcer l'envoi en français"
+              style={{
+                border: 'none',
+                background: selectedLang === 'fr' ? 'var(--card)' : 'transparent',
+                color: selectedLang === 'fr' ? 'var(--pri)' : 'var(--ink3)',
+                fontWeight: 700,
+                fontSize: '11px',
+                padding: '4px 8px',
+                borderRadius: '7px',
+                cursor: 'pointer',
+                boxShadow: selectedLang === 'fr' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              🇫🇷 FR {selectedLang === 'fr' ? '✓' : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedLang('ar')}
+              title="Forcer l'envoi en arabe"
+              style={{
+                border: 'none',
+                background: selectedLang === 'ar' ? 'var(--card)' : 'transparent',
+                color: selectedLang === 'ar' ? 'var(--pri)' : 'var(--ink3)',
+                fontWeight: 700,
+                fontSize: '11px',
+                padding: '4px 8px',
+                borderRadius: '7px',
+                cursor: 'pointer',
+                boxShadow: selectedLang === 'ar' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              🇹🇳 AR {selectedLang === 'ar' ? '✓' : ''}
+            </button>
+          </div>
+        </div>
+
         {/* Boutons d'actions immédiates */}
         <div style={{ display: 'grid', gap: '10px' }}>
           {/* Action 1 : Rappel Enseignant WhatsApp */}
-          <button 
-            type="button" 
-            onClick={handleSendTeacherReminder}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: '10px',
-              padding: '11px 16px',
-              borderRadius: '12px',
-              fontWeight: 600,
-              fontSize: '13.5px',
-              cursor: 'pointer',
-              border: isTeacherReminded ? '1px solid var(--ok)' : '1px solid color-mix(in srgb, #25D366 40%, var(--line))',
-              background: isTeacherReminded ? 'color-mix(in srgb, var(--ok) 12%, var(--card))' : 'color-mix(in srgb, #25D366 12%, var(--card))',
-              color: isTeacherReminded ? 'var(--ok)' : 'var(--wa)'
-            }}
-          >
-            <svg viewBox="0 0 24 24" style={{ width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-              <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>
-            </svg>
-            {isTeacherReminded ? '✓ Enseignant déjà rappelé (Envoyer à nouveau)' : "Envoyer Rappel WhatsApp à l'Enseignant"}
-          </button>
+          {(() => {
+            const activeTeacherLang = selectedLang || (whatsappData?.templates?.teacherReminderLang || 'fr');
+            const activeGroupLang = selectedLang || (whatsappData?.templates?.groupReminderLang || 'fr');
+            return (
+              <>
+                <button 
+                  type="button" 
+                  onClick={handleSendTeacherReminder}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '10px',
+                    padding: '11px 16px',
+                    borderRadius: '12px',
+                    fontWeight: 600,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    border: isTeacherReminded ? '1px solid var(--ok)' : '1px solid color-mix(in srgb, #25D366 40%, var(--line))',
+                    background: isTeacherReminded ? 'color-mix(in srgb, var(--ok) 12%, var(--card))' : 'color-mix(in srgb, #25D366 12%, var(--card))',
+                    color: isTeacherReminded ? 'var(--ok)' : 'var(--wa)'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" style={{ width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>
+                  </svg>
+                  {isTeacherReminded 
+                    ? `✓ Enseignant déjà rappelé (${activeTeacherLang === 'ar' ? '🇹🇳 AR' : '🇫🇷 FR'})` 
+                    : `Envoyer Rappel Enseignant (${activeTeacherLang === 'ar' ? '🇹🇳 AR' : '🇫🇷 FR'})`}
+                </button>
 
-          {/* Action 2 : Rappel Groupe Élèves WhatsApp */}
-          <button 
-            type="button" 
-            onClick={handleSendGroupReminder}
-            title={`Ouvrir ${resolveCommunicationGroup(activeAlertSession, commGroups).name}`}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: '10px',
-              padding: '11px 16px',
-              borderRadius: '12px',
-              fontWeight: 600,
-              fontSize: '13.5px',
-              cursor: 'pointer',
-              border: isGroupReminded ? '1px solid var(--ok)' : '1px solid var(--line)',
-              background: isGroupReminded ? 'color-mix(in srgb, var(--ok) 10%, var(--card))' : 'var(--hover)',
-              color: isGroupReminded ? 'var(--ok)' : 'var(--ink)'
-            }}
-          >
-            <svg viewBox="0 0 24 24" style={{ width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-              <circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/>
-            </svg>
-            {isGroupReminded 
-              ? `✓ ${resolveCommunicationGroup(activeAlertSession, commGroups).name} déjà rappelé` 
-              : `Envoyer Rappel (${resolveCommunicationGroup(activeAlertSession, commGroups).name})`}
-          </button>
+                {/* Action 2 : Rappel Groupe Élèves WhatsApp */}
+                <button 
+                  type="button" 
+                  onClick={handleSendGroupReminder}
+                  title={`Ouvrir ${resolveCommunicationGroup(activeAlertSession, commGroups).name}`}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '10px',
+                    padding: '11px 16px',
+                    borderRadius: '12px',
+                    fontWeight: 600,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    border: isGroupReminded ? '1px solid var(--ok)' : '1px solid var(--line)',
+                    background: isGroupReminded ? 'color-mix(in srgb, var(--ok) 10%, var(--card))' : 'var(--hover)',
+                    color: isGroupReminded ? 'var(--ok)' : 'var(--ink)'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" style={{ width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                    <circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/>
+                  </svg>
+                  {isGroupReminded 
+                    ? `✓ ${resolveCommunicationGroup(activeAlertSession, commGroups).name} déjà rappelé (${activeGroupLang === 'ar' ? '🇹🇳 AR' : '🇫🇷 FR'})` 
+                    : `Envoyer Rappel (${resolveCommunicationGroup(activeAlertSession, commGroups).name}) (${activeGroupLang === 'ar' ? '🇹🇳 AR' : '🇫🇷 FR'})`}
+                </button>
+              </>
+            );
+          })()}
         </div>
 
         {/* Pied du popup */}

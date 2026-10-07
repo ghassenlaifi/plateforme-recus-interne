@@ -190,31 +190,92 @@ export function formatPhone(raw?: string | null): string {
  */
 export function formatPhoneInput(raw?: string | null): string {
   if (!raw) return '';
-  const trimmed = String(raw).trim();
+  const str = String(raw);
+  const trimmed = str.trim();
+  if (!trimmed) return '';
 
-  // Si l'utilisateur commence à taper l'indicatif international
-  if (trimmed === '+' || trimmed === '+9' || trimmed === '+96') {
-    return trimmed;
-  }
-  if (trimmed === '0' || trimmed === '00' || trimmed === '009' || trimmed === '0096') {
-    return trimmed;
+  // 1. Saisie avec indicatif international débutant par '+'
+  if (trimmed.startsWith('+')) {
+    if (trimmed === '+') return '+';
+
+    // A. Sultanat d'Oman : '+9', '+96', '+968...'
+    if (trimmed === '+9' || trimmed === '+96') {
+      return trimmed;
+    }
+    if (trimmed.startsWith('+968')) {
+      const remainder = trimmed.slice(4);
+      const digits = remainder.replace(/\D/g, '').slice(0, 8);
+      if (digits.length === 0) {
+        return str.endsWith(' ') ? '+968 ' : '+968';
+      }
+      if (digits.length <= 4) {
+        return `+968 ${digits}`;
+      }
+      return `+968 ${digits.slice(0, 4)} ${digits.slice(4)}`;
+    }
+
+    // B. Tunisie internationale : '+2', '+21', '+216...'
+    if (trimmed === '+2' || trimmed === '+21') {
+      return trimmed;
+    }
+    if (trimmed.startsWith('+216')) {
+      const remainder = trimmed.slice(5);
+      const digits = remainder.replace(/\D/g, '').slice(0, 8);
+      if (digits.length === 0) {
+        return str.endsWith(' ') ? '+216 ' : '+216';
+      }
+      if (digits.length <= 2) {
+        return `+216 ${digits}`;
+      }
+      if (digits.length <= 5) {
+        return `+216 ${digits.slice(0, 2)} ${digits.slice(2)}`;
+      }
+      return `+216 ${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5)}`;
+    }
+
+    // C. Autre indicatif international en cours : préserver '+' sans l'effacer
+    const cleanDigits = trimmed.slice(1).replace(/\D/g, '');
+    return cleanDigits ? `+${cleanDigits}` : '+';
   }
 
-  // Détection Oman en cours de frappe
-  if (
-    trimmed.startsWith('+968') ||
-    trimmed.startsWith('00968') ||
-    (trimmed.startsWith('968') && trimmed.replace(/\D/g, '').length >= 4)
-  ) {
-    let s = trimmed.replace(/^(\+\s*968|00\s*968|\(\s*\+?\s*968\s*\)|968[\s\.\-\/]*)/i, '');
-    let digits = s.replace(/\D/g, '').slice(0, 8);
-    if (!digits) return '+968 ';
-    if (digits.length <= 4) return `+968 ${digits}`;
-    return `+968 ${digits.slice(0, 4)} ${digits.slice(4)}`;
+  // 2. Préfixe international '00' (ex: 00968 ou 00216)
+  if (trimmed.startsWith('00')) {
+    if (trimmed === '00' || trimmed === '009' || trimmed === '0096' || trimmed === '002' || trimmed === '0021') {
+      return trimmed;
+    }
+    if (trimmed.startsWith('00968')) {
+      const digits = trimmed.slice(5).replace(/\D/g, '').slice(0, 8);
+      if (digits.length === 0) return '+968';
+      if (digits.length <= 4) return `+968 ${digits}`;
+      return `+968 ${digits.slice(0, 4)} ${digits.slice(4)}`;
+    }
+    if (trimmed.startsWith('00216')) {
+      const digits = trimmed.slice(5).replace(/\D/g, '').slice(0, 8);
+      if (digits.length === 0) return '+216';
+      if (digits.length <= 2) return `+216 ${digits}`;
+      if (digits.length <= 5) return `+216 ${digits.slice(0, 2)} ${digits.slice(2)}`;
+      return `+216 ${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5)}`;
+    }
   }
 
-  // Formatage standard Tunisie
-  return formatPhone(raw);
+  // 3. Saisie directe Oman avec '968' et plus de 8 chiffres
+  const allDigits = trimmed.replace(/\D/g, '');
+  if (allDigits.startsWith('968') && allDigits.length > 8) {
+    const omaniDigits = allDigits.slice(3, 11);
+    if (omaniDigits.length <= 4) return `+968 ${omaniDigits}`;
+    return `+968 ${omaniDigits.slice(0, 4)} ${omaniDigits.slice(4)}`;
+  }
+
+  // 4. Numéro local standard Tunisie (8 chiffres : 2X, 3X, 4X, 5X, 7X, 9X)
+  const tnDigits = allDigits.slice(0, 8);
+  if (!tnDigits) return '';
+  if (tnDigits.length <= 2) {
+    return tnDigits;
+  }
+  if (tnDigits.length <= 5) {
+    return `${tnDigits.slice(0, 2)} ${tnDigits.slice(2)}`;
+  }
+  return `${tnDigits.slice(0, 2)} ${tnDigits.slice(2, 5)} ${tnDigits.slice(5)}`;
 }
 
 /**

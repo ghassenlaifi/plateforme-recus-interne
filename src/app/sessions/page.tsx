@@ -22,7 +22,7 @@ import {
 } from '@/lib/sessionHelpers';
 import { CommunicationGroup } from '@/types/communicationGroup';
 import { resolveCommunicationGroup } from '@/lib/communicationGroupHelper';
-import { WhatsAppTemplates } from '@/types/settings';
+import { WhatsAppTemplates, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur de chargement');
@@ -76,8 +76,11 @@ export default function SessionsPage() {
   const { data: whatsappData } = useSWR<{ templates: WhatsAppTemplates }>(
     '/api/settings/whatsapp',
     fetcher,
-    { revalidateOnFocus: false, revalidateOnReconnect: false }
+    { revalidateOnFocus: true, refreshInterval: 10000 }
   );
+
+  // Forçage de langue pour les rappels WhatsApp ('fr' | 'ar' | null = selon le modèle configuré)
+  const [manualReminderLang, setManualReminderLang] = useState<'fr' | 'ar' | null>(null);
 
   const sessions = sessionData?.sessions || [];
   const commGroups = useMemo(() => groupsData?.groups || [], [groupsData]);
@@ -304,9 +307,13 @@ export default function SessionsPage() {
 
   // Envoi Rappel Groupe Élèves synchronisé rigoureusement avec les Groupes de Communication Standards
   const handleSendGroupReminder = async (s: Session) => {
-    const text = formatGroupReminder(s, 'fr', whatsappData?.templates?.groupReminder);
+    const lang = manualReminderLang || (whatsappData?.templates?.groupReminderLang || 'fr');
+    const customTemplate = lang === 'ar'
+      ? (whatsappData?.templates?.groupReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.groupReminder_ar)
+      : (whatsappData?.templates?.groupReminder || DEFAULT_WHATSAPP_TEMPLATES.groupReminder);
+    const text = formatGroupReminder(s, lang, customTemplate);
 
-    // 1. Toujours copier dans le presse-papier pour garantir la disponibilité du texte
+    // 1. Toujours copier dans le presse-papier pour garantir la disponibilité du texte dans la langue exacte
     try {
       await navigator.clipboard.writeText(text);
     } catch (e) {
@@ -363,6 +370,15 @@ export default function SessionsPage() {
     if (!s.remGroup) {
       handleToggleSessionFlag(s, 'remGroup', true);
     }
+  };
+
+  // Formate le message de rappel pour l'enseignant selon la langue sélectionnée
+  const getTeacherReminderMessage = (s: Session) => {
+    const lang = manualReminderLang || (whatsappData?.templates?.teacherReminderLang || 'fr');
+    const customTemplate = lang === 'ar'
+      ? (whatsappData?.templates?.teacherReminder_ar || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder_ar)
+      : (whatsappData?.templates?.teacherReminder || DEFAULT_WHATSAPP_TEMPLATES.teacherReminder);
+    return formatTeacherReminder(s, lang, customTemplate);
   };
 
   // Sélection et validation du fichier d'import
@@ -614,6 +630,73 @@ export default function SessionsPage() {
               Planifiez les cours, suivez les documents et automatisez les rappels enseignants & groupes d'élèves.
             </p>
           </div>
+
+          {/* Sélecteur de langue des rappels WhatsApp */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--card)', border: '1px solid var(--line)', padding: '3px 8px', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span>🌐</span> Rappels :
+            </span>
+            <div style={{ display: 'inline-flex', gap: '2px', background: 'var(--hover)', padding: '2px', borderRadius: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setManualReminderLang(null)}
+                title="Utiliser la langue d'envoi par défaut configurée pour chaque modèle dans Paramètres"
+                style={{
+                  border: 'none',
+                  background: manualReminderLang === null ? 'var(--card)' : 'transparent',
+                  color: manualReminderLang === null ? 'var(--pri)' : 'var(--ink3)',
+                  fontWeight: 700,
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  boxShadow: manualReminderLang === null ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                ⚙️ Défaut {manualReminderLang === null ? '✓' : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualReminderLang('fr')}
+                title="Forcer les rappels WhatsApp en français"
+                style={{
+                  border: 'none',
+                  background: manualReminderLang === 'fr' ? 'var(--card)' : 'transparent',
+                  color: manualReminderLang === 'fr' ? 'var(--pri)' : 'var(--ink3)',
+                  fontWeight: 700,
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  boxShadow: manualReminderLang === 'fr' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🇫🇷 FR {manualReminderLang === 'fr' ? '✓' : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualReminderLang('ar')}
+                title="Forcer les rappels WhatsApp en arabe"
+                style={{
+                  border: 'none',
+                  background: manualReminderLang === 'ar' ? 'var(--card)' : 'transparent',
+                  color: manualReminderLang === 'ar' ? 'var(--pri)' : 'var(--ink3)',
+                  fontWeight: 700,
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  boxShadow: manualReminderLang === 'ar' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🇹🇳 AR {manualReminderLang === 'ar' ? '✓' : ''}
+              </button>
+            </div>
+          </div>
+
           <button 
             type="button" 
             className="btn pri" 
@@ -879,7 +962,7 @@ export default function SessionsPage() {
                         setFormPhone(formatted);
                         if (formatted) {
                           const check = validatePhone(formatted);
-                          setFormPhoneErr(check.isValid ? '' : (check.error || 'Numéro invalide'));
+                          if (check.isValid) setFormPhoneErr('');
                         } else {
                           setFormPhoneErr('');
                         }
@@ -1204,7 +1287,7 @@ export default function SessionsPage() {
                               className="wb" 
                               disabled={!s.teacherPhone}
                               onClick={() => {
-                                sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder));
+                                sendWhatsApp(s.teacherPhone, getTeacherReminderMessage(s));
                                 if (!s.remTeacher) {
                                   handleToggleSessionFlag(s, 'remTeacher', true);
                                 }
@@ -1330,7 +1413,7 @@ export default function SessionsPage() {
                         setTFormPhone(formatted);
                         if (formatted) {
                           const check = validatePhone(formatted);
-                          setTFormPhoneErr(check.isValid ? '' : (check.error || 'Numéro invalide'));
+                          if (check.isValid) setTFormPhoneErr('');
                         } else {
                           setTFormPhoneErr('');
                         }
@@ -1761,7 +1844,7 @@ export default function SessionsPage() {
                             type="button" 
                             className={`ib ${s.remTeacher ? 'on' : ''}`} 
                             onClick={() => {
-                              sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder));
+                              sendWhatsApp(s.teacherPhone, getTeacherReminderMessage(s));
                               if (!s.remTeacher) handleToggleSessionFlag(s, 'remTeacher', true);
                             }}
                             title={s.remTeacher ? "Rappel enseignant envoyé (✓)" : "Envoyer le rappel WhatsApp à l'enseignant"}
@@ -1886,7 +1969,7 @@ export default function SessionsPage() {
                       setEditingSession({ ...editingSession, teacherPhone: formatted });
                       if (formatted) {
                         const check = validatePhone(formatted);
-                        setEditPhoneErr(check.isValid ? '' : (check.error || 'Numéro invalide'));
+                        if (check.isValid) setEditPhoneErr('');
                       } else {
                         setEditPhoneErr('');
                       }
@@ -2111,7 +2194,7 @@ export default function SessionsPage() {
                       setEditingTeacher({ ...editingTeacher, phone: formatted });
                       if (formatted) {
                         const check = validatePhone(formatted);
-                        setEditTPhoneErr(check.isValid ? '' : (check.error || 'Numéro invalide'));
+                        if (check.isValid) setEditTPhoneErr('');
                       } else {
                         setEditTPhoneErr('');
                       }

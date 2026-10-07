@@ -325,6 +325,12 @@ export default function SettingsPage() {
     { revalidateOnFocus: false, revalidateOnReconnect: false }
   );
 
+  // Langue par défaut de chaque modèle ('fr' | 'ar')
+  const [m1DefaultLang, setM1DefaultLang] = useState<'fr' | 'ar'>('fr');
+  const [m2DefaultLang, setM2DefaultLang] = useState<'fr' | 'ar'>('fr');
+  const [m3DefaultLang, setM3DefaultLang] = useState<'fr' | 'ar'>('fr');
+  const [m4DefaultLang, setM4DefaultLang] = useState<'fr' | 'ar'>('fr');
+
   // Modèle 1 : Approved Prospect (FR & AR)
   const [approvedHeader, setApprovedHeader] = useState(DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader);
   const [approvedFooter, setApprovedFooter] = useState(DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter);
@@ -343,7 +349,7 @@ export default function SettingsPage() {
   const [teacherReminder, setTeacherReminder] = useState(DEFAULT_WHATSAPP_TEMPLATES.teacherReminder);
   const [teacherReminderAr, setTeacherReminderAr] = useState(DEFAULT_WHATSAPP_TEMPLATES.teacherReminder_ar);
 
-  // Sélecteur de langue pour chaque modèle ('fr' | 'ar')
+  // Onglet d'édition actif pour chaque modèle ('fr' | 'ar')
   const [m1Lang, setM1Lang] = useState<'fr' | 'ar'>('fr');
   const [m2Lang, setM2Lang] = useState<'fr' | 'ar'>('fr');
   const [m3Lang, setM3Lang] = useState<'fr' | 'ar'>('fr');
@@ -354,6 +360,11 @@ export default function SettingsPage() {
   useEffect(() => {
     if (whatsappData?.templates) {
       if (!hasLoadedWhatsAppRef.current) {
+        setM1DefaultLang(whatsappData.templates.approvedProspectLang || 'fr');
+        setM2DefaultLang(whatsappData.templates.naMessageLang || 'fr');
+        setM3DefaultLang(whatsappData.templates.groupReminderLang || 'fr');
+        setM4DefaultLang(whatsappData.templates.teacherReminderLang || 'fr');
+
         setApprovedHeader(whatsappData.templates.approvedProspectHeader || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader);
         setApprovedFooter(whatsappData.templates.approvedProspectFooter || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter);
         setApprovedHeaderAr(whatsappData.templates.approvedProspectHeader_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader_ar);
@@ -380,16 +391,21 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          approvedProspectLang: m1DefaultLang,
           approvedProspectHeader: approvedHeader,
           approvedProspectFooter: approvedFooter,
           approvedProspectHeader_ar: approvedHeaderAr,
           approvedProspectFooter_ar: approvedFooterAr,
+          naMessageLang: m2DefaultLang,
           naMessage: naMessage,
           naMessage_ar: naMessageAr,
+          groupReminderLang: m3DefaultLang,
           groupReminder: groupReminder,
           groupReminder_ar: groupReminderAr,
+          teacherReminderLang: m4DefaultLang,
           teacherReminder: teacherReminder,
-          teacherReminder_ar: teacherReminderAr
+          teacherReminder_ar: teacherReminderAr,
+          defaultLanguage: m3DefaultLang,
         })
       });
       if (!res.ok) throw new Error('Erreur lors de la sauvegarde des modèles');
@@ -405,6 +421,10 @@ export default function SettingsPage() {
 
   const handleResetWhatsAppDefaults = () => {
     if (window.confirm('Voulez-vous réinitialiser tous les modèles WhatsApp aux textes par défaut (Français & Arabe) ?')) {
+      setM1DefaultLang('fr');
+      setM2DefaultLang('fr');
+      setM3DefaultLang('fr');
+      setM4DefaultLang('fr');
       setApprovedHeader(DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader);
       setApprovedFooter(DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter);
       setApprovedHeaderAr(DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader_ar);
@@ -1193,30 +1213,59 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                {/* Sélecteur de langue */}
-                <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0 self-start">
-                  <button
-                    type="button"
-                    onClick={() => setM1Lang('fr')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m1Lang === 'fr'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇫🇷 Français
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setM1Lang('ar')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m1Lang === 'ar'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇹🇳 العربية
-                  </button>
+                <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+                  {/* Sélecteur de langue d'envoi par défaut */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--hover)] border border-[var(--line)] text-xs">
+                    <span className="font-bold text-[var(--ink2)] text-[11px] uppercase tracking-wide">
+                      Envoi par défaut :
+                    </span>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none">
+                      <input
+                        type="radio"
+                        name="m1_default_lang"
+                        checked={m1DefaultLang === 'fr'}
+                        onChange={() => setM1DefaultLang('fr')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇫🇷 Français</span>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none ml-1">
+                      <input
+                        type="radio"
+                        name="m1_default_lang"
+                        checked={m1DefaultLang === 'ar'}
+                        onChange={() => setM1DefaultLang('ar')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇹🇳 العربية</span>
+                    </label>
+                  </div>
+
+                  {/* Onglets d'édition FR / AR */}
+                  <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setM1Lang('fr')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m1Lang === 'fr'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇫🇷 Français
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setM1Lang('ar')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m1Lang === 'ar'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇹🇳 العربية
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1319,30 +1368,59 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                {/* Sélecteur de langue */}
-                <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0 self-start">
-                  <button
-                    type="button"
-                    onClick={() => setM2Lang('fr')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m2Lang === 'fr'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇫🇷 Français
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setM2Lang('ar')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m2Lang === 'ar'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇹🇳 العربية
-                  </button>
+                <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+                  {/* Sélecteur de langue d'envoi par défaut */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--hover)] border border-[var(--line)] text-xs">
+                    <span className="font-bold text-[var(--ink2)] text-[11px] uppercase tracking-wide">
+                      Envoi par défaut :
+                    </span>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none">
+                      <input
+                        type="radio"
+                        name="m2_default_lang"
+                        checked={m2DefaultLang === 'fr'}
+                        onChange={() => setM2DefaultLang('fr')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇫🇷 Français</span>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none ml-1">
+                      <input
+                        type="radio"
+                        name="m2_default_lang"
+                        checked={m2DefaultLang === 'ar'}
+                        onChange={() => setM2DefaultLang('ar')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇹🇳 العربية</span>
+                    </label>
+                  </div>
+
+                  {/* Onglets d'édition FR / AR */}
+                  <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setM2Lang('fr')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m2Lang === 'fr'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇫🇷 Français
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setM2Lang('ar')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m2Lang === 'ar'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇹🇳 العربية
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1425,30 +1503,59 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                {/* Sélecteur de langue */}
-                <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0 self-start">
-                  <button
-                    type="button"
-                    onClick={() => setM3Lang('fr')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m3Lang === 'fr'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇫🇷 Français
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setM3Lang('ar')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m3Lang === 'ar'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇹🇳 العربية
-                  </button>
+                <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+                  {/* Sélecteur de langue d'envoi par défaut */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--hover)] border border-[var(--line)] text-xs">
+                    <span className="font-bold text-[var(--ink2)] text-[11px] uppercase tracking-wide">
+                      Envoi par défaut :
+                    </span>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none">
+                      <input
+                        type="radio"
+                        name="m3_default_lang"
+                        checked={m3DefaultLang === 'fr'}
+                        onChange={() => setM3DefaultLang('fr')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇫🇷 Français</span>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none ml-1">
+                      <input
+                        type="radio"
+                        name="m3_default_lang"
+                        checked={m3DefaultLang === 'ar'}
+                        onChange={() => setM3DefaultLang('ar')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇹🇳 العربية</span>
+                    </label>
+                  </div>
+
+                  {/* Onglets d'édition FR / AR */}
+                  <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setM3Lang('fr')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m3Lang === 'fr'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇫🇷 Français
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setM3Lang('ar')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m3Lang === 'ar'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇹🇳 العربية
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1549,30 +1656,59 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                {/* Sélecteur de langue */}
-                <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0 self-start">
-                  <button
-                    type="button"
-                    onClick={() => setM4Lang('fr')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m4Lang === 'fr'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇫🇷 Français
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setM4Lang('ar')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      m4Lang === 'ar'
-                        ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
-                        : 'text-[var(--ink3)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    🇹🇳 العربية
-                  </button>
+                <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+                  {/* Sélecteur de langue d'envoi par défaut */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--hover)] border border-[var(--line)] text-xs">
+                    <span className="font-bold text-[var(--ink2)] text-[11px] uppercase tracking-wide">
+                      Envoi par défaut :
+                    </span>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none">
+                      <input
+                        type="radio"
+                        name="m4_default_lang"
+                        checked={m4DefaultLang === 'fr'}
+                        onChange={() => setM4DefaultLang('fr')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇫🇷 Français</span>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-[var(--ink)] select-none ml-1">
+                      <input
+                        type="radio"
+                        name="m4_default_lang"
+                        checked={m4DefaultLang === 'ar'}
+                        onChange={() => setM4DefaultLang('ar')}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span>🇹🇳 العربية</span>
+                    </label>
+                  </div>
+
+                  {/* Onglets d'édition FR / AR */}
+                  <div className="inline-flex p-1 rounded-xl bg-[var(--hover)] border border-[var(--line)] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setM4Lang('fr')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m4Lang === 'fr'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇫🇷 Français
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setM4Lang('ar')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        m4Lang === 'ar'
+                          ? 'bg-[var(--card)] text-[var(--pri)] shadow-sm'
+                          : 'text-[var(--ink3)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      🇹🇳 العربية
+                    </button>
+                  </div>
                 </div>
               </div>
 
