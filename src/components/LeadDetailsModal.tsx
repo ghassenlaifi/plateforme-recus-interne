@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { X, Phone, Trash2, Edit3, Send } from 'lucide-react';
 import { formatPhone } from '@/lib/phoneUtils';
 
-const CLASSE_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère de Base', '2ème de Base', '3ème de Base', 'BAC'];
+const NIVEAU_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère Année', '2ème Année', '3ème Année', 'BAC'];
+const CLASSE_OPTIONS = NIVEAU_OPTIONS;
 const SECTION_OPTIONS = ['Sciences Expérimentales', 'Mathématiques', 'Technique', 'Informatique', 'Économie', 'Lettres', 'Sport'];
 const STATUS_OPTIONS = ['Lead', 'N/A', 'Potential Prospect', 'Approved Prospect', 'Approved', 'Rejected'];
 
@@ -144,7 +145,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, theme }: LeadDetailsMo
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Classe</label>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Niveau</label>
                 <select defaultValue={lead.grade} className={`w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${ringTheme} text-gray-900 font-medium text-sm appearance-none transition-all shadow-sm`}>
                   <option value="">Sélectionner...</option>
                   {CLASSE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}

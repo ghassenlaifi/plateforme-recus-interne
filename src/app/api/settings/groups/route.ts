@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
       const level = String(body.level || '').trim();
       if (!level) {
-        return NextResponse.json({ error: 'Le niveau / classe est obligatoire' }, { status: 400 });
+        return NextResponse.json({ error: 'Le niveau est obligatoire' }, { status: 400 });
       }
 
       const section = String(body.section || 'Sans section').trim();

@@ -140,6 +140,8 @@ export default function SessionsPage() {
   const [editTPhoneErr, setEditTPhoneErr] = useState('');
   const [viewingFicheTeacher, setViewingFicheTeacher] = useState<Teacher | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ text: string; action: () => Promise<void> } | null>(null);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -277,11 +279,13 @@ export default function SessionsPage() {
     }
   };
 
-  // Toggle drapeau de séance
-  const handleToggleSessionFlag = async (session: Session, key: 'remTeacher' | 'remGroup' | 'done' | 'pdf' | 'rec') => {
+  // Toggle drapeau de séance (avec support d'une valeur cible explicite)
+  const handleToggleSessionFlag = async (session: Session, key: 'remTeacher' | 'remGroup' | 'done' | 'pdf' | 'rec', targetVal?: boolean) => {
     try {
-      const nextVal = !session[key];
-      // Optimistic
+      const nextVal = typeof targetVal === 'boolean' ? targetVal : !session[key];
+      if (session[key] === nextVal) return;
+
+      // Mise à jour optimiste immédiate dans l'UI
       mutateSessions({
         ...sessionData!,
         sessions: sessions.map(s => s._id === session._id ? { ...s, [key]: nextVal } : s)
@@ -298,30 +302,66 @@ export default function SessionsPage() {
     }
   };
 
-  // Envoi Rappel Groupe Élèves synchronisé rigoureusement avec les 19 Groupes de Communication Standards
-  const handleSendGroupReminder = (s: Session) => {
+  // Envoi Rappel Groupe Élèves synchronisé rigoureusement avec les Groupes de Communication Standards
+  const handleSendGroupReminder = async (s: Session) => {
     const text = formatGroupReminder(s, 'fr', whatsappData?.templates?.groupReminder);
-    navigator.clipboard.writeText(text);
 
-    const targetGroup = resolveCommunicationGroup(s, commGroups);
-    if (targetGroup && targetGroup.whatsappLink && targetGroup.whatsappLink.trim()) {
-      const link = targetGroup.whatsappLink.trim();
-      const finalUrl = link.startsWith('http') ? link : `https://${link}`;
-      toast({
-        message: `Message copié ! Redirection vers « ${targetGroup.name} »...`,
-        tone: 'ok',
-      });
-      window.open(finalUrl, '_blank', 'noopener');
-    } else {
-      toast({
-        message: `Message copié ! Aucun lien configuré pour « ${targetGroup?.name || 'ce groupe'} » (WhatsApp Web ouvert). Rendez-vous dans Paramètres pour renseigner le lien.`,
-        tone: 'warn',
-      });
-      window.open('https://web.whatsapp.com/', '_blank', 'noopener');
+    // 1. Toujours copier dans le presse-papier pour garantir la disponibilité du texte
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      console.warn('Clipboard write error:', e);
     }
 
+    const targetGroup = resolveCommunicationGroup(s, commGroups);
+    const link = targetGroup?.whatsappLink ? targetGroup.whatsappLink.trim() : '';
+
+    if (link) {
+      const isChatInvite = link.includes('chat.whatsapp.com');
+      const isWaMe = link.includes('wa.me') || link.includes('api.whatsapp.com');
+
+      if (isWaMe) {
+        // Lien direct de contact WhatsApp : on injecte le paramètre text !
+        const sep = link.includes('?') ? '&' : '?';
+        const urlWithText = link.startsWith('http') 
+          ? `${link}${sep}text=${encodeURIComponent(text)}` 
+          : `https://${link}${sep}text=${encodeURIComponent(text)}`;
+        window.open(urlWithText, '_blank', 'noopener');
+        toast({
+          message: `Redirection vers « ${targetGroup.name} » avec message préparé !`,
+          tone: 'ok',
+        });
+      } else if (isChatInvite) {
+        // Lien d'invitation de groupe (chat.whatsapp.com) :
+        // WhatsApp ouvre la conversation du groupe directement. Le texte est copié dans le presse-papier.
+        const finalUrl = link.startsWith('http') ? link : `https://${link}`;
+        window.open(finalUrl, '_blank', 'noopener');
+        toast({
+          message: `📢 Message copié ! Collez-le simplement (Ctrl + V) dans « ${targetGroup.name} » sur WhatsApp.`,
+          tone: 'ok',
+        });
+      } else {
+        const sep = link.includes('?') ? '&' : '?';
+        const finalUrl = (link.startsWith('http') ? link : `https://${link}`) + `${sep}text=${encodeURIComponent(text)}`;
+        window.open(finalUrl, '_blank', 'noopener');
+        toast({
+          message: `Message copié ! Redirection vers « ${targetGroup.name} »...`,
+          tone: 'ok',
+        });
+      }
+    } else {
+      // Aucun lien configuré : ouverture de l'API universelle de partage avec message pré-rempli !
+      const shareUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+      window.open(shareUrl, '_blank', 'noopener');
+      toast({
+        message: `Message pré-rempli dans WhatsApp ! Choisissez « ${targetGroup?.name || 'le groupe'} » pour l'envoyer.`,
+        tone: 'ok',
+      });
+    }
+
+    // Basculer l'état remGroup à true automatiquement lors de l'envoi
     if (!s.remGroup) {
-      handleToggleSessionFlag(s, 'remGroup');
+      handleToggleSessionFlag(s, 'remGroup', true);
     }
   };
 
@@ -391,13 +431,102 @@ export default function SessionsPage() {
       if (filterChip === 'done') return s.done;
 
       return true;
-    }).sort((a, b) => `${a.startDate}T${a.startTime}`.localeCompare(`${b.startDate}T${b.startTime}`));
+    }).sort((a, b) => {
+      // Tri prioritaire intelligent (Rigueur Ultime UI/UX) :
+      // 1. Les séances d'AUJOURD'HUI (today) apparaissent EN HAUT en priorité absolue !
+      // 2. Les séances futures à venir (demain, jours suivants) ensuite
+      // 3. Les séances passées (hier, etc.) en fin de liste (les plus récentes d'abord)
+      const getPriority = (date: string) => {
+        if (date === today) return 0; // Aujourd'hui en tête absolue !
+        if (date > today) return 1;   // Futur ensuite
+        return 2;                    // Passé en fin
+      };
+
+      const prioA = getPriority(a.startDate);
+      const prioB = getPriority(b.startDate);
+
+      if (prioA !== prioB) return prioA - prioB;
+
+      // Pour les séances passées (prio 2), afficher les plus récentes en premier
+      if (prioA === 2) {
+        return `${b.startDate}T${b.startTime}`.localeCompare(`${a.startDate}T${a.startTime}`);
+      }
+
+      // Pour aujourd'hui (0) et le futur (1), trier par ordre chronologique
+      return `${a.startDate}T${a.startTime}`.localeCompare(`${b.startDate}T${b.startTime}`);
+    });
   }, [sessions, q, filterLevel, filterSection, filterChip]);
 
   // Actions requises (manque PDF ou enregistrement)
   const requiredActionSessions = useMemo(() => {
-    return sessions.filter(s => !s.pdf || !s.rec).sort((a, b) => `${a.startDate}T${a.startTime}`.localeCompare(`${b.startDate}T${b.startTime}`));
+    const today = ymd(new Date());
+    return sessions.filter(s => !s.pdf || !s.rec).sort((a, b) => {
+      const prioA = a.startDate === today ? 0 : a.startDate > today ? 1 : 2;
+      const prioB = b.startDate === today ? 0 : b.startDate > today ? 1 : 2;
+      if (prioA !== prioB) return prioA - prioB;
+      if (prioA === 2) return `${b.startDate}T${b.startTime}`.localeCompare(`${a.startDate}T${a.startTime}`);
+      return `${a.startDate}T${a.startTime}`.localeCompare(`${b.startDate}T${b.startTime}`);
+    });
   }, [sessions]);
+
+  // État de sélection groupée des séances filtrées
+  const isAllFilteredSelected = useMemo(() => {
+    if (filteredSessions.length === 0) return false;
+    return filteredSessions.every(s => selectedSessionIds.includes(s._id));
+  }, [filteredSessions, selectedSessionIds]);
+
+  const isSomeFilteredSelected = useMemo(() => {
+    return filteredSessions.some(s => selectedSessionIds.includes(s._id)) && !isAllFilteredSelected;
+  }, [filteredSessions, selectedSessionIds, isAllFilteredSelected]);
+
+  const handleToggleSelectSession = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedSessionIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (isAllFilteredSelected) {
+      const filteredIdSet = new Set(filteredSessions.map(s => s._id));
+      setSelectedSessionIds(prev => prev.filter(id => !filteredIdSet.has(id)));
+    } else {
+      const newSet = new Set(selectedSessionIds);
+      filteredSessions.forEach(s => newSet.add(s._id));
+      setSelectedSessionIds(Array.from(newSet));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedSessionIds([]);
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedSessionIds.length === 0) return;
+    const count = selectedSessionIds.length;
+    setDeleteConfirm({
+      text: `Êtes-vous sûr de vouloir supprimer définitivement ces ${count} séances sélectionnées ? Cette opération est irréversible et supprimera l'ensemble de leurs enregistrements.`,
+      action: async () => {
+        try {
+          setIsDeletingBatch(true);
+          const res = await fetch('/api/sessions', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selectedSessionIds }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression groupée');
+          toast({ message: `${count} séance(s) supprimée(s) avec succès`, tone: 'ok' });
+          setSelectedSessionIds([]);
+          mutateSessions();
+        } catch (err: any) {
+          toast({ message: err.message || 'Erreur de suppression', tone: 'warn' });
+        } finally {
+          setIsDeletingBatch(false);
+        }
+      },
+    });
+  };
 
   // Enseignants filtrés
   const filteredTeachers = useMemo(() => {
@@ -743,7 +872,7 @@ export default function SessionsPage() {
                     Numéro WhatsApp Enseignant
                     <input 
                       inputMode="tel"
-                      placeholder="ex. 20 123 456"
+                      placeholder="ex. 20 123 456 ou +968 9123 4567"
                       value={formPhone}
                       onChange={(e) => {
                         const formatted = formatPhoneInput(e.target.value);
@@ -846,9 +975,55 @@ export default function SessionsPage() {
                   ))}
                 </div>
 
-                <p className="count">
-                  {filteredSessions.length} séance{filteredSessions.length > 1 ? 's' : ''} trouvée{filteredSessions.length > 1 ? 's' : ''}
-                </p>
+                {/* Barre d'action et sélection groupée */}
+                <div className="batch-toolbar">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <label className="batch-chk-label">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllFilteredSelected}
+                        ref={el => {
+                          if (el) el.indeterminate = isSomeFilteredSelected;
+                        }}
+                        onChange={handleToggleSelectAll}
+                        aria-label="Sélectionner toutes les séances visibles"
+                      />
+                      <span>Tout sélectionner ({filteredSessions.length})</span>
+                    </label>
+                    {selectedSessionIds.length > 0 && (
+                      <span className="batch-badge">
+                        {selectedSessionIds.length} sélectionnée{selectedSessionIds.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedSessionIds.length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button 
+                        type="button" 
+                        className="btn-batch-clear"
+                        onClick={handleClearSelection}
+                      >
+                        Désélectionner
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn-batch-delete"
+                        onClick={handleBatchDelete}
+                        disabled={isDeletingBatch}
+                      >
+                        <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                          <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/>
+                        </svg>
+                        Supprimer la sélection ({selectedSessionIds.length})
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '13px', color: 'var(--ink3)', fontWeight: 500 }}>
+                      {filteredSessions.length} séance{filteredSessions.length > 1 ? 's' : ''} trouvée{filteredSessions.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
 
                 <div className="list-seances">
                   {filteredSessions.length === 0 ? (
@@ -860,14 +1035,31 @@ export default function SessionsPage() {
                     filteredSessions.map((s, i) => {
                       const isNeeded = !s.pdf || !s.rec;
                       const missing = [!s.pdf && 'PDF', !s.rec && 'Enregistrement'].filter(Boolean);
+                      const isSelected = selectedSessionIds.includes(s._id);
+                      const isToday = s.startDate === ymd(new Date());
                       return (
                         <article 
                           key={s._id} 
-                          className={`card ss ${s.done && !isNeeded ? 'fin' : isNeeded ? 'need' : ''}`}
+                          className={`card ss ${s.done && !isNeeded ? 'fin' : isNeeded ? 'need' : ''} ${isSelected ? 'is-selected' : ''}`}
                           style={{ '--i': i } as React.CSSProperties}
                         >
                           <div className="sh">
-                            <h3>{s.subject} <small style={{ fontWeight: 400, color: 'var(--ink3)', fontSize: '14px' }}>· {s.title}</small></h3>
+                            <label 
+                              className="card-select-chk" 
+                              onClick={(e) => e.stopPropagation()} 
+                              title="Sélectionner pour suppression groupée"
+                            >
+                              <input 
+                                type="checkbox" 
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectSession(s._id)}
+                                aria-label={`Sélectionner la séance ${s.subject}`}
+                              />
+                            </label>
+                            <h3>
+                              {s.subject} <small style={{ fontWeight: 400, color: 'var(--ink3)', fontSize: '14px' }}>· {s.title}</small>
+                              {isToday && <span className="badge-today-tag">Aujourd'hui</span>}
+                            </h3>
                             <button 
                               type="button" 
                               className="ib" 
@@ -921,10 +1113,17 @@ export default function SessionsPage() {
                               <svg className="i" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>
                               {s.section}
                             </span>
-                            <span className="p">
-                              <svg className="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                              {formatDateFR(s.startDate)} à {s.startTime}
-                            </span>
+                            {isToday ? (
+                              <span className="p today-pill" title="Séance programmée aujourd'hui">
+                                <span className="today-dot"></span>
+                                <b>Aujourd'hui</b> à {s.startTime}
+                              </span>
+                            ) : (
+                              <span className="p">
+                                <svg className="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                                {formatDateFR(s.startDate)} à {s.startTime}
+                              </span>
+                            )}
                             {s.room && (
                               <span className="p" title="Salle Zoom">
                                 🏠 {s.room}
@@ -943,16 +1142,28 @@ export default function SessionsPage() {
                             ))}
                           </div>
 
-                          {/* 4 Boutons de bascule d'état */}
+                          {/* 5 Boutons de bascule d'état (Rappel Prof, Rappel Élèves, Clôture, PDF, Enreg) */}
                           <div className="ta">
                             <button 
                               type="button" 
                               className="tg r" 
                               aria-pressed={s.remTeacher}
                               onClick={() => handleToggleSessionFlag(s, 'remTeacher')}
+                              title={s.remTeacher ? 'Cliquer pour marquer à envoyer' : 'Cliquer pour marquer envoyé'}
                             >
                               <svg className="i" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>
                               {s.remTeacher ? 'Rappel prof envoyé' : 'Rappel prof à envoyer'}
+                            </button>
+
+                            <button 
+                              type="button" 
+                              className="tg g" 
+                              aria-pressed={s.remGroup}
+                              onClick={() => handleToggleSessionFlag(s, 'remGroup')}
+                              title={s.remGroup ? 'Cliquer pour marquer à envoyer' : 'Cliquer pour marquer envoyé'}
+                            >
+                              <svg className="i" viewBox="0 0 24 24"><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/></svg>
+                              {s.remGroup ? 'Rappel Élèves envoyé' : 'Rappel Élèves à envoyer'}
                             </button>
 
                             <button 
@@ -986,7 +1197,7 @@ export default function SessionsPage() {
                             </button>
                           </div>
 
-                          {/* Deux boutons WhatsApp : Rappel Enseignant & Rappel Groupe Élèves */}
+                          {/* Deux boutons d'action WhatsApp synchronisés avec les statuts */}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
                             <button 
                               type="button" 
@@ -994,19 +1205,21 @@ export default function SessionsPage() {
                               disabled={!s.teacherPhone}
                               onClick={() => {
                                 sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder));
-                                if (!s.remTeacher) handleToggleSessionFlag(s, 'remTeacher');
+                                if (!s.remTeacher) {
+                                  handleToggleSessionFlag(s, 'remTeacher', true);
+                                }
                               }}
                               title={s.teacherPhone ? 'Envoyer le rappel directement sur WhatsApp à l’enseignant' : 'Aucun téléphone renseigné'}
                             >
                               <svg className="i" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
-                              {s.teacherPhone ? (s.remTeacher ? 'Rappel prof (renvoyer)' : 'Rappel Enseignant') : 'Sans tel enseignant'}
+                              {s.teacherPhone ? (s.remTeacher ? 'Rappel prof (✓)' : 'Rappel Enseignant') : 'Sans tel enseignant'}
                             </button>
 
                             <button 
                               type="button" 
                               className="wb group"
                               onClick={() => handleSendGroupReminder(s)}
-                              title={`Copier le message et ouvrir ${resolveCommunicationGroup(s, commGroups).name}`}
+                              title={`Envoyer le message WhatsApp au groupe ${resolveCommunicationGroup(s, commGroups).name}`}
                             >
                               <svg className="i" viewBox="0 0 24 24"><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/></svg>
                               {s.remGroup ? 'Rappel Groupe Élèves (✓)' : 'Rappel Groupe Élèves'}
@@ -1110,7 +1323,7 @@ export default function SessionsPage() {
                     Téléphone / WhatsApp
                     <input 
                       inputMode="tel"
-                      placeholder="ex. 20 123 456"
+                      placeholder="ex. 20 123 456 ou +968 9123 4567"
                       value={tFormPhone}
                       onChange={(e) => {
                         const formatted = formatPhoneInput(e.target.value);
@@ -1546,11 +1759,22 @@ export default function SessionsPage() {
                         <div className="q" onClick={(e) => e.stopPropagation()}>
                           <button 
                             type="button" 
-                            className="ib" 
-                            onClick={() => sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder))}
-                            title="Envoyer le rappel WhatsApp"
+                            className={`ib ${s.remTeacher ? 'on' : ''}`} 
+                            onClick={() => {
+                              sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder));
+                              if (!s.remTeacher) handleToggleSessionFlag(s, 'remTeacher', true);
+                            }}
+                            title={s.remTeacher ? "Rappel enseignant envoyé (✓)" : "Envoyer le rappel WhatsApp à l'enseignant"}
                           >
                             <svg className="i" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>
+                          </button>
+                          <button 
+                            type="button" 
+                            className={`ib ${s.remGroup ? 'on' : ''}`} 
+                            onClick={() => handleSendGroupReminder(s)}
+                            title={s.remGroup ? "Rappel Groupe Élèves envoyé (✓)" : "Envoyer le rappel au groupe d'élèves"}
+                          >
+                            <svg className="i" viewBox="0 0 24 24"><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/></svg>
                           </button>
                           <button 
                             type="button" 
@@ -1655,7 +1879,7 @@ export default function SessionsPage() {
                   Numéro WhatsApp Enseignant
                   <input 
                     inputMode="tel"
-                    placeholder="ex. 20 123 456"
+                    placeholder="ex. 20 123 456 ou +968 9123 4567"
                     value={editingSession.teacherPhone || ''}
                     onChange={(e) => {
                       const formatted = formatPhoneInput(e.target.value);
@@ -1738,6 +1962,50 @@ export default function SessionsPage() {
                     onChange={(e) => setEditingSession({ ...editingSession, zoomMeetingId: e.target.value })}
                   />
                 </label>
+
+                {/* Statuts opérationnels */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginTop: '12px', padding: '12px', background: 'var(--hover)', borderRadius: '12px' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!!editingSession.remTeacher}
+                      onChange={(e) => setEditingSession({ ...editingSession, remTeacher: e.target.checked })}
+                    />
+                    Rappel prof
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!!editingSession.remGroup}
+                      onChange={(e) => setEditingSession({ ...editingSession, remGroup: e.target.checked })}
+                    />
+                    Rappel élèves
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!!editingSession.done}
+                      onChange={(e) => setEditingSession({ ...editingSession, done: e.target.checked })}
+                    />
+                    Terminée
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!!editingSession.pdf}
+                      onChange={(e) => setEditingSession({ ...editingSession, pdf: e.target.checked })}
+                    />
+                    PDF reçu
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!!editingSession.rec}
+                      onChange={(e) => setEditingSession({ ...editingSession, rec: e.target.checked })}
+                    />
+                    Enreg. prêt
+                  </label>
+                </div>
               </div>
 
               <div className="df">
@@ -1836,7 +2104,7 @@ export default function SessionsPage() {
                   Téléphone / WhatsApp
                   <input 
                     inputMode="tel"
-                    placeholder="ex. 20 123 456"
+                    placeholder="ex. 20 123 456 ou +968 9123 4567"
                     value={editingTeacher.phone || ''}
                     onChange={(e) => {
                       const formatted = formatPhoneInput(e.target.value);
@@ -2030,6 +2298,40 @@ export default function SessionsPage() {
           </div>
         );
       })()}
+
+      {/* ========================================================================= */}
+      {/* BARRE FLOTTANTE : ACTIONS GROUPÉES SUR SÉANCES SÉLECTIONNÉES               */}
+      {/* ========================================================================= */}
+      {selectedSessionIds.length > 0 && (
+        <div className="batch-floating-bar" role="region" aria-label="Actions groupées">
+          <div className="batch-floating-info">
+            <div className="batch-check-icon">✓</div>
+            <span>
+              <b>{selectedSessionIds.length}</b> séance{selectedSessionIds.length > 1 ? 's' : ''} sélectionnée{selectedSessionIds.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="batch-floating-actions">
+            <button 
+              type="button" 
+              className="btn-batch-floating-cancel"
+              onClick={handleClearSelection}
+            >
+              Annuler
+            </button>
+            <button 
+              type="button" 
+              className="btn-batch-floating-del"
+              onClick={handleBatchDelete}
+              disabled={isDeletingBatch}
+            >
+              <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/>
+              </svg>
+              {isDeletingBatch ? 'Suppression en cours…' : `Supprimer la sélection (${selectedSessionIds.length})`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODALE : IMPORT DE FICHIER CSV / EXCEL - BASKETBALL UPLOAD ANIMATION      */}

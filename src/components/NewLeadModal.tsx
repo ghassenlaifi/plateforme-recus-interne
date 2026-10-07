@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { formatPhone } from '@/lib/phoneUtils';
 
-const CLASSE_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère de Base', '2ème de Base', '3ème de Base', 'BAC'];
+const NIVEAU_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère Année', '2ème Année', '3ème Année', 'BAC'];
+const CLASSE_OPTIONS = NIVEAU_OPTIONS;
 const SECTION_OPTIONS = ['Sciences Expérimentales', 'Mathématiques', 'Technique', 'Informatique', 'Économie', 'Lettres', 'Sport'];
 
 interface NewLeadModalProps {
@@ -69,7 +70,7 @@ export function NewLeadModal({ isOpen, onClose, theme }: NewLeadModalProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
-                Classe
+                Niveau
               </label>
               <select className={`w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${themeRing} text-gray-900 font-medium text-sm appearance-none transition-all shadow-sm`}>
                 <option value="">Sélectionner...</option>

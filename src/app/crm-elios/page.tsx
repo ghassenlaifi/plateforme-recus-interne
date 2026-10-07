@@ -1048,11 +1048,11 @@ export default function CRMEliosPage() {
               </select>
             </div>
 
-            {/* Filtre CLASSE */}
+            {/* Filtre NIVEAU */}
             <div className="w-full sm:w-auto">
               <select 
-                id="filter-classe"
-                aria-label="Classe"
+                id="filter-niveau"
+                aria-label="Niveau"
                 value={filterClasse}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -1064,7 +1064,7 @@ export default function CRMEliosPage() {
                 }}
                 className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)]"
               >
-                <option value="ALL">Classe : Toutes</option>
+                <option value="ALL">Niveau : Tous</option>
                 {ELIOS_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -1080,7 +1080,7 @@ export default function CRMEliosPage() {
                   setFilterSection(e.target.value);
                   setCurrentPage(1);
                 }}
-                title={isClassWithoutSection(filterClasse) ? "Les classes de 7ème à 1ère Année n'ont pas de section" : "Section"}
+                title={isClassWithoutSection(filterClasse) ? "Les niveaux de 7ème à 1ère Année n'ont pas de section" : "Section"}
                 className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--hover)] transition-all"
               >
                 {isClassWithoutSection(filterClasse) ? (
@@ -1211,7 +1211,7 @@ export default function CRMEliosPage() {
           <div className="th">
             <div>Prospect</div>
             <div>Téléphone</div>
-            <div>Classe & Section</div>
+            <div>Niveau & Section</div>
             <div>Statut</div>
             <div>Dernière modification</div>
             <div>Actions</div>
@@ -1292,8 +1292,8 @@ export default function CRMEliosPage() {
                       {displayPhone(l.phone)}
                     </div>
 
-                    {/* Classe et Section */}
-                    <div data-l="Classe & Section" className="text-sm">
+                    {/* Niveau et Section */}
+                    <div data-l="Niveau & Section" className="text-sm">
                       {classSec}
                     </div>
 
@@ -1674,7 +1674,7 @@ export default function CRMEliosPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">CLASSE</label>
+                  <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">NIVEAU</label>
                   <select 
                     value={newGrade}
                     onChange={(e) => {
@@ -1697,7 +1697,7 @@ export default function CRMEliosPage() {
                     value={isClassWithoutSection(newGrade) ? '' : newSection}
                     disabled={isClassWithoutSection(newGrade)}
                     onChange={(e) => setNewSection(e.target.value)}
-                    title={isClassWithoutSection(newGrade) ? "Les classes de 7ème à 1ère Année n'ont pas de section" : "Section"}
+                    title={isClassWithoutSection(newGrade) ? "Les niveaux de 7ème à 1ère Année n'ont pas de section" : "Section"}
                     className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--hover)] transition-all"
                   >
                     {isClassWithoutSection(newGrade) ? (
@@ -1819,7 +1819,7 @@ export default function CRMEliosPage() {
                     </div>
 
                     <div className="space-y-0.5">
-                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">CLASSE & SECTION</span>
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">NIVEAU & SECTION</span>
                       <p className="text-[11px] font-semibold text-[var(--ink)] truncate" title={[editGrade, editSection].filter(Boolean).join(' • ') || 'Non renseigné'}>
                         {[editGrade, editSection].filter(Boolean).join(' • ') || '—'}
                       </p>
@@ -1946,7 +1946,7 @@ export default function CRMEliosPage() {
 
                     <div>
                       <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">
-                        CLASSE
+                        NIVEAU
                       </label>
                       <select 
                         value={editGrade} 
@@ -1972,7 +1972,7 @@ export default function CRMEliosPage() {
                         value={isClassWithoutSection(editGrade) ? '' : editSection} 
                         disabled={isClassWithoutSection(editGrade)}
                         onChange={(e) => setEditSection(e.target.value)}
-                        title={isClassWithoutSection(editGrade) ? "Les classes de 7ème à 1ère Année n'ont pas de section" : "Section"}
+                        title={isClassWithoutSection(editGrade) ? "Les niveaux de 7ème à 1ère Année n'ont pas de section" : "Section"}
                         className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--hover)] transition-all"
                       >
                         {isClassWithoutSection(editGrade) ? (

@@ -82,7 +82,7 @@ export function getEliosStatusColor(status?: string | null): string {
 export const getFormaticStatusColor = getEliosStatusColor;
 export const getCrmStatusColor = getEliosStatusColor;
 
-export const ELIOS_CLASSES = [
+export const ELIOS_NIVEAUX = [
   "7ème de Base",
   "8ème de Base",
   "9ème de Base",
@@ -92,20 +92,24 @@ export const ELIOS_CLASSES = [
   "BAC"
 ] as const;
 
-export const CLASSES_WITHOUT_SECTION = [
+export const NIVEAUX_WITHOUT_SECTION = [
   "7ème de Base",
   "8ème de Base",
   "9ème de Base",
   "1ère Année"
 ] as const;
 
+// Rétrocompatibilité
+export const ELIOS_CLASSES = ELIOS_NIVEAUX;
+export const CLASSES_WITHOUT_SECTION = NIVEAUX_WITHOUT_SECTION;
+
 /**
- * Détermine si une classe scolaire n'a pas de filière/section
+ * Détermine si un niveau scolaire n'a pas de filière/section
  * (7ème de Base, 8ème de Base, 9ème de Base, 1ère Année).
  */
-export function isClassWithoutSection(classe?: string | null): boolean {
-  if (!classe || classe === 'ALL') return false;
-  const c = classe.trim().toLowerCase();
+export function isLevelWithoutSection(level?: string | null): boolean {
+  if (!level || level === 'ALL') return false;
+  const c = level.trim().toLowerCase();
   return (
     c.startsWith('7') ||
     c.startsWith('8') ||
@@ -121,6 +125,8 @@ export function isClassWithoutSection(classe?: string | null): boolean {
     c.includes('1ere')
   );
 }
+
+export const isClassWithoutSection = isLevelWithoutSection;
 
 export const ELIOS_SECTIONS = [
   "Science",

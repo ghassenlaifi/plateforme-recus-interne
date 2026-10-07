@@ -25,7 +25,7 @@ async function connectToDatabase() {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
       maxPoolSize: 10,
       family: 4, // Force IPv4 pour éviter les problèmes de résolution DNS lents liés à IPv6

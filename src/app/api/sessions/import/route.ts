@@ -7,9 +7,86 @@ import {
   mapGradeToLevel, 
   mapSpecialityToSection, 
   mapSubjectToStandard, 
-  normalizePhone 
+  normalizePhone,
+  extractSessionTargets,
 } from '@/lib/sessionHelpers';
 import { formatPhone } from '@/lib/phoneUtils';
+
+/**
+ * Normalise rigoureusement une date Excel ou textuelle au format strict YYYY-MM-DD
+ */
+function parseExcelDate(raw: any): string {
+  if (!raw) return '';
+
+  // Cas 1 : Nombre de série Excel (ex: 45678)
+  if (typeof raw === 'number' || (!isNaN(Number(raw)) && !String(raw).includes('-') && !String(raw).includes('/'))) {
+    const num = Number(raw);
+    if (num > 20000 && num < 60000) {
+      // Époque Excel : 1899-12-30 UTC
+      const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(date.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+    }
+  }
+
+  const str = String(raw).trim();
+
+  // Cas 2 : Format JJ/MM/AAAA ou JJ-MM-AAAA
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const month = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // Cas 3 : Format AAAA-MM-JJ ou AAAA/MM/JJ
+  const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Cas 4 : Objet Date ou format ISO
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  return str;
+}
+
+/**
+ * Normalise une heure Excel ou textuelle au format strict HH:mm
+ */
+function parseExcelTime(raw: any): string {
+  if (!raw && raw !== 0) return '';
+
+  // Cas 1 : Fraction d'un jour sous Excel (ex: 0.75 pour 18:00)
+  if (typeof raw === 'number' && raw >= 0 && raw < 1) {
+    const totalMinutes = Math.round(raw * 24 * 60);
+    const h = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+    const m = String(totalMinutes % 60).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  const str = String(raw).trim();
+  const m = str.match(/^(\d{1,2}):(\d{2})/);
+  if (m) {
+    return `${m[1].padStart(2, '0')}:${m[2]}`;
+  }
+
+  return str;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,37 +113,46 @@ export async function POST(req: NextRequest) {
     }
 
     let importedSessionsCount = 0;
+    let updatedSessionsCount = 0;
     let importedTeachersCount = 0;
 
     for (const row of rows) {
-      const sessionId = row['Session ID'] || row['sessionId'] || row['ID'] || '';
-      const title = row['Title'] || row['title'] || 'Séance';
-      const rawGrade = row['Grade'] || row['grade'] || '';
-      const rawSpec = row['Speciality'] || row['speciality'] || row['Specialty'] || '';
-      const rawSubject = row['Subject(s)'] || row['subject'] || row['Matière'] || '';
-      const teacherName = (row['Teacher'] || row['teacher'] || row['Enseignant'] || '').trim();
-      const teacherEmail = (row['Teacher email'] || row['email'] || '').trim().toLowerCase();
-      const teacherExternalId = row['Teacher ID'] || '';
-      const startDate = String(row['Start date'] || row['Date'] || '').trim();
-      const startTime = String(row['Start time'] || row['Heure'] || '').trim();
-      const endDate = String(row['End date'] || startDate).trim();
-      const endTime = String(row['End time'] || '').trim();
-      const room = row['Room'] || '';
-      const group = row['Group'] || 'Normal Time';
-      const groupId = row['Group ID'] || '';
-      const zoomMeetingId = String(row['Zoom meeting ID'] || row['meetingId'] || '');
-      const zoomJoinUrl = row['Zoom join URL'] || row['joinUrl'] || '';
-      const zoomHost = row['Zoom host'] || '';
+      const sessionId = String(row['Session ID'] || row['sessionId'] || row['ID'] || '').trim();
+      const title = String(row['Title'] || row['title'] || 'Séance').trim();
+      const rawGrade = String(row['Grade'] || row['grade'] || '').trim();
+      const rawSpec = String(row['Speciality'] || row['speciality'] || row['Specialty'] || '').trim();
+      const rawSubject = String(row['Subject(s)'] || row['subject'] || row['Matière'] || '').trim();
+      const teacherName = String(row['Teacher'] || row['teacher'] || row['Enseignant'] || '').trim();
+      const teacherEmail = String(row['Teacher email'] || row['email'] || '').trim().toLowerCase();
+      const teacherExternalId = String(row['Teacher ID'] || '').trim();
+
+      const startDateRaw = row['Start date'] || row['Date'] || '';
+      const startTimeRaw = row['Start time'] || row['Heure'] || '';
+      const endDateRaw = row['End date'] || startDateRaw;
+      const endTimeRaw = row['End time'] || '';
+
+      const startDate = parseExcelDate(startDateRaw);
+      const startTime = parseExcelTime(startTimeRaw);
+      const endDate = parseExcelDate(endDateRaw) || startDate;
+      const endTime = parseExcelTime(endTimeRaw);
+
+      // Si pas de date ou pas d'heure valide, ignorer la ligne invalide pour préserver la qualité des données
+      if (!startDate) {
+        continue;
+      }
+
+      const room = String(row['Room'] || '').trim();
+      const group = String(row['Group'] || 'Normal Time').trim();
+      const groupId = String(row['Group ID'] || '').trim();
+      const zoomMeetingId = String(row['Zoom meeting ID'] || row['meetingId'] || '').trim();
+      const zoomJoinUrl = String(row['Zoom join URL'] || row['joinUrl'] || '').trim();
+      const zoomHost = String(row['Zoom host'] || '').trim();
       const duration = Number(row['Duration (minutes)']) || 90;
+      const rawSubjectId = String(row['Primary subject ID'] || '').trim();
 
-      const rawSubjectId = row['Primary subject ID'] || '';
-
-      // Déduire la matière propre et normalisée
-      const subject = mapSubjectToStandard(rawSubject, title);
-      const level = mapGradeToLevel(rawGrade);
-      const section = mapSpecialityToSection(rawSpec);
-
-      // Gestion / synchronisation enseignant
+      // ------------------------------------------------------------------------
+      // 1. GESTION / SYNCHRONISATION ENSEIGNANT
+      // ------------------------------------------------------------------------
       const rawTeacherPhone = String(row['Teacher phone'] || row['Teacher Phone'] || row['phone'] || row['Phone'] || row['Telephone'] || row['Téléphone'] || '').trim();
       const normalizedTeacherPhone = formatPhone(rawTeacherPhone);
 
@@ -85,7 +171,7 @@ export async function POST(req: NextRequest) {
             phone: normalizedTeacherPhone,
             email: teacherEmail,
             externalId: teacherExternalId,
-            subject,
+            subject: mapSubjectToStandard(rawSubject, title),
             active: true,
           });
           importedTeachersCount++;
@@ -104,8 +190,9 @@ export async function POST(req: NextRequest) {
             teacherDoc.externalId = teacherExternalId;
             modified = true;
           }
-          if (subject && !teacherDoc.subject) {
-            teacherDoc.subject = subject;
+          const stdSub = mapSubjectToStandard(rawSubject, title);
+          if (stdSub && !teacherDoc.subject) {
+            teacherDoc.subject = stdSub;
             modified = true;
           }
           if (modified) await teacherDoc.save();
@@ -114,81 +201,127 @@ export async function POST(req: NextRequest) {
         teacherPhone = formatPhone(teacherDoc.phone || normalizedTeacherPhone);
       }
 
-      // Upsert de la séance
-      const sessionQuery = sessionId
-        ? { sessionId }
-        : { title, startDate, startTime, teacherName };
+      // ------------------------------------------------------------------------
+      // 2. GESTION DES SÉANCES MULTI-NIVEAUX / SECTIONS (UNE CARTE PAR NIVEAU & SECTION)
+      // ------------------------------------------------------------------------
+      // Règle d'or : Si une séance est destinée à plusieurs niveaux ou sections (ex: "Math (2eme / Info), Math (2eme / Science)"),
+      // on extrait chaque cible pour créer véritablement des cartes distinctes, chacune avec son Niveau et sa Section.
+      const targets = extractSessionTargets(title, rawGrade, rawSpec, rawSubject, room);
 
-      const existingSession = await Session.findOne(sessionQuery);
+      for (let tIdx = 0; tIdx < targets.length; tIdx++) {
+        const target = targets[tIdx];
+        const subject = target.subject;
+        const level = target.level;
+        const section = target.section;
+        const targetRoom = target.room || room;
 
-      if (existingSession) {
-        existingSession.title = title;
-        existingSession.subject = subject;
-        existingSession.level = level;
-        existingSession.section = section;
-        existingSession.room = room;
-        existingSession.group = group;
-        existingSession.groupId = groupId;
-        existingSession.teacherName = teacherName;
-        existingSession.teacherEmail = teacherEmail;
-        if (teacherPhone && !existingSession.teacherPhone) {
-          existingSession.teacherPhone = teacherPhone;
+        // Si la séance combine plusieurs niveaux/sections, isoler les identifiants
+        const targetSessionId = (targets.length > 1 && sessionId)
+          ? `${sessionId}-${tIdx + 1}`
+          : sessionId;
+
+        let existingSession = null;
+
+        if (targetSessionId) {
+          // Recherche prioritaire par ID de séance ET Date
+          existingSession = await Session.findOne({ sessionId: targetSessionId, startDate });
         }
-        existingSession.startDate = startDate;
-        existingSession.startTime = startTime;
-        existingSession.endDate = endDate;
-        existingSession.endTime = endTime;
-        existingSession.durationMinutes = duration;
-        existingSession.zoomMeetingId = zoomMeetingId;
-        existingSession.zoomJoinUrl = zoomJoinUrl;
-        existingSession.zoomHost = zoomHost;
-        existingSession.rawGrade = rawGrade;
-        existingSession.rawSpec = rawSpec;
-        existingSession.rawSubject = rawSubject;
-        existingSession.rawSubjectId = rawSubjectId;
 
-        await existingSession.save();
-        importedSessionsCount++;
-      } else {
-        await Session.create({
-          sessionId,
-          title,
-          subject,
-          level,
-          section,
-          room,
-          group,
-          groupId,
-          teacherName,
-          teacherEmail,
-          teacherPhone,
-          startDate,
-          startTime,
-          endDate,
-          endTime,
-          durationMinutes: duration,
-          zoomMeetingId,
-          zoomJoinUrl,
-          zoomHost,
-          rawGrade,
-          rawSpec,
-          rawSubject,
-          rawSubjectId,
-          state: 'scheduled',
-          remTeacher: false,
-          remGroup: false,
-          done: false,
-          pdf: false,
-          rec: false,
-        });
-        importedSessionsCount++;
+        // Si l'ancienne séance existait sans suffixe lors d'une importation préalable
+        if (!existingSession && tIdx === 0 && sessionId) {
+          existingSession = await Session.findOne({ sessionId, startDate });
+        }
+
+        if (!existingSession && startTime && teacherName) {
+          // Recherche secondaire par signature pédagogique et horaire sur la même date, même niveau et section
+          existingSession = await Session.findOne({
+            startDate,
+            startTime,
+            teacherName,
+            subject,
+            level,
+            section,
+          });
+        }
+
+        if (existingSession) {
+          // MISE À JOUR DE LA MÊME SÉANCE DU MÊME JOUR POUR CE NIVEAU ET CETTE SECTION
+          existingSession.sessionId = targetSessionId || existingSession.sessionId;
+          existingSession.title = title;
+          existingSession.subject = subject;
+          existingSession.level = level;
+          existingSession.section = section;
+          if (targetRoom) existingSession.room = targetRoom;
+          if (group) existingSession.group = group;
+          if (groupId) existingSession.groupId = groupId;
+          existingSession.teacherName = teacherName;
+          if (teacherEmail) existingSession.teacherEmail = teacherEmail;
+          if (teacherPhone && !existingSession.teacherPhone) {
+            existingSession.teacherPhone = teacherPhone;
+          }
+          existingSession.startDate = startDate;
+          existingSession.startTime = startTime;
+          existingSession.endDate = endDate;
+          if (endTime) existingSession.endTime = endTime;
+          existingSession.durationMinutes = duration;
+          if (zoomMeetingId) existingSession.zoomMeetingId = zoomMeetingId;
+          if (zoomJoinUrl) existingSession.zoomJoinUrl = zoomJoinUrl;
+          if (zoomHost) existingSession.zoomHost = zoomHost;
+          if (rawGrade) existingSession.rawGrade = rawGrade;
+          if (rawSpec) existingSession.rawSpec = rawSpec;
+          if (rawSubject) existingSession.rawSubject = rawSubject;
+          if (rawSubjectId) existingSession.rawSubjectId = rawSubjectId;
+
+          // RÈGLE CRITIQUE D'INTÉGRITÉ OPÉRATIONNELLE :
+          // On préserve STRICTEMENT les états validés par les opérateurs (done, pdf, rec, remTeacher, remGroup, notes)
+          await existingSession.save();
+          updatedSessionsCount++;
+        } else {
+          // CRÉATION DE LA NOUVELLE CARTE DE SÉANCE POUR CE NIVEAU ET CETTE SECTION
+          await Session.create({
+            sessionId: targetSessionId,
+            title,
+            subject,
+            level,
+            section,
+            room: targetRoom,
+            group,
+            groupId,
+            teacherName,
+            teacherEmail,
+            teacherPhone,
+            startDate,
+            startTime,
+            endDate,
+            endTime,
+            durationMinutes: duration,
+            zoomMeetingId,
+            zoomJoinUrl,
+            zoomHost,
+            rawGrade,
+            rawSpec,
+            rawSubject,
+            rawSubjectId,
+            state: 'scheduled',
+            remTeacher: false,
+            remGroup: false,
+            done: false,
+            pdf: false,
+            rec: false,
+            notes: '',
+          });
+          importedSessionsCount++;
+        }
       }
     }
 
+    const message = `${importedSessionsCount} nouvelle(s) séance(s) planifiée(s), ${updatedSessionsCount} séance(s) synchronisée(s), et ${importedTeachersCount} nouvel(s) enseignant(s) ajouté(s). Les séances passées et la traçabilité du calendrier restent 100% préservées.`;
+
     return NextResponse.json({
       success: true,
-      message: `${importedSessionsCount} séance(s) et ${importedTeachersCount} nouvel(s) enseignant(s) importés avec succès.`,
+      message,
       importedSessionsCount,
+      updatedSessionsCount,
       importedTeachersCount,
     }, { status: 200 });
   } catch (error: any) {
@@ -196,3 +329,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message || 'Erreur lors de l\'import du fichier' }, { status: 500 });
   }
 }
+

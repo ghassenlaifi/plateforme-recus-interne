@@ -624,7 +624,7 @@ export default function SettingsPage() {
       return;
     }
     if (!groupForm.level.trim()) {
-      setGroupFormError('Le niveau / classe est obligatoire.');
+      setGroupFormError('Le niveau est obligatoire.');
       return;
     }
 
@@ -1811,7 +1811,7 @@ export default function SettingsPage() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
                 <div>
                   <small style={{ color: 'var(--pri)', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    COMMUNICATION ÉLÈVES & CLASSES
+                    COMMUNICATION GROUPES ÉLÈVES (PAR NIVEAU & SECTION)
                   </small>
                   <h2 className="text-base sm:text-lg font-bold text-[var(--ink)] mt-1">
                     Gestion des Groupes ({groups.length} au total, {filteredGroups.length} affiché{filteredGroups.length > 1 ? 's' : ''})
@@ -1849,7 +1849,7 @@ export default function SettingsPage() {
                     type="text"
                     value={groupSearchQuery}
                     onChange={(e) => setGroupSearchQuery(e.target.value)}
-                    placeholder="Filtrer par nom, classe, section..."
+                    placeholder="Filtrer par nom, niveau, section..."
                     className="w-full pl-9 pr-8 py-1.5 rounded-xl border border-[var(--line)] bg-[var(--hover)] text-[var(--ink)] text-xs placeholder:text-[var(--ink3)] focus:outline-none focus:border-[var(--pri)] transition"
                   />
                   {groupSearchQuery && (
@@ -2029,7 +2029,7 @@ export default function SettingsPage() {
                             onClick={() => handleOpenEditGroupModal(grp)}
                             style={{ height: '31px', padding: '0 8px' }}
                             className="btn text-xs shrink-0 inline-flex items-center justify-center gap-1 whitespace-nowrap hover:border-[var(--pri)]"
-                            title="Modifier les détails du groupe (Nom, Classe, Section, etc.)"
+                            title="Modifier les détails du groupe (Nom, Niveau, Section, etc.)"
                           >
                             <svg viewBox="0 0 24 24" style={{ width: 12, height: 12, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
                               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -2106,7 +2106,7 @@ export default function SettingsPage() {
           if (groupForm.category === 'Collège') {
             return [
               {
-                groupLabel: 'Classes Collège (Sans section)',
+                groupLabel: 'Niveaux Collège (Sans section)',
                 options: [
                   { value: '7ème de Base', label: '7ème de Base' },
                   { value: '8ème de Base', label: '8ème de Base' },
@@ -2118,7 +2118,7 @@ export default function SettingsPage() {
           if (groupForm.category === 'Lycée') {
             return [
               {
-                groupLabel: 'Classes Lycée',
+                groupLabel: 'Niveaux Lycée',
                 options: [
                   { value: '1ère Année', label: '1ère Année (Tronc commun)' },
                   { value: '2ème Année', label: '2ème Année' },
@@ -2292,11 +2292,11 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* Niveau / Classe & Section : Sélecteurs Personnalisés Filtrés selon la Catégorie */}
+                  {/* Niveau & Section : Sélecteurs Personnalisés Filtrés selon la Catégorie */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div>
                       <label className="text-xs font-bold text-[var(--ink2)] mb-1.5 uppercase tracking-wide" style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center', gap: '4px' }}>
-                        <span>Niveau / Classe</span>
+                        <span>Niveau</span>
                         <span className="text-rose-500 font-bold">*</span>
                       </label>
                       <CustomSelect

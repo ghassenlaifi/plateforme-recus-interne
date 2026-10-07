@@ -159,3 +159,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message || 'Erreur lors de la création de la séance' }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    await connectToDatabase();
+    const body = await req.json();
+    const ids = body.ids;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { error: 'Une liste d\'identifiants de séances valide est requise' },
+        { status: 400 }
+      );
+    }
+
+    const result = await Session.deleteMany({ _id: { $in: ids } });
+
+    return NextResponse.json({
+      success: true,
+      message: `${result.deletedCount} séance(s) supprimée(s) avec succès.`,
+      deletedCount: result.deletedCount,
+    }, { status: 200 });
+  } catch (error: any) {
+    console.error('Error in DELETE /api/sessions:', error);
+    return NextResponse.json(
+      { error: error.message || 'Erreur lors de la suppression groupée des séances' },
+      { status: 500 }
+    );
+  }
+}

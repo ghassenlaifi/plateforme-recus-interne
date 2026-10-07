@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import Lead from '@/models/Lead';
+import ReceiptImage from '@/models/ReceiptImage';
 import { uploadFileToDrive } from '@/lib/googleDrive';
 import { generateReceiptReference } from '@/lib/receiptReference';
 import { formatPhone } from '@/lib/phoneUtils';
@@ -249,9 +250,20 @@ export async function POST(req: NextRequest) {
       status: 'PENDING',
     });
 
+    // Association de l'image persistante au reçu créé
+    if (newReceipt._id && fileId) {
+      try {
+        await ReceiptImage.updateMany(
+          { $or: [{ fileId: fileId }, { aliases: fileId }] },
+          { $set: { receiptId: newReceipt._id } }
+        );
+      } catch (linkErr) {
+        // Silencieux
+      }
+    }
+
     // Synchronisation CRM automatique
     await triggerCrmApproval(telephone, amount, operatorName, newReceipt.reference || reference);
-
 
     // 6. Retour de la réponse JSON au client
     return NextResponse.json(newReceipt, { status: 201 });

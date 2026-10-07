@@ -335,7 +335,6 @@ export function SessionReminderAlert() {
           </button>
 
           {/* Action 2 : Rappel Groupe Élèves WhatsApp */}
-          {/* Action 2 : Rappel Groupe Élèves WhatsApp */}
           <button 
             type="button" 
             onClick={handleSendGroupReminder}
@@ -362,32 +361,6 @@ export function SessionReminderAlert() {
               ? `✓ ${resolveCommunicationGroup(activeAlertSession, commGroups).name} déjà rappelé` 
               : `Envoyer Rappel (${resolveCommunicationGroup(activeAlertSession, commGroups).name})`}
           </button>
-
-          {/* Action 3 : Rejoindre Zoom */}
-          {activeAlertSession.zoomJoinUrl && (
-            <a 
-              href={activeAlertSession.zoomJoinUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn pri"
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                gap: '8px', 
-                padding: '11px 16px',
-                borderRadius: '12px',
-                fontWeight: 600,
-                fontSize: '13.5px',
-                textDecoration: 'none'
-              }}
-            >
-              <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-                <rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3"/>
-              </svg>
-              Lancer / Rejoindre la Réunion Zoom
-            </a>
-          )}
         </div>
 
         {/* Pied du popup */}

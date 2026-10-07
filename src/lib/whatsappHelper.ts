@@ -132,18 +132,21 @@ export function buildTeacherReminderMessage(
 }
 
 /**
- * Nettoie le numéro de téléphone pour WhatsApp (format international tunisien 216XXXXXXXX)
+ * Nettoie le numéro de téléphone pour WhatsApp (format international compact : 216XXXXXXXX ou 968XXXXXXXX)
  */
-export function cleanTunisianPhone(phone: string): string {
+export function cleanPhoneForWhatsApp(phone: string): string {
   if (!phone) return '';
   return normalizePhoneForUrl(phone);
 }
+
+// Rétrocompatibilité
+export const cleanTunisianPhone = cleanPhoneForWhatsApp;
 
 /**
  * Génère le lien direct pour ouvrir WhatsApp Web ou Mobile
  */
 export function getWhatsAppLink(phone: string, message: string): string {
-  const cleanPhone = cleanTunisianPhone(phone);
+  const cleanPhone = cleanPhoneForWhatsApp(phone);
   const encodedText = encodeURIComponent(message);
   if (!cleanPhone) {
     return `https://wa.me/?text=${encodedText}`;

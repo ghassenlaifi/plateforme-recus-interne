@@ -2891,11 +2891,57 @@ input:disabled, select:disabled, textarea:disabled {
   border-color: transparent;
   font-weight: 600;
 }
+.p.today-pill {
+  background: color-mix(in srgb, var(--acc) 14%, var(--card));
+  border-color: color-mix(in srgb, var(--acc) 60%, var(--line));
+  color: var(--acc);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.today-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--acc) 30%, transparent);
+  animation: todayPulse 2s infinite;
+  flex-shrink: 0;
+}
+@keyframes todayPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 5px color-mix(in srgb, var(--acc) 0%, transparent); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 0%, transparent); }
+}
+.badge-today-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--acc);
+  color: #fff;
+  text-transform: uppercase;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
 .ta {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-top: 14px;
+}
+@media (max-width: 900px) {
+  .ta {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .ta {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 .tg {
   display: flex;
@@ -2922,6 +2968,7 @@ input:disabled, select:disabled, textarea:disabled {
   color: var(--c);
 }
 .tg.r { --c: #D97706; }
+.tg.g { --c: var(--vio); }
 .tg.d { --c: var(--ok); }
 .tg.p1 { --c: var(--ok); }
 .tg.v { --c: var(--vio); }
@@ -2978,6 +3025,294 @@ input:disabled, select:disabled, textarea:disabled {
 .rq button:hover {
   filter: brightness(.97);
 }
+
+/* ========================================================================= */
+/* SÉLECTION GROUPÉE ET SUPPRESSION EN MASSE (GESTION DES SÉANCES)          */
+/* ========================================================================= */
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.batch-chk-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.batch-chk-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 19px;
+  height: 19px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: all 0.15s ease;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.batch-chk-label input[type="checkbox"]:checked {
+  background: var(--acc);
+  border-color: var(--acc);
+}
+
+.batch-chk-label input[type="checkbox"]:checked::before {
+  content: "";
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+.batch-chk-label input[type="checkbox"]:indeterminate {
+  background: var(--acc);
+  border-color: var(--acc);
+}
+
+.batch-chk-label input[type="checkbox"]:indeterminate::before {
+  content: "";
+  width: 9px;
+  height: 2.5px;
+  background: #fff;
+  border-radius: 1px;
+}
+
+.batch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--acc);
+  background: var(--acc-s);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent);
+}
+
+.btn-batch-clear {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink2);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.btn-batch-clear:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.btn-batch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--bad);
+  background: var(--bad);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.btn-batch-delete:hover {
+  filter: brightness(0.92);
+}
+
+/* Checkbox sur la carte séance */
+.card-select-chk {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.card-select-chk input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: all 0.15s ease;
+  margin: 0;
+}
+
+.card-select-chk input[type="checkbox"]:hover {
+  border-color: var(--acc);
+}
+
+.card-select-chk input[type="checkbox"]:checked {
+  background: var(--acc);
+  border-color: var(--acc);
+}
+
+.card-select-chk input[type="checkbox"]:checked::before {
+  content: "";
+  width: 10px;
+  height: 6px;
+  border-left: 2.2px solid #fff;
+  border-bottom: 2.2px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+.ss.is-selected {
+  border-color: var(--acc) !important;
+  border-left-color: var(--acc) !important;
+  background: color-mix(in srgb, var(--acc) 5%, var(--card)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--acc) 45%, transparent), var(--shadow) !important;
+}
+
+/* Barre flottante en bas de l'écran */
+.batch-floating-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--card);
+  border: 1.5px solid color-mix(in srgb, var(--acc) 40%, var(--line));
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(16px);
+  width: min(600px, 94vw);
+  animation: batchSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes batchSlideUp {
+  from {
+    transform: translate(-50%, 40px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.batch-floating-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.batch-check-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--acc);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.batch-floating-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-batch-floating-cancel {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink2);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .15s;
+}
+
+.btn-batch-floating-cancel:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.btn-batch-floating-del {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: var(--bad);
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .15s;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--bad) 35%, transparent);
+}
+
+.btn-batch-floating-del:hover:not(:disabled) {
+  filter: brightness(0.9);
+  transform: translateY(-1px);
+}
+
+.btn-batch-floating-del:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .batch-floating-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 14px;
+    bottom: 16px;
+  }
+  .batch-floating-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
+
 /* Onglet Enseignants */
 .tgr {
   display: grid;

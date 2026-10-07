@@ -1,10 +1,15 @@
 import { Session } from '@/types/session';
-import { formatPhone as formatPhoneUtil, extractPhoneDigits, normalizePhoneForUrl } from '@/lib/phoneUtils';
+import { 
+  formatPhone as formatPhoneUtil, 
+  extractPhoneDigits, 
+  normalizePhoneForUrl,
+  extractPhoneData 
+} from '@/lib/phoneUtils';
 
 export const COUNTRY_CODE = '216';
 
 /**
- * Niveaux et Classes officiels normalisés (strictement identiques au CRM Elios / Formatic)
+ * Niveaux officiels normalisés (strictement identiques au CRM Elios / Formatic)
  */
 export const LEVELS = [
   '7ème de Base',
@@ -64,17 +69,17 @@ export function formatPhoneInput(value: string): string {
 }
 
 /**
- * Valide rigoureusement le numéro de téléphone.
+ * Valide rigoureusement le numéro de téléphone (Tunisie et Sultanat d'Oman +968).
  * Règles :
  * - Si vide et non requis => valide.
- * - Si tunisien (8 chiffres ou indicatif 216) => doit compter exactement 8 chiffres
+ * - Si Oman (+968) => doit compter exactement 8 chiffres après l'indicatif.
+ * - Si Tunisie (défaut local ou +216) => doit compter exactement 8 chiffres
  *   et commencer par un préfixe valide en Tunisie (2, 3, 4, 5, 7, 9).
- * - Les numéros fantaisistes (ex: 923300000000, 123456, 01234567) sont rejetés.
  */
 export function validatePhone(
   raw?: string | null,
   required: boolean = false
-): { isValid: boolean; error?: string } {
+): { isValid: boolean; error?: string; country?: 'TN' | 'OM' } {
   if (!raw || !raw.trim()) {
     if (required) {
       return { isValid: false, error: 'Le numéro de téléphone est obligatoire.' };
@@ -83,29 +88,43 @@ export function validatePhone(
   }
 
   const str = raw.trim();
-  const digits = extractPhoneDigits(str);
+  const data = extractPhoneData(str);
 
-  if (digits.length === 0) {
-    return { isValid: false, error: 'Veuillez saisir un numéro valide.' };
+  if (!data.nationalDigits) {
+    return { isValid: false, error: 'Veuillez saisir un numéro de téléphone valide.' };
   }
 
-  if (digits.length !== 8) {
+  if (data.country === 'OM') {
+    if (data.nationalDigits.length !== 8) {
+      return {
+        isValid: false,
+        error: `Numéro omanais (+968) incomplet : 8 chiffres requis (${data.nationalDigits.length}/8 saisis).`,
+        country: 'OM',
+      };
+    }
+    return { isValid: true, country: 'OM' };
+  }
+
+  // Tunisie
+  if (data.nationalDigits.length !== 8) {
     return {
       isValid: false,
-      error: `Numéro tunisien invalide : 8 chiffres requis (${digits.length}/8 saisis).`,
+      error: `Numéro tunisien invalide : 8 chiffres requis (${data.nationalDigits.length}/8 saisis).`,
+      country: 'TN',
     };
   }
 
-  const firstDigit = digits.charAt(0);
+  const firstDigit = data.nationalDigits.charAt(0);
   const validPrefixes = ['2', '3', '4', '5', '7', '9'];
   if (!validPrefixes.includes(firstDigit)) {
     return {
       isValid: false,
       error: 'Préfixe opérateur invalide en Tunisie. Doit débuter par 2, 4, 5, 9 (mobile) ou 3, 7 (fixe).',
+      country: 'TN',
     };
   }
 
-  return { isValid: true };
+  return { isValid: true, country: 'TN' };
 }
 
 /**
@@ -292,6 +311,109 @@ export function canonicalToRawSpec(section: string): string {
   if (section.includes('xp') || section.includes('exp')) return 'Sci';
   if (section.includes('Let')) return 'Let';
   return 'General';
+}
+
+export interface SessionTarget {
+  subject: string;
+  level: string;
+  section: string;
+  room?: string;
+}
+
+/**
+ * Analyse une ligne d'import Excel pour détecter si la séance est commune à plusieurs niveaux/sections.
+ * Si oui, extrait et renvoie chaque cible (niveau, section, matière) pour créer une fiche distincte par niveau et section.
+ */
+export function extractSessionTargets(
+  title?: string,
+  rawGrade?: string,
+  rawSpec?: string,
+  rawSubject?: string,
+  originalRoom?: string
+): SessionTarget[] {
+  const targets: SessionTarget[] = [];
+  const rawSub = (rawSubject || '').trim();
+
+  // Motif 1 : Multi-scopes dans rawSubject (ex: "Math (2eme / Info), Math (2eme / Science)")
+  if (rawSub.includes('(') && rawSub.includes(')')) {
+    const regex = /([^,]+?)\s*\(\s*([^/)]+?)\s*(?:\/\s*([^)]+?))?\s*\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(rawSub)) !== null) {
+      const subName = match[1].trim();
+      const gradePart = match[2].trim();
+      const specPart = match[3] ? match[3].trim() : (rawSpec || 'Sans section');
+
+      const targetSubject = mapSubjectToStandard(subName, title);
+      const targetLevel = mapGradeToLevel(gradePart);
+      const targetSection = mapSpecialityToSection(specPart);
+
+      // Éviter les doublons exacts
+      if (!targets.some(t => t.level === targetLevel && t.section === targetSection)) {
+        targets.push({
+          subject: targetSubject,
+          level: targetLevel,
+          section: targetSection,
+          room: `${canonicalToRawGrade(targetLevel)} / ${canonicalToRawSpec(targetSection)}`,
+        });
+      }
+    }
+  }
+
+  // Motif 2 : Multi-sections dans rawSpec (ex: "Info, Science" ou "Math / Science")
+  if (targets.length <= 1 && rawSpec) {
+    const specParts = rawSpec.split(/[,/+]|\bet\b|\b&\b/).map(s => s.trim()).filter(Boolean);
+    if (specParts.length > 1) {
+      const baseSub = mapSubjectToStandard(rawSub, title);
+      const baseLevel = mapGradeToLevel(rawGrade);
+      targets.length = 0;
+      for (const sp of specParts) {
+        const targetSection = mapSpecialityToSection(sp);
+        if (!targets.some(t => t.section === targetSection)) {
+          targets.push({
+            subject: baseSub,
+            level: baseLevel,
+            section: targetSection,
+            room: `${canonicalToRawGrade(baseLevel)} / ${canonicalToRawSpec(targetSection)}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Motif 3 : Multi-niveaux dans rawGrade (ex: "2eme, 3eme")
+  if (targets.length <= 1 && rawGrade) {
+    const gradeParts = rawGrade.split(/[,/+]|\bet\b|\b&\b/).map(s => s.trim()).filter(Boolean);
+    if (gradeParts.length > 1) {
+      const baseSub = mapSubjectToStandard(rawSub, title);
+      const baseSection = mapSpecialityToSection(rawSpec);
+      targets.length = 0;
+      for (const gp of gradeParts) {
+        const targetLevel = mapGradeToLevel(gp);
+        if (!targets.some(t => t.level === targetLevel)) {
+          targets.push({
+            subject: baseSub,
+            level: targetLevel,
+            section: baseSection,
+            room: `${canonicalToRawGrade(targetLevel)} / ${canonicalToRawSpec(baseSection)}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Fallback universel : séance standard à niveau et section uniques
+  if (targets.length === 0) {
+    const singleLevel = mapGradeToLevel(rawGrade);
+    const singleSection = mapSpecialityToSection(rawSpec);
+    targets.push({
+      subject: mapSubjectToStandard(rawSubject, title),
+      level: singleLevel,
+      section: singleSection,
+      room: originalRoom || `${canonicalToRawGrade(singleLevel)} / ${canonicalToRawSpec(singleSection)}`,
+    });
+  }
+
+  return targets;
 }
 
 /**
