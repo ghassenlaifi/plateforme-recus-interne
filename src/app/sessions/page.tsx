@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import useSWR from 'swr';
 import { EliosHeader } from '@/components/EliosHeader';
+import { BasketballUploadModal } from '@/components/BasketballUploadModal';
 import { useToast } from '@/components/Toast';
 import { Session, Teacher, SessionStats } from '@/types/session';
 import {
@@ -19,13 +20,16 @@ import {
   formatPdfRequest,
   formatRecRequest,
 } from '@/lib/sessionHelpers';
+import { CommunicationGroup } from '@/types/communicationGroup';
+import { resolveCommunicationGroup } from '@/lib/communicationGroupHelper';
+import { WhatsAppTemplates } from '@/types/settings';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur de chargement');
   return res.json();
 });
 
-const TINT = ['#C2620A', '#0E7C9B', '#6D4AE0', '#16A34A', '#D6336C', '#2F6BEB'];
+const TINT = ['#23356E', '#F49E1F', '#7BA25B', '#3D4E7F', '#F6B047', '#92B277'];
 const hue = (str: string) => TINT[[...str].reduce((a, c) => a + c.charCodeAt(0), 0) % TINT.length];
 const initials = (name: string) => name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -64,8 +68,19 @@ export default function SessionsPage() {
     '/api/sessions/teachers',
     fetcher
   );
+  const { data: groupsData } = useSWR<{ groups: CommunicationGroup[] }>(
+    '/api/settings/groups',
+    fetcher,
+    { revalidateOnFocus: false, revalidateOnReconnect: false }
+  );
+  const { data: whatsappData } = useSWR<{ templates: WhatsAppTemplates }>(
+    '/api/settings/whatsapp',
+    fetcher,
+    { revalidateOnFocus: false, revalidateOnReconnect: false }
+  );
 
   const sessions = sessionData?.sessions || [];
+  const commGroups = useMemo(() => groupsData?.groups || [], [groupsData]);
   const stats = sessionData?.stats || {
     totalSessions: 0,
     completedSessions: 0,
@@ -188,7 +203,7 @@ export default function SessionsPage() {
         body: JSON.stringify({
           subject: formSubject.trim(),
           teacherName: formTeacher.trim(),
-          teacherPhone: formPhone.trim(),
+          teacherPhone: formatPhone(formPhone),
           level: formLevel,
           section: formSection,
           startDate,
@@ -239,7 +254,7 @@ export default function SessionsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: tFormName.trim(),
-          phone: tFormPhone.trim(),
+          phone: formatPhone(tFormPhone),
           subject: tFormSubject.trim(),
         }),
       });
@@ -283,6 +298,33 @@ export default function SessionsPage() {
     }
   };
 
+  // Envoi Rappel Groupe Élèves synchronisé rigoureusement avec les 19 Groupes de Communication Standards
+  const handleSendGroupReminder = (s: Session) => {
+    const text = formatGroupReminder(s, 'fr', whatsappData?.templates?.groupReminder);
+    navigator.clipboard.writeText(text);
+
+    const targetGroup = resolveCommunicationGroup(s, commGroups);
+    if (targetGroup && targetGroup.whatsappLink && targetGroup.whatsappLink.trim()) {
+      const link = targetGroup.whatsappLink.trim();
+      const finalUrl = link.startsWith('http') ? link : `https://${link}`;
+      toast({
+        message: `Message copié ! Redirection vers « ${targetGroup.name} »...`,
+        tone: 'ok',
+      });
+      window.open(finalUrl, '_blank', 'noopener');
+    } else {
+      toast({
+        message: `Message copié ! Aucun lien configuré pour « ${targetGroup?.name || 'ce groupe'} » (WhatsApp Web ouvert). Rendez-vous dans Paramètres pour renseigner le lien.`,
+        tone: 'warn',
+      });
+      window.open('https://web.whatsapp.com/', '_blank', 'noopener');
+    }
+
+    if (!s.remGroup) {
+      handleToggleSessionFlag(s, 'remGroup');
+    }
+  };
+
   // Sélection et validation du fichier d'import
   const handleSelectFile = (file: File) => {
     const validExts = ['.csv', '.xlsx', '.xls'];
@@ -297,14 +339,15 @@ export default function SessionsPage() {
   };
 
   // Import de fichier
-  const handleImportFile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!importFile) return;
+  const handleImportFile = async (e?: React.FormEvent, overrideFile?: File) => {
+    if (e) e.preventDefault();
+    const targetFile = overrideFile || importFile;
+    if (!targetFile) return;
     try {
       setIsImporting(true);
       setImportMsg(null);
       const fd = new FormData();
-      fd.append('file', importFile);
+      fd.append('file', targetFile);
       const res = await fetch('/api/sessions/import', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur lors de l'import");
@@ -950,7 +993,7 @@ export default function SessionsPage() {
                               className="wb" 
                               disabled={!s.teacherPhone}
                               onClick={() => {
-                                sendWhatsApp(s.teacherPhone, formatTeacherReminder(s));
+                                sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder));
                                 if (!s.remTeacher) handleToggleSessionFlag(s, 'remTeacher');
                               }}
                               title={s.teacherPhone ? 'Envoyer le rappel directement sur WhatsApp à l’enseignant' : 'Aucun téléphone renseigné'}
@@ -962,11 +1005,8 @@ export default function SessionsPage() {
                             <button 
                               type="button" 
                               className="wb group"
-                              onClick={() => {
-                                sendWhatsApp('', formatGroupReminder(s));
-                                if (!s.remGroup) handleToggleSessionFlag(s, 'remGroup');
-                              }}
-                              title="Copier le message et ouvrir le groupe WhatsApp des élèves"
+                              onClick={() => handleSendGroupReminder(s)}
+                              title={`Copier le message et ouvrir ${resolveCommunicationGroup(s, commGroups).name}`}
                             >
                               <svg className="i" viewBox="0 0 24 24"><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/></svg>
                               {s.remGroup ? 'Rappel Groupe Élèves (✓)' : 'Rappel Groupe Élèves'}
@@ -1308,7 +1348,7 @@ export default function SessionsPage() {
                 </i>
               </div>
 
-              <div className="stat" style={{ '--c': '#D97706' } as React.CSSProperties}>
+              <div className="stat" style={{ '--c': '#F49E1F' } as React.CSSProperties}>
                 <small>À clôturer</small>
                 <b>{sessions.filter(s => !s.done && s.startDate < ymd(new Date())).length}</b>
                 <i className="si">
@@ -1316,7 +1356,7 @@ export default function SessionsPage() {
                 </i>
               </div>
 
-              <div className="stat" style={{ '--c': 'var(--vio)' } as React.CSSProperties}>
+              <div className="stat" style={{ '--c': '#23356E' } as React.CSSProperties}>
                 <small>Documents manquants</small>
                 <b>{stats.missingDocs}</b>
                 <i className="si">
@@ -1406,9 +1446,9 @@ export default function SessionsPage() {
                 </div>
 
                 <div className="lgd">
-                  <span><i style={{ '--c': 'var(--blue)' } as React.CSSProperties}></i>Planifiée</span>
-                  <span><i style={{ '--c': 'var(--ok)' } as React.CSSProperties}></i>Terminée</span>
-                  <span><i style={{ '--c': '#D97706' } as React.CSSProperties}></i>À clôturer</span>
+                  <span><i style={{ '--c': '#23356E' } as React.CSSProperties}></i>Planifiée</span>
+                  <span><i style={{ '--c': '#7BA25B' } as React.CSSProperties}></i>Terminée</span>
+                  <span><i style={{ '--c': '#F49E1F' } as React.CSSProperties}></i>À clôturer</span>
                 </div>
 
                 {/* 42 Jours de la Grille Mensuelle */}
@@ -1507,7 +1547,7 @@ export default function SessionsPage() {
                           <button 
                             type="button" 
                             className="ib" 
-                            onClick={() => sendWhatsApp(s.teacherPhone, formatTeacherReminder(s))}
+                            onClick={() => sendWhatsApp(s.teacherPhone, formatTeacherReminder(s, 'fr', whatsappData?.templates?.teacherReminder))}
                             title="Envoyer le rappel WhatsApp"
                           >
                             <svg className="i" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>
@@ -1555,7 +1595,7 @@ export default function SessionsPage() {
       {/* MODALE : MODIFIER UNE SÉANCE                                              */}
       {/* ========================================================================= */}
       {editingSession && (
-        <div className="modal-overlay" style={{ zIndex: 70 }} onClick={(e) => { if (e.target === e.currentTarget) setEditingSession(null); }}>
+        <div className="modal-overlay" style={{ zIndex: 100 }} onClick={(e) => { if (e.target === e.currentTarget) setEditingSession(null); }}>
           <div className="modal-dialog" style={{ width: 'min(500px, 94vw)' }}>
             <div className="dh">
               <h2>Modifier la séance</h2>
@@ -1576,7 +1616,10 @@ export default function SessionsPage() {
                 await fetch(`/api/sessions/${editingSession._id}`, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(editingSession)
+                  body: JSON.stringify({
+                    ...editingSession,
+                    teacherPhone: formatPhone(editingSession.teacherPhone)
+                  })
                 });
                 toast({ message: 'Séance modifiée avec succès', tone: 'ok' });
                 setEditingSession(null);
@@ -1729,7 +1772,7 @@ export default function SessionsPage() {
       {/* MODALE : MODIFIER UN ENSEIGNANT                                           */}
       {/* ========================================================================= */}
       {editingTeacher && (
-        <div className="modal-overlay" style={{ zIndex: 70 }} onClick={(e) => { if (e.target === e.currentTarget) setEditingTeacher(null); }}>
+        <div className="modal-overlay" style={{ zIndex: 100 }} onClick={(e) => { if (e.target === e.currentTarget) setEditingTeacher(null); }}>
           <div className="modal-dialog" style={{ width: 'min(460px, 94vw)' }}>
             <div className="dh" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span 
@@ -1766,7 +1809,10 @@ export default function SessionsPage() {
                 await fetch(`/api/sessions/teachers/${editingTeacher._id}`, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(editingTeacher)
+                  body: JSON.stringify({
+                    ...editingTeacher,
+                    phone: formatPhone(editingTeacher.phone)
+                  })
                 });
                 toast({ message: 'Enseignant mis à jour', tone: 'ok' });
                 setEditingTeacher(null);
@@ -1851,7 +1897,7 @@ export default function SessionsPage() {
         const docsCount = missingSessions.reduce((acc, s) => acc + (!s.pdf ? 1 : 0) + (!s.rec ? 1 : 0), 0);
 
         return (
-          <div className="modal-overlay" style={{ zIndex: 70 }} onClick={(e) => { if (e.target === e.currentTarget) setViewingFicheTeacher(null); }}>
+          <div className="modal-overlay" style={{ zIndex: 100 }} onClick={(e) => { if (e.target === e.currentTarget) setViewingFicheTeacher(null); }}>
             <div className="modal-dialog" style={{ width: 'min(660px, 96vw)' }}>
               <div className="dh" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span className="ini" style={{ width: 44, height: 44, borderRadius: 13, background: hue(t.subject || t.name) + '22', color: hue(t.subject || t.name) }}>
@@ -1986,157 +2032,28 @@ export default function SessionsPage() {
       })()}
 
       {/* ========================================================================= */}
-      {/* MODALE : IMPORT DE FICHIER CSV / EXCEL                                    */}
+      {/* MODALE : IMPORT DE FICHIER CSV / EXCEL - BASKETBALL UPLOAD ANIMATION      */}
       {/* ========================================================================= */}
-      {isImportOpen && (
-        <div className="modal-overlay" style={{ zIndex: 70 }} onClick={(e) => { if (e.target === e.currentTarget && !isImporting) { setIsImportOpen(false); setIsDragging(false); } }}>
-          <div className="modal-dialog" style={{ width: 'min(500px, 94vw)' }}>
-            <div className="dh">
-              <h2>Importer des séances (CSV ou Excel)</h2>
-              <button type="button" className="x" onClick={() => { setIsImportOpen(false); setIsDragging(false); }} disabled={isImporting}>✕</button>
-            </div>
-            <form onSubmit={handleImportFile}>
-              <div className="db">
-                <p style={{ fontSize: '13.5px', color: 'var(--ink2)', margin: 0, lineHeight: 1.5 }}>
-                  Sélectionnez ou glissez-déposez un fichier <strong>.csv</strong> ou <strong>.xlsx</strong> contenant les colonnes de planification. Les séances, enseignants et liens Zoom seront automatiquement importés et synchronisés dans la base.
-                </p>
-
-                <div 
-                  style={{
-                    border: isDragging ? '2px dashed var(--acc)' : '2px dashed var(--line)',
-                    borderRadius: '14px',
-                    padding: '28px 20px',
-                    textAlign: 'center',
-                    background: isDragging ? 'rgba(79, 70, 229, 0.08)' : 'var(--hover)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    position: 'relative'
-                  }}
-                  onClick={() => document.getElementById('import-file-input')?.click()}
-                  onDragEnter={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(false);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsDragging(false);
-                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                      handleSelectFile(e.dataTransfer.files[0]);
-                    }
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" style={{ width: 34, height: 34, fill: 'none', stroke: 'var(--acc)', strokeWidth: 1.8, margin: '0 auto 10px', display: 'block', transition: 'transform 0.2s ease', transform: isDragging ? 'scale(1.15) translateY(-2px)' : 'none' }}>
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-                  </svg>
-                  {isDragging ? (
-                    <b style={{ display: 'block', fontSize: '14px', color: 'var(--acc)', marginBottom: '4px' }}>
-                      Déposez votre fichier ici...
-                    </b>
-                  ) : importFile ? (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--ink)' }}>{importFile.name}</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setImportFile(null);
-                          }}
-                          style={{
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: 'none',
-                            color: '#DC2626',
-                            borderRadius: '50%',
-                            width: '20px',
-                            height: '20px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: 'bold',
-                            padding: 0
-                          }}
-                          title="Supprimer le fichier"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <small style={{ color: 'var(--ink3)' }}>
-                        {(importFile.size / 1024 < 1024) 
-                          ? `${(importFile.size / 1024).toFixed(1)} Ko` 
-                          : `${(importFile.size / (1024 * 1024)).toFixed(2)} Mo`} • Cliquez ou glissez pour remplacer
-                      </small>
-                    </div>
-                  ) : (
-                    <>
-                      <b style={{ display: 'block', fontSize: '14px', marginBottom: '4px' }}>
-                        Glissez-déposez votre fichier ici ou cliquez pour choisir
-                      </b>
-                      <small style={{ color: 'var(--ink3)' }}>
-                        Formats supportés : CSV, XLSX, XLS
-                      </small>
-                    </>
-                  )}
-                </div>
-
-                <input 
-                  type="file" 
-                  id="import-file-input" 
-                  accept=".csv,.xlsx,.xls"
-                  hidden 
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleSelectFile(e.target.files[0]);
-                    }
-                    e.target.value = '';
-                  }}
-                />
-
-                {importMsg && (
-                  <div style={{
-                    padding: '10px 14px',
-                    borderRadius: '10px',
-                    fontSize: '13px',
-                    background: importMsg.type === 'ok' ? '#ECFDF5' : '#FEF2F2',
-                    color: importMsg.type === 'ok' ? '#065F46' : '#991B1B',
-                    border: `1px solid ${importMsg.type === 'ok' ? '#A7F3D0' : '#FECACA'}`,
-                  }}>
-                    {importMsg.text}
-                  </div>
-                )}
-              </div>
-
-              <div className="df">
-                <button type="button" className="btn" onClick={() => { setIsImportOpen(false); setIsDragging(false); }} disabled={isImporting}>
-                  Annuler
-                </button>
-                <button type="submit" className="btn pri" disabled={!importFile || isImporting}>
-                  {isImporting ? 'Importation en cours...' : 'Lancer l’importation'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <BasketballUploadModal 
+        isOpen={isImportOpen}
+        onClose={() => {
+          setIsImportOpen(false);
+          setIsDragging(false);
+        }}
+        isImporting={isImporting}
+        importFile={importFile}
+        setImportFile={setImportFile}
+        onSelectFile={handleSelectFile}
+        onSubmitImport={(fileToImport) => handleImportFile(undefined, fileToImport)}
+        importMsg={importMsg}
+        setImportMsg={setImportMsg}
+      />
 
       {/* ========================================================================= */}
       {/* MODALE : CONFIRMATION SUPPRESSION                                         */}
       {/* ========================================================================= */}
       {deleteConfirm && (
-        <div className="modal-overlay" style={{ zIndex: 80 }} onClick={() => setDeleteConfirm(null)}>
+        <div className="modal-overlay" style={{ zIndex: 110 }} onClick={() => setDeleteConfirm(null)}>
           <div className="modal-dialog" style={{ width: 'min(420px, 92vw)' }}>
             <div className="dh">
               <h2>Confirmation</h2>

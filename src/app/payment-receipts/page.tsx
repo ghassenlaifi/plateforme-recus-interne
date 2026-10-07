@@ -7,6 +7,7 @@ import { EliosHeader } from '@/components/EliosHeader';
 import { PaymentReceiptTicket } from '@/components/PaymentReceiptTicket';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { generateReceiptReference } from '@/lib/receiptReference';
+import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données');
@@ -122,10 +123,12 @@ export default function PaymentReceiptsPage() {
     if (!searchQuery.trim()) return list;
 
     const s = searchQuery.trim().toLowerCase().replace(/[\s-]/g, '');
+    const queryDigits = searchQuery.replace(/\D/g, '');
     return list.filter(r => {
       const nom = (r.clientDetails?.nom || '').toLowerCase();
       const tel = (r.clientDetails?.telephone || '').replace(/\D/g, '');
       const ref = (r.computedRef || '').toLowerCase().replace(/-/g, '');
+      if (queryDigits && queryDigits.length >= 2 && tel.includes(queryDigits)) return true;
       return (nom + tel + ref).includes(s);
     });
   }, [receipts, selectedOp, searchQuery]);
@@ -133,9 +136,8 @@ export default function PaymentReceiptsPage() {
   // Statistiques
   const stats = useMemo(() => {
     const totalCount = receipts.length;
-    const uniqueStudents = new Set(receipts.map(r => r.clientDetails?.telephone).filter(Boolean)).size;
     const totalAmount = receipts.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-    return { totalCount, uniqueStudents, totalAmount };
+    return { totalCount, totalAmount };
   }, [receipts]);
 
   // Téléchargement direct HD (300 DPI sans décalage ni marge superflue)
@@ -217,22 +219,20 @@ export default function PaymentReceiptsPage() {
           </div>
         </div>
 
-        {/* Section Stats */}
-        <section className="stats" aria-label="Résumé">
-          <div className="stat" style={{ '--c': 'var(--fin)' } as React.CSSProperties}>
-            <small><i/>Reçus</small>
-            <b>{stats.totalCount}</b>
+        {/* Barre de Contrôle Unifiée : KPI Reçus + Recherche + Filtre Opérateur */}
+        <div className="receipts-toolbar">
+          {/* Carte compacte Reçus (taille optimisée, positionnée juste à côté de la recherche) */}
+          <div className="receipts-stat-card" style={{ '--c': 'var(--fin)' } as React.CSSProperties} title={`Total : ${stats.totalCount} reçus`}>
+            <span className="receipts-stat-label">
+              <i className="receipts-stat-dot" />
+              Reçus
+            </span>
+            <b className="receipts-stat-val">{stats.totalCount}</b>
           </div>
-          <div className="stat" style={{ '--c': '#3B6BF0' } as React.CSSProperties}>
-            <small><i/>Élèves</small>
-            <b>{stats.uniqueStudents}</b>
-          </div>
-        </section>
 
-        {/* Barre de Recherche & Filtre Opérateur */}
-        <div className="find">
-          <div className="sb">
-            <svg className="i" viewBox="0 0 24 24">
+          {/* Champ de recherche */}
+          <div className="receipts-search-box">
+            <svg className="i receipts-search-icon" viewBox="0 0 24 24">
               <circle cx="11" cy="11" r="7"/>
               <path d="m20 20-3.5-3.5"/>
             </svg>
@@ -246,17 +246,21 @@ export default function PaymentReceiptsPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <select 
-            id="op" 
-            aria-label="Filtrer par opérateur"
-            value={selectedOp}
-            onChange={(e) => setSelectedOp(e.target.value)}
-          >
-            <option value="">Tous les opérateurs</option>
-            {safeOperators.map(op => (
-              <option key={op._id} value={op.name}>{op.name}</option>
-            ))}
-          </select>
+
+          {/* Filtre Opérateur */}
+          <div className="receipts-filter-box">
+            <select 
+              id="op" 
+              aria-label="Filtrer par opérateur"
+              value={selectedOp}
+              onChange={(e) => setSelectedOp(e.target.value)}
+            >
+              <option value="">Tous les opérateurs</option>
+              {safeOperators.map(op => (
+                <option key={op._id} value={op.name}>{op.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <p className="count" id="count" aria-live="polite">
@@ -269,7 +273,7 @@ export default function PaymentReceiptsPage() {
             filtered.map((r, n) => {
               const opName = r.operatorName || 'Elios';
               const opMatch = safeOperators.find(o => o.name.toLowerCase() === opName.toLowerCase());
-              const opColor = opMatch ? getThemeColors(opMatch.theme).dot : '#0F9D82';
+              const opColor = opMatch ? getThemeColors(opMatch.theme).dot : '#7BA25B';
               const hasName = Boolean(r.clientDetails?.nom && r.clientDetails.nom.trim());
               const dateStr = r.computedDate.toLocaleDateString("fr-FR");
               const timeStr = r.computedDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -287,7 +291,7 @@ export default function PaymentReceiptsPage() {
                     </h3>
                     <p>
                       <svg className="i" viewBox="0 0 24 24">{IC.phone}</svg>
-                      {r.clientDetails?.telephone || '—'}
+                      {formatPhone(r.clientDetails?.telephone) || '—'}
                     </p>
                   </div>
                   <div className="kv">
@@ -331,7 +335,7 @@ export default function PaymentReceiptsPage() {
       {/* Popup : Reçu de Paiement Officiel (Clonage symétrique fidèle et 100% responsive) */}
       {isDlgOpen && selectedReceipt && (
         <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-hidden print:static print:bg-white print:p-0"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 backdrop-blur-md p-2 sm:p-4 overflow-hidden print:static print:bg-white print:p-0"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsDlgOpen(false);
           }}
@@ -403,7 +407,7 @@ export default function PaymentReceiptsPage() {
                 data={{
                   reference: selectedReceipt.computedRef,
                   studentName: selectedReceipt.clientDetails?.nom,
-                  phone: selectedReceipt.clientDetails?.telephone || '',
+                  phone: formatPhone(selectedReceipt.clientDetails?.telephone || ''),
                   offer: selectedReceipt.clientDetails?.classe,
                   familyGroup: selectedReceipt.clientDetails?.familyGroup,
                   amount: selectedReceipt.amount,

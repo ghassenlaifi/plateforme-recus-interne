@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getWhatsAppLink, cleanTunisianPhone } from '@/lib/whatsappHelper';
+import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
 
 interface WhatsAppDispatchModalProps {
   isOpen: boolean;
@@ -10,6 +11,8 @@ interface WhatsAppDispatchModalProps {
   studentPhone: string;
   targetStatus: 'Approved Prospect' | 'Approved' | 'N/A' | string;
   defaultMessage: string;
+  frenchMessage?: string;
+  arabicMessage?: string;
   onSent?: () => void;
 }
 
@@ -20,24 +23,36 @@ export function WhatsAppDispatchModal({
   studentPhone,
   targetStatus,
   defaultMessage,
+  frenchMessage,
+  arabicMessage,
   onSent
 }: WhatsAppDispatchModalProps) {
+  const [selectedLang, setSelectedLang] = useState<'fr' | 'ar'>('fr');
   const [message, setMessage] = useState(defaultMessage);
-  const [phone, setPhone] = useState(studentPhone);
+  const [phone, setPhone] = useState(() => formatPhone(studentPhone));
 
   useEffect(() => {
-    setMessage(defaultMessage);
-  }, [defaultMessage]);
+    setSelectedLang('fr');
+    setMessage(frenchMessage || defaultMessage);
+  }, [defaultMessage, frenchMessage, isOpen]);
 
   useEffect(() => {
-    setPhone(studentPhone);
+    setPhone(formatPhone(studentPhone));
   }, [studentPhone]);
+
+  const handleLangChange = (lang: 'fr' | 'ar') => {
+    setSelectedLang(lang);
+    if (lang === 'ar' && arabicMessage) {
+      setMessage(arabicMessage);
+    } else if (lang === 'fr' && (frenchMessage || defaultMessage)) {
+      setMessage(frenchMessage || defaultMessage);
+    }
+  };
 
   if (!isOpen) return null;
 
   const isApproved = targetStatus === 'Approved Prospect' || targetStatus === 'Approved';
-  const cleanPhone = cleanTunisianPhone(phone);
-  const hasValidPhone = cleanPhone.length >= 8;
+  const hasValidPhone = extractPhoneDigits(phone).length === 8;
 
   const handleSendWhatsApp = () => {
     const url = getWhatsAppLink(phone, message);
@@ -82,7 +97,7 @@ export function WhatsAppDispatchModal({
             <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#16A34A', display: 'block' }}>
               Communication WhatsApp
             </span>
-            <h3 style={{ margin: '2px 0 0', fontSize: '18px', fontWeight: 800, color: 'var(--ink)' }}>
+            <h3 style={{ margin: '2px 0 0', fontSize: '15.5px', fontWeight: 700, color: 'var(--ink)' }}>
               {isApproved ? 'Envoyer les modes de paiement' : 'Envoyer un message de relance'}
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
@@ -140,8 +155,9 @@ export function WhatsAppDispatchModal({
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Ex: 98123456"
+                onChange={(e) => setPhone(formatPhone(e.target.value))}
+                placeholder="Ex: 92 330 331"
+                maxLength={16}
                 style={{
                   padding: '5px 10px',
                   fontSize: '13px',
@@ -149,7 +165,8 @@ export function WhatsAppDispatchModal({
                   borderRadius: '8px',
                   border: '1px solid var(--line)',
                   background: 'var(--card)',
-                  width: '130px'
+                  width: '140px',
+                  fontFamily: 'monospace'
                 }}
               />
               {!hasValidPhone && (
@@ -162,10 +179,48 @@ export function WhatsAppDispatchModal({
 
           {/* Éditeur de message */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <small style={{ color: 'var(--ink2)', fontSize: '12px', fontWeight: 600 }}>
-                Message à envoyer :
-              </small>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <small style={{ color: 'var(--ink2)', fontSize: '12px', fontWeight: 600 }}>
+                  Message à envoyer :
+                </small>
+                {arabicMessage && (
+                  <div style={{ display: 'inline-flex', padding: '2px', background: 'var(--hover)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleLangChange('fr')}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: selectedLang === 'fr' ? 'var(--card)' : 'transparent',
+                        color: selectedLang === 'fr' ? 'var(--pri)' : 'var(--ink3)'
+                      }}
+                    >
+                      🇫🇷 FR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLangChange('ar')}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: selectedLang === 'ar' ? 'var(--card)' : 'transparent',
+                        color: selectedLang === 'ar' ? 'var(--pri)' : 'var(--ink3)'
+                      }}
+                    >
+                      🇹🇳 AR
+                    </button>
+                  </div>
+                )}
+              </div>
               <small style={{ color: 'var(--ink3)', fontSize: '11.5px' }}>
                 Modifiable pour cet envoi uniquement
               </small>
@@ -173,6 +228,7 @@ export function WhatsAppDispatchModal({
 
             <textarea
               rows={9}
+              dir={selectedLang === 'ar' ? 'rtl' : 'ltr'}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               style={{
@@ -186,7 +242,8 @@ export function WhatsAppDispatchModal({
                 lineHeight: 1.45,
                 fontFamily: 'inherit',
                 resize: 'vertical',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                textAlign: selectedLang === 'ar' ? 'right' : 'left'
               }}
             />
           </div>

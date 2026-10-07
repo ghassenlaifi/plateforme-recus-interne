@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { X, Download, Loader2 } from 'lucide-react';
+import { formatPhone } from '@/lib/phoneUtils';
 
 
 interface Receipt {
@@ -115,7 +116,7 @@ export function StatementModal({ wallet, onClose }: StatementModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 sm:p-6">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 backdrop-blur-md p-4 sm:p-6">
       <div className="relative w-full max-w-lg bg-gray-100 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-gray-200/50">
         
         {/* Close Button */}
@@ -177,7 +178,7 @@ export function StatementModal({ wallet, onClose }: StatementModalProps) {
                       
                       <div className="text-gray-700 leading-tight">
                         {receipt.clientDetails?.nom && <><span className="font-semibold text-gray-900">Nom:</span> {receipt.clientDetails.nom} &nbsp;</>}
-                        {receipt.clientDetails?.telephone && receipt.clientDetails.telephone !== '00000000' && receipt.clientDetails.telephone !== 'N/A' && <><span className="font-semibold text-gray-900">Tél:</span> {receipt.clientDetails.telephone} &nbsp;</>}
+                        {receipt.clientDetails?.telephone && receipt.clientDetails.telephone !== '00000000' && receipt.clientDetails.telephone !== 'N/A' && <><span className="font-semibold text-gray-900">Tél:</span> {formatPhone(receipt.clientDetails.telephone)} &nbsp;</>}
                         {receipt.clientDetails?.classe && receipt.clientDetails.classe !== 'N/A' && <><span className="font-semibold text-gray-900">Offre:</span> {receipt.clientDetails.classe} &nbsp;</>}
                         {receipt.clientDetails?.email && <><span className="font-semibold text-gray-900">Email:</span> {receipt.clientDetails.email} &nbsp;</>}
                         {receipt.clientDetails?.familyGroup && <><span className="font-semibold text-gray-900">Groupe:</span> {receipt.clientDetails.familyGroup}&nbsp;</>}

@@ -9,6 +9,7 @@ import {
   mapSubjectToStandard, 
   normalizePhone 
 } from '@/lib/sessionHelpers';
+import { formatPhone } from '@/lib/phoneUtils';
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,6 +67,9 @@ export async function POST(req: NextRequest) {
       const section = mapSpecialityToSection(rawSpec);
 
       // Gestion / synchronisation enseignant
+      const rawTeacherPhone = String(row['Teacher phone'] || row['Teacher Phone'] || row['phone'] || row['Phone'] || row['Telephone'] || row['Téléphone'] || '').trim();
+      const normalizedTeacherPhone = formatPhone(rawTeacherPhone);
+
       let teacherPhone = '';
       if (teacherName) {
         let teacherDoc = await Teacher.findOne({
@@ -78,6 +82,7 @@ export async function POST(req: NextRequest) {
         if (!teacherDoc) {
           teacherDoc = await Teacher.create({
             name: teacherName,
+            phone: normalizedTeacherPhone,
             email: teacherEmail,
             externalId: teacherExternalId,
             subject,
@@ -85,8 +90,12 @@ export async function POST(req: NextRequest) {
           });
           importedTeachersCount++;
         } else {
-          // Mise à jour de l'email ou sujet s'il manquait
+          // Mise à jour de l'email, téléphone ou sujet s'il manquait
           let modified = false;
+          if (normalizedTeacherPhone && (!teacherDoc.phone || teacherDoc.phone !== normalizedTeacherPhone)) {
+            teacherDoc.phone = normalizedTeacherPhone;
+            modified = true;
+          }
           if (teacherEmail && !teacherDoc.email) {
             teacherDoc.email = teacherEmail;
             modified = true;
@@ -102,7 +111,7 @@ export async function POST(req: NextRequest) {
           if (modified) await teacherDoc.save();
         }
 
-        teacherPhone = teacherDoc.phone || '';
+        teacherPhone = formatPhone(teacherDoc.phone || normalizedTeacherPhone);
       }
 
       // Upsert de la séance

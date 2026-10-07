@@ -9,16 +9,11 @@
  * Date : 29/09/2026
  * -> EA - 923 - 330 - 312 - 909
  */
+import { extractPhoneDigits } from '@/lib/phoneUtils';
+
 export function generateReceiptReference(phone: string, dateInput?: Date | string | null): string {
-  // 1. Nettoyer le numéro de téléphone pour ne garder que les chiffres
-  let digits = (phone || '').replace(/\D/g, '');
-  
-  // Suppression indicatif tunisien si présent
-  if (digits.startsWith('216') && digits.length === 11) {
-    digits = digits.slice(3);
-  } else if (digits.startsWith('00216') && digits.length === 13) {
-    digits = digits.slice(5);
-  }
+  // 1. Nettoyer le numéro de téléphone pour extraire exactement les 8 chiffres tunisiens
+  let digits = extractPhoneDigits(phone);
 
   // Fallback si moins de 8 chiffres
   if (digits.length < 8) {

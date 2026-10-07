@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Session from '@/models/Session';
 import Teacher from '@/models/Teacher';
 import { normalizePhone, validatePhone } from '@/lib/sessionHelpers';
+import { formatPhone } from '@/lib/phoneUtils';
 
 type Params = { id: string };
 
@@ -28,7 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
           return NextResponse.json({ error: check.error || 'Numéro de téléphone invalide' }, { status: 400 });
         }
       }
-      updateFields.teacherPhone = normalizePhone(body.teacherPhone);
+      updateFields.teacherPhone = formatPhone(body.teacherPhone);
     }
     if (body.teacherEmail !== undefined) updateFields.teacherEmail = body.teacherEmail.trim();
     if (body.startDate !== undefined) updateFields.startDate = body.startDate;

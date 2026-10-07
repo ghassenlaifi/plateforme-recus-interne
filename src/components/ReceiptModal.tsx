@@ -4,8 +4,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Trash2, Check, Loader2, Download } from 'lucide-react';
 import { useToast } from './Toast';
 import { Receipt, Note } from '@/types';
-import { useSWRConfig } from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { formatPhone } from '@/lib/phoneUtils';
 
 interface ReceiptModalProps {
   receipt: Receipt | null;
@@ -38,7 +39,7 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
     if (receipt) {
       setEditData({
         nom: receipt.clientDetails?.nom || '',
-        telephone: receipt.clientDetails?.telephone || '',
+        telephone: formatPhone(receipt.clientDetails?.telephone || ''),
         email: receipt.clientDetails?.email || '',
         classe: receipt.clientDetails?.classe || '',
         paymentMode: receipt.paymentMode || '',
@@ -49,14 +50,33 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
     }
   }, [receipt]);
 
-  const notesEndRef = useRef<HTMLLIElement>(null);
+  // Synchronisation instantanée en temps réel des notes du reçu ouvert
+  const activeReceiptId = (isOpen && receipt?._id) ? receipt._id : null;
+  const { data: liveReceipt } = useSWR<Receipt>(
+    activeReceiptId ? `/api/receipts/${activeReceiptId}` : null,
+    (url: string) => fetch(url).then(r => r.json()),
+    {
+      refreshInterval: 1500,
+      revalidateOnFocus: true,
+      dedupingInterval: 600
+    }
+  );
 
-  const formatPhone = (raw: string) => {
-    let d = raw.replace(/\D/g, '');
-    if (d.length > 8 && d.startsWith('216')) d = d.slice(3);
-    d = d.slice(0, 8);
-    return [d.slice(0, 2), d.slice(2, 5), d.slice(5, 8)].filter(Boolean).join(' ');
-  };
+  useEffect(() => {
+    if (!liveReceipt || !receipt) return;
+    const currentNotes = receipt.notes || [];
+    const incomingNotes = liveReceipt.notes || [];
+    const notesChanged = JSON.stringify(currentNotes) !== JSON.stringify(incomingNotes);
+
+    if (notesChanged) {
+      const apiUrl = `/api/receipts?status=${receipt.status}`;
+      mutate(apiUrl, (currentData: Receipt[] = []) => {
+        return currentData.map(r => r._id === liveReceipt._id ? { ...r, notes: incomingNotes } : r);
+      }, true);
+    }
+  }, [liveReceipt, receipt, mutate]);
+
+  const notesEndRef = useRef<HTMLLIElement>(null);
   
   const fmtDate = (iso: string | undefined) => { 
     if (!iso) return '—'; 
@@ -259,12 +279,12 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
   return (
     <div 
       id="modal" 
-      className="fixed inset-0 z-50" 
+      className="fixed inset-0 z-[100]" 
       role="dialog" 
       aria-modal="true" 
       data-state={closing ? 'closing' : 'open'}
     >
-      <div className="modal-backdrop absolute inset-0 bg-black/60" onClick={handleClose}></div>
+      <div className="modal-backdrop absolute inset-0 bg-black/65 backdrop-blur-md" onClick={handleClose}></div>
 
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3 sm:p-6">
         <div className="modal-panel pointer-events-auto flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] md:h-[min(760px,calc(100dvh-3rem))]">
@@ -385,10 +405,17 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                   </div>
                   <div>
                     <label className="label">Numéro de téléphone</label>
-                    <div className="relative">
-                      <span className="tnum pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-400">+216</span>
-                      <input type="tel" className={`input tnum pl-12 ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} readOnly={receipt?.status === 'PROCESSED'} value={editData.telephone} onChange={e => setEditData({...editData, telephone: e.target.value.replace(/\D/g, '').slice(0, 8)})} onBlur={handleBlurSave} />
-                    </div>
+                    <input 
+                      type="tel" 
+                      inputMode="tel"
+                      placeholder="Ex : 92 330 331"
+                      maxLength={16}
+                      className={`input tnum ${receipt?.status === 'PROCESSED' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
+                      readOnly={receipt?.status === 'PROCESSED'} 
+                      value={editData.telephone} 
+                      onChange={e => setEditData({...editData, telephone: formatPhone(e.target.value)})} 
+                      onBlur={handleBlurSave} 
+                    />
                   </div>
                   <div>
                     <label className="label">Email</label>

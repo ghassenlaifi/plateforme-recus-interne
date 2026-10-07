@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { X, Phone, Trash2, Edit3, Send } from 'lucide-react';
+import { formatPhone } from '@/lib/phoneUtils';
 
 const CLASSE_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère de Base', '2ème de Base', '3ème de Base', 'BAC'];
 const SECTION_OPTIONS = ['Sciences Expérimentales', 'Mathématiques', 'Technique', 'Informatique', 'Économie', 'Lettres', 'Sport'];
@@ -32,7 +33,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, theme }: LeadDetailsMo
 
   return (
     <div 
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/65 backdrop-blur-md animate-in fade-in duration-200"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -104,7 +105,12 @@ export function LeadDetailsModal({ isOpen, onClose, lead, theme }: LeadDetailsMo
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Phone Number</label>
                 <div className="flex gap-2">
-                  <input type="tel" defaultValue={lead.phone} className={`flex-1 px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${ringTheme} text-gray-900 font-medium text-sm transition-all shadow-sm`} />
+                  <input 
+                    type="tel" 
+                    placeholder="Ex : 92 330 331"
+                    defaultValue={formatPhone(lead.phone)} 
+                    className={`flex-1 px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${ringTheme} text-gray-900 font-medium text-sm transition-all shadow-sm`} 
+                  />
                   <button className="px-3.5 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-600 rounded-xl transition-colors shadow-sm">
                     <Phone className="w-4 h-4" />
                   </button>

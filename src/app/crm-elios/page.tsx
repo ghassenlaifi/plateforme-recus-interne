@@ -14,11 +14,14 @@ import {
   ELIOS_SOURCES,
   ELIOS_OFFERS,
   isLeadInRappels,
-  getRappelsDelayDays
+  getRappelsDelayDays,
+  isClassWithoutSection,
+  getEliosStatusColor
 } from '@/types/crm';
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
+import { formatPhone, extractPhoneDigits, normalizePhoneForUrl } from '@/lib/phoneUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Elios');
@@ -84,8 +87,14 @@ export default function CRMEliosPage() {
     } catch {}
   };
 
-  // Récupération des données depuis MongoDB
+  // Modales & Fiche Prospect
+  const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
+  const [lastInteractedLeadId, setLastInteractedLeadId] = useState<string | null>(null);
+
+  // Récupération des données depuis MongoDB avec rafraîchissement temps réel
   const { data: leads, mutate } = useSWR<LeadItem[]>('/api/leads/elios', fetcher, {
+    refreshInterval: selectedLead ? 2000 : 4000,
     revalidateOnFocus: true,
     revalidateOnReconnect: true
   });
@@ -123,11 +132,6 @@ export default function CRMEliosPage() {
   // Pagination pour fluidité absolue
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-
-  // Modales & Fiche Prospect
-  const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
-  const [lastInteractedLeadId, setLastInteractedLeadId] = useState<string | null>(null);
 
   // Déterminer le dernier prospect modifié / consulté (conserve sa position dans la liste)
   const effectiveLastModifiedId = useMemo(() => {
@@ -192,12 +196,16 @@ export default function CRMEliosPage() {
     studentPhone: string;
     targetStatus: string;
     message: string;
+    frenchMessage?: string;
+    arabicMessage?: string;
   }>({
     isOpen: false,
     studentName: '',
     studentPhone: '',
     targetStatus: '',
-    message: ''
+    message: '',
+    frenchMessage: '',
+    arabicMessage: ''
   });
 
   // Données de configuration pour WhatsApp et Modes de paiement
@@ -208,19 +216,30 @@ export default function CRMEliosPage() {
   const whatsappTemplates = useMemo(() => whatsappConfig?.templates || DEFAULT_WHATSAPP_TEMPLATES, [whatsappConfig]);
 
   const triggerWhatsAppPopup = (studentName: string, phone: string, status: string) => {
-    let msg = '';
+    let msgFr = '';
+    let msgAr = '';
     const st = (status || '').trim().toLowerCase();
     if (st === 'approved prospect' || st === 'approved' || st === 'converti') {
-      msg = buildApprovedProspectMessage(
+      msgFr = buildApprovedProspectMessage(
         whatsappTemplates.approvedProspectHeader,
         whatsappTemplates.approvedProspectFooter,
         studentName,
-        paymentMethods
+        paymentMethods,
+        'fr'
+      );
+      msgAr = buildApprovedProspectMessage(
+        whatsappTemplates.approvedProspectHeader_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectHeader_ar,
+        whatsappTemplates.approvedProspectFooter_ar || DEFAULT_WHATSAPP_TEMPLATES.approvedProspectFooter_ar,
+        studentName,
+        paymentMethods,
+        'ar'
       );
     } else if (st === 'n/a') {
-      msg = buildNaMessage(whatsappTemplates.naMessage, studentName);
+      msgFr = buildNaMessage(whatsappTemplates.naMessage, studentName, 'fr');
+      msgAr = buildNaMessage(whatsappTemplates.naMessage_ar || DEFAULT_WHATSAPP_TEMPLATES.naMessage_ar, studentName, 'ar');
     } else {
-      msg = `Bonjour ${studentName || ''},\n\nNous vous contactons de la part d'Elios Academy concernant votre inscription.`;
+      msgFr = `Bonjour ${studentName || ''},\n\nNous vous contactons de la part d'Elios Academy concernant votre inscription.`;
+      msgAr = `مرحباً ${studentName || ''}،\n\nنتواصل معكم من أكاديمية إليوس (Elios Academy) بخصوص طلب تسجيلكم.`;
     }
 
     setWhatsAppModal({
@@ -228,7 +247,9 @@ export default function CRMEliosPage() {
       studentName,
       studentPhone: phone,
       targetStatus: status,
-      message: msg
+      message: msgFr,
+      frenchMessage: msgFr,
+      arabicMessage: msgAr
     });
   };
 
@@ -250,52 +271,61 @@ export default function CRMEliosPage() {
     return 'PS';
   };
 
+  const openedLeadIdRef = useRef<string | null>(null);
+
   // Synchronisation des champs d'édition lors de l'ouverture d'un prospect
   useEffect(() => {
     if (selectedLead) {
-      const fName = selectedLead.firstName !== undefined 
-        ? selectedLead.firstName 
-        : (selectedLead.name || '').trim().split(/\s+/)[0] || '';
-      const lName = selectedLead.lastName !== undefined 
-        ? selectedLead.lastName 
-        : (selectedLead.name || '').trim().split(/\s+/).slice(1).join(' ') || '';
-      const rawStatus = selectedLead.status === 'Converti' ? 'Approved' : (selectedLead.status || 'Lead');
-      const initialGrade = selectedLead.grade === 'Bac' ? 'BAC' : (selectedLead.grade || '');
-      const initialSource = selectedLead.source === 'WhatsApp' ? 'Whatsapp' : (selectedLead.source === 'Ex_elios' ? 'Ex-Elios' : (selectedLead.source || 'Facebook'));
-      const initialStaff = selectedLead.staff || selectedLead.lastModifiedBy || '';
-      const initialFamily = selectedLead.familyGroup || '';
+      const currentId = selectedLead._id || selectedLead.id;
+      // Ne réinitialiser les champs du formulaire que lors du changement de fiche
+      if (openedLeadIdRef.current !== currentId) {
+        openedLeadIdRef.current = currentId;
 
-      setEditFirst(fName);
-      setEditLast(lName);
-      setEditPhone(selectedLead.phone || '');
-      setEditOffer(selectedLead.offer || '');
-      setEditAmount(selectedLead.amount || '');
-      setEditSource(initialSource);
-      setEditGrade(initialGrade);
-      setEditSection(selectedLead.section || '');
-      setEditStatus(rawStatus);
-      setEditStaff(initialStaff);
-      setEditFamilyGroup(initialFamily);
-      setEditErr('');
-      setNewNoteText('');
-      setEditingNoteId(null);
-      setEditingNoteText('');
-      setIsDeleteArmed(false);
+        const fName = selectedLead.firstName !== undefined 
+          ? selectedLead.firstName 
+          : (selectedLead.name || '').trim().split(/\s+/)[0] || '';
+        const lName = selectedLead.lastName !== undefined 
+          ? selectedLead.lastName 
+          : (selectedLead.name || '').trim().split(/\s+/).slice(1).join(' ') || '';
+        const rawStatus = selectedLead.status === 'Converti' ? 'Approved' : (selectedLead.status || 'Lead');
+        const initialGrade = selectedLead.grade === 'Bac' ? 'BAC' : (selectedLead.grade || '');
+        const initialSource = selectedLead.source === 'WhatsApp' ? 'Whatsapp' : (selectedLead.source === 'Ex_elios' ? 'Ex-Elios' : (selectedLead.source || 'Facebook'));
+        const initialStaff = selectedLead.staff || selectedLead.lastModifiedBy || '';
+        const initialFamily = selectedLead.familyGroup || '';
 
-      setInitialFormValues({
-        firstName: fName,
-        lastName: lName,
-        phone: selectedLead.phone || '',
-        offer: selectedLead.offer || '',
-        amount: selectedLead.amount || '',
-        source: initialSource,
-        grade: initialGrade,
-        section: selectedLead.section || '',
-        status: rawStatus,
-        staff: initialStaff,
-        familyGroup: initialFamily
-      });
+        setEditFirst(fName);
+        setEditLast(lName);
+        setEditPhone(formatPhone(selectedLead.phone || ''));
+        setEditOffer(selectedLead.offer || '');
+        setEditAmount(selectedLead.amount || '');
+        setEditSource(initialSource);
+        setEditGrade(initialGrade);
+        setEditSection(selectedLead.section || '');
+        setEditStatus(rawStatus);
+        setEditStaff(initialStaff);
+        setEditFamilyGroup(initialFamily);
+        setEditErr('');
+        setNewNoteText('');
+        setEditingNoteId(null);
+        setEditingNoteText('');
+        setIsDeleteArmed(false);
+
+        setInitialFormValues({
+          firstName: fName,
+          lastName: lName,
+          phone: formatPhone(selectedLead.phone || ''),
+          offer: selectedLead.offer || '',
+          amount: selectedLead.amount || '',
+          source: initialSource,
+          grade: initialGrade,
+          section: selectedLead.section || '',
+          status: rawStatus,
+          staff: initialStaff,
+          familyGroup: initialFamily
+        });
+      }
     } else {
+      openedLeadIdRef.current = null;
       setInitialFormValues(null);
     }
   }, [selectedLead]);
@@ -345,6 +375,48 @@ export default function CRMEliosPage() {
       setSelectedLead(null);
     }
   };
+
+  // Synchronisation instantanée en temps réel des notes lorsque la fiche prospect est ouverte
+  const activeLeadId = selectedLead ? (selectedLead._id || selectedLead.id) : null;
+  const { data: liveLead } = useSWR<LeadItem>(
+    activeLeadId ? `/api/leads/elios/${activeLeadId}` : null,
+    fetcher,
+    {
+      refreshInterval: 1500, // scrutation réactive haute fréquence
+      revalidateOnFocus: true,
+      dedupingInterval: 600
+    }
+  );
+
+  useEffect(() => {
+    if (!liveLead || !selectedLead) return;
+    
+    const currentNotes = selectedLead.notes || [];
+    const incomingNotes = liveLead.notes || [];
+    
+    // Détection stricte et instantanée de modifications dans les notes (ajout, modification, suppression par d'autres opérateurs)
+    const notesChanged = JSON.stringify(currentNotes) !== JSON.stringify(incomingNotes);
+
+    if (notesChanged) {
+      setSelectedLead(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          notes: incomingNotes,
+          updatedAt: liveLead.updatedAt,
+          lastModifiedBy: liveLead.lastModifiedBy
+        };
+      });
+      // Synchroniser également dans le cache global SWR des prospects sans perturber le formulaire
+      mutate((currentLeads: LeadItem[] = []) => {
+        return currentLeads.map(l => 
+          (l._id === liveLead._id || l.id === liveLead.id) 
+            ? { ...l, notes: incomingNotes, updatedAt: liveLead.updatedAt, lastModifiedBy: liveLead.lastModifiedBy } 
+            : l
+        );
+      }, false);
+    }
+  }, [liveLead, selectedLead, mutate]);
 
   // KPI Stats avec Règle Métier Stricte des Rappels
   const stats = useMemo(() => {
@@ -398,7 +470,10 @@ export default function CRMEliosPage() {
         const lName = (l.lastName || '').toLowerCase().replace(/\s/g, '');
         const tel = (l.phone || '').replace(/\s/g, '');
         const fam = (l.familyGroup || '').toLowerCase().replace(/\s/g, '');
-        if (!nom.includes(query) && !fName.includes(query) && !lName.includes(query) && !tel.includes(query) && !fam.includes(query)) {
+        const queryDigits = extractPhoneDigits(filterQuery) || filterQuery.replace(/\D/g, '');
+        const telDigits = extractPhoneDigits(l.phone);
+        const matchPhone = (queryDigits && queryDigits.length >= 2 && telDigits.includes(queryDigits)) || tel.includes(query);
+        if (!nom.includes(query) && !fName.includes(query) && !lName.includes(query) && !matchPhone && !fam.includes(query)) {
           return false;
         }
       }
@@ -431,7 +506,7 @@ export default function CRMEliosPage() {
       }
 
       // 5. Filtre SECTION
-      if (filterSection && filterSection !== 'ALL') {
+      if (filterSection && filterSection !== 'ALL' && !isClassWithoutSection(filterClasse)) {
         const leadSec = (l.section || '').trim().toLowerCase();
         const targetSec = filterSection.trim().toLowerCase();
         if (leadSec !== targetSec) return false;
@@ -518,7 +593,7 @@ export default function CRMEliosPage() {
     activeCard !== 'all' ||
     filterStatus !== 'ALL' ||
     filterClasse !== 'ALL' ||
-    filterSection !== 'ALL' ||
+    (filterSection !== 'ALL' && !isClassWithoutSection(filterClasse)) ||
     filterStaff !== 'ALL' ||
     filterDate !== 'ALL' ||
     customStartDate ||
@@ -528,11 +603,12 @@ export default function CRMEliosPage() {
   // Création d'un prospect
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPhone = newPhone.replace(/\D/g, '').replace(/^216(?=\d{8}$)/, '');
-    if (!/^\d{8}$/.test(cleanPhone)) {
-      setNewErr('Veuillez saisir un numéro de téléphone valide à 8 chiffres (ex : 20 123 456).');
+    const digits = extractPhoneDigits(newPhone);
+    if (digits.length !== 8) {
+      setNewErr('Veuillez saisir un numéro de téléphone valide à 8 chiffres (ex : 92 330 331).');
       return;
     }
+    const cleanPhone = formatPhone(digits);
 
     try {
       setIsCreating(true);
@@ -574,11 +650,12 @@ export default function CRMEliosPage() {
   // Enregistrement des modifications du prospect
   const handleSaveLead = async () => {
     if (!selectedLead) return;
-    const cleanPhone = editPhone.replace(/\D/g, '').replace(/^216(?=\d{8}$)/, '');
-    if (cleanPhone.length !== 8) {
+    const digits = extractPhoneDigits(editPhone);
+    if (digits.length !== 8) {
       setEditErr('Le numéro de téléphone doit comporter exactement 8 chiffres.');
       return;
     }
+    const cleanPhone = formatPhone(digits);
 
     try {
       setIsSaving(true);
@@ -612,9 +689,7 @@ export default function CRMEliosPage() {
 
       const savedStatus = (editStatus || '').trim();
       const shouldTrigger = (
-        savedStatus.toLowerCase() === 'approved prospect' ||
-        savedStatus.toLowerCase() === 'approved' ||
-        savedStatus.toLowerCase() === 'n/a'
+        savedStatus.toLowerCase() === 'approved prospect'
       );
 
       if (selectedLead) {
@@ -769,13 +844,8 @@ export default function CRMEliosPage() {
     showToast('Export Excel en cours...');
   };
 
-  const formatPhone = (p: string) => {
-    const raw = String(p || '').replace(/\D/g, '');
-    if (raw.length === 8) {
-      return `${raw.slice(0, 2)} ${raw.slice(2, 5)} ${raw.slice(5)}`;
-    }
-    return raw;
-  };
+  // Affichage téléphone normalisé (aperçu XX XXX XXX)
+  const displayPhone = (p?: string | null) => formatPhone(p) || '—';
 
   const formatDateTimeFr = (d: any) => {
     if (!d) return '—';
@@ -892,15 +962,15 @@ export default function CRMEliosPage() {
           {/* CARTE 2 : APPROVED */}
           <button 
             className={`stat clickable ${activeCard === 'approved' ? 'active-card' : ''}`}
-            style={{ '--c': '#16A34A' } as React.CSSProperties}
+            style={{ '--c': '#3D4E7F' } as React.CSSProperties}
             aria-pressed={activeCard === 'approved'}
             onClick={() => handleCardClick('approved')}
             type="button"
           >
             <small>Approved</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#16A34A' }}>{stats.approved.toLocaleString('fr-FR')}</b>
+            <b className="text-xl sm:text-2xl" style={{ color: '#3D4E7F' }}>{stats.approved.toLocaleString('fr-FR')}</b>
             <span className="text-xs">Validés & Payés</span>
-            <i className="si" style={{ color: '#16A34A', background: 'rgba(22, 163, 74, 0.12)' }}>
+            <i className="si" style={{ color: '#3D4E7F', background: 'rgba(61, 78, 127, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.ok}</svg>
             </i>
           </button>
@@ -908,15 +978,15 @@ export default function CRMEliosPage() {
           {/* CARTE 3 : POTENTIAL PROSPECT */}
           <button 
             className={`stat clickable ${activeCard === 'potential' ? 'active-card' : ''}`}
-            style={{ '--c': '#0891B2' } as React.CSSProperties}
+            style={{ '--c': '#F49E1F' } as React.CSSProperties}
             aria-pressed={activeCard === 'potential'}
             onClick={() => handleCardClick('potential')}
             type="button"
           >
             <small>Potential Prospect</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#0891B2' }}>{stats.potential.toLocaleString('fr-FR')}</b>
+            <b className="text-xl sm:text-2xl" style={{ color: '#F49E1F' }}>{stats.potential.toLocaleString('fr-FR')}</b>
             <span className="text-xs">Forte Intention</span>
-            <i className="si" style={{ color: '#0891B2', background: 'rgba(8, 145, 178, 0.12)' }}>
+            <i className="si" style={{ color: '#F49E1F', background: 'rgba(244, 158, 31, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.up}</svg>
             </i>
           </button>
@@ -924,15 +994,15 @@ export default function CRMEliosPage() {
           {/* CARTE 4 : RAPPELS (DERNIÈRE CARTE À DROITE SELON EXIGENCE) */}
           <button 
             className={`stat clickable hot ${activeCard === 'rappels' ? 'active-card' : ''}`}
-            style={{ '--c': '#D97706' } as React.CSSProperties}
+            style={{ '--c': '#F49E1F' } as React.CSSProperties}
             aria-pressed={activeCard === 'rappels'}
             onClick={() => handleCardClick('rappels')}
             type="button"
           >
             <small>Rappels</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#D97706' }}>{stats.rappels.toLocaleString('fr-FR')}</b>
+            <b className="text-xl sm:text-2xl" style={{ color: '#F49E1F' }}>{stats.rappels.toLocaleString('fr-FR')}</b>
             <span className="text-xs">A Relancer</span>
-            <i className="si" style={{ color: '#D97706', background: 'rgba(217, 119, 6, 0.12)' }}>
+            <i className="si" style={{ color: '#F49E1F', background: 'rgba(244, 158, 31, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.bell}</svg>
             </i>
           </button>
@@ -985,7 +1055,11 @@ export default function CRMEliosPage() {
                 aria-label="Classe"
                 value={filterClasse}
                 onChange={(e) => {
-                  setFilterClasse(e.target.value);
+                  const val = e.target.value;
+                  setFilterClasse(val);
+                  if (isClassWithoutSection(val)) {
+                    setFilterSection('ALL');
+                  }
                   setCurrentPage(1);
                 }}
                 className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)]"
@@ -1001,14 +1075,22 @@ export default function CRMEliosPage() {
                 id="filter-section"
                 aria-label="Section"
                 value={filterSection}
+                disabled={isClassWithoutSection(filterClasse)}
                 onChange={(e) => {
                   setFilterSection(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)]"
+                title={isClassWithoutSection(filterClasse) ? "Les classes de 7ème à 1ère Année n'ont pas de section" : "Section"}
+                className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--hover)] transition-all"
               >
-                <option value="ALL">Section : Toutes</option>
-                {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                {isClassWithoutSection(filterClasse) ? (
+                  <option value="ALL">Sans section</option>
+                ) : (
+                  <>
+                    <option value="ALL">Section : Toutes</option>
+                    {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </>
+                )}
               </select>
             </div>
 
@@ -1146,7 +1228,7 @@ export default function CRMEliosPage() {
                 const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
                 const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
                 const isOverdueRappel = isLeadInRappels(l);
-                const statusColor = ELIOS_STATUS_COLORS[l.status] || '#77766F';
+                const statusColor = getEliosStatusColor(l.status);
                 const isLastModified = Boolean(effectiveLastModifiedId && (l._id === effectiveLastModifiedId || l.id === effectiveLastModifiedId));
                 const isRappelFilterActive = activeCard === 'rappels';
 
@@ -1207,7 +1289,7 @@ export default function CRMEliosPage() {
 
                     {/* Téléphone */}
                     <div className="num font-mono text-sm" data-l="Téléphone">
-                      {formatPhone(l.phone)}
+                      {displayPhone(l.phone)}
                     </div>
 
                     {/* Classe et Section */}
@@ -1217,8 +1299,16 @@ export default function CRMEliosPage() {
 
                     {/* Statut + Badge Rappel si délai dépassé (alignement vertical sans déséquilibre de colonne) */}
                     <div data-l="Statut" className="flex flex-col items-start gap-1 min-w-0">
-                      <span className="st whitespace-nowrap" style={{ '--s': statusColor } as React.CSSProperties}>
-                        {l.status}
+                      <span 
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition shadow-2xs whitespace-nowrap"
+                        style={{
+                          backgroundColor: `color-mix(in srgb, ${statusColor} 14%, var(--card))`,
+                          color: statusColor,
+                          border: `1px solid color-mix(in srgb, ${statusColor} 32%, transparent)`
+                        }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: statusColor }}></span>
+                        <span>{l.status}</span>
                       </span>
                       {isOverdueRappel && (
                         <span 
@@ -1267,12 +1357,15 @@ export default function CRMEliosPage() {
                       </button>
                       <a 
                         className="ib wa" 
-                        href={`https://wa.me/216${(l.phone || '').replace(/\D/g, '')}`} 
+                        href={normalizePhoneForUrl(l.phone) ? `https://wa.me/${normalizePhoneForUrl(l.phone)}` : '#'} 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         title="WhatsApp" 
                         aria-label="WhatsApp"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!normalizePhoneForUrl(l.phone)) e.preventDefault();
+                        }}
                       >
                         <svg className="i" viewBox="0 0 24 24">{IC.chat}</svg>
                       </a>
@@ -1303,7 +1396,7 @@ export default function CRMEliosPage() {
               const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
               const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
               const isOverdueRappel = isLeadInRappels(l);
-              const statusColor = ELIOS_STATUS_COLORS[l.status] || '#77766F';
+              const statusColor = getEliosStatusColor(l.status);
               const isLastModified = Boolean(effectiveLastModifiedId && (l._id === effectiveLastModifiedId || l.id === effectiveLastModifiedId));
               const isRappelFilterActive = activeCard === 'rappels';
 
@@ -1362,8 +1455,16 @@ export default function CRMEliosPage() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="st text-[11px] py-0.5 px-2" style={{ '--s': statusColor } as React.CSSProperties}>
-                        {l.status}
+                      <span 
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition shadow-2xs whitespace-nowrap"
+                        style={{
+                          backgroundColor: `color-mix(in srgb, ${statusColor} 14%, var(--card))`,
+                          color: statusColor,
+                          border: `1px solid color-mix(in srgb, ${statusColor} 32%, transparent)`
+                        }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: statusColor }}></span>
+                        <span>{l.status}</span>
                       </span>
                       {isOverdueRappel && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 font-bold bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-md">
@@ -1375,7 +1476,7 @@ export default function CRMEliosPage() {
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-[var(--ink2)] py-1.5 border-y border-[var(--line)]/50">
-                    <span className="font-mono">{formatPhone(l.phone)}</span>
+                    <span className="font-mono">{displayPhone(l.phone)}</span>
                     <span>{classSec}</span>
                   </div>
 
@@ -1398,10 +1499,13 @@ export default function CRMEliosPage() {
                     <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <a 
                         className="ib wa w-7 h-7"
-                        href={`https://wa.me/216${(l.phone || '').replace(/\D/g, '')}`} 
+                        href={normalizePhoneForUrl(l.phone) ? `https://wa.me/${normalizePhoneForUrl(l.phone)}` : '#'} 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         title="WhatsApp"
+                        onClick={(e) => {
+                          if (!normalizePhoneForUrl(l.phone)) e.preventDefault();
+                        }}
                       >
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.chat}</svg>
                       </a>
@@ -1517,7 +1621,7 @@ export default function CRMEliosPage() {
       {/* ========================================================= */}
       {isNewLeadOpen && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 bg-black/65 backdrop-blur-md"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsNewLeadOpen(false);
           }}
@@ -1548,22 +1652,21 @@ export default function CRMEliosPage() {
                 <input 
                   id="new-phone" 
                   inputMode="tel" 
-                  placeholder="Ex : 20 123 456" 
+                  placeholder="Ex : 92 330 331" 
                   autoComplete="off"
-                  maxLength={8}
+                  maxLength={16}
                   required
                   value={newPhone}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
-                    setNewPhone(raw);
+                    setNewPhone(formatPhone(e.target.value));
                     if (newErr) setNewErr('');
                   }}
                   className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${newErr ? 'border-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
                 />
                 {newPhone.length > 0 && (
                   <div className="flex justify-end mt-1 text-[11px]">
-                    <span className={newPhone.length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                      {newPhone.length === 8 ? "✓ Valide (8 chiffres)" : `${newPhone.length} / 8`}
+                    <span className={extractPhoneDigits(newPhone).length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                      {extractPhoneDigits(newPhone).length === 8 ? "✓ Valide (8 chiffres)" : `${extractPhoneDigits(newPhone).length} / 8`}
                     </span>
                   </div>
                 )}
@@ -1574,7 +1677,13 @@ export default function CRMEliosPage() {
                   <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">CLASSE</label>
                   <select 
                     value={newGrade}
-                    onChange={(e) => setNewGrade(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewGrade(val);
+                      if (isClassWithoutSection(val)) {
+                        setNewSection('');
+                      }
+                    }}
                     className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
                     <option value="">Sélectionner…</option>
@@ -1585,12 +1694,20 @@ export default function CRMEliosPage() {
                 <div>
                   <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block mb-1">SECTION</label>
                   <select 
-                    value={newSection}
+                    value={isClassWithoutSection(newGrade) ? '' : newSection}
+                    disabled={isClassWithoutSection(newGrade)}
                     onChange={(e) => setNewSection(e.target.value)}
-                    className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    title={isClassWithoutSection(newGrade) ? "Les classes de 7ème à 1ère Année n'ont pas de section" : "Section"}
+                    className="w-full py-2 px-2.5 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--hover)] transition-all"
                   >
-                    <option value="">Sélectionner…</option>
-                    {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    {isClassWithoutSection(newGrade) ? (
+                      <option value="">Sans section</option>
+                    ) : (
+                      <>
+                        <option value="">Sélectionner…</option>
+                        {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
@@ -1615,7 +1732,7 @@ export default function CRMEliosPage() {
       {/* ========================================================= */}
       {selectedLead && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/65 backdrop-blur-md"
           onClick={(e) => {
             if (e.target === e.currentTarget) handleRequestCloseFiche();
           }}
@@ -1635,14 +1752,15 @@ export default function CRMEliosPage() {
 
                   {/* LABEL STATUT PUR */}
                   <span 
-                    className="px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs whitespace-nowrap"
                     style={{
-                      backgroundColor: `color-mix(in srgb, ${ELIOS_STATUS_COLORS[editStatus] || '#77766F'} 14%, transparent)`,
-                      color: ELIOS_STATUS_COLORS[editStatus] || '#77766F'
+                      backgroundColor: `color-mix(in srgb, ${getEliosStatusColor(editStatus)} 14%, var(--card))`,
+                      color: getEliosStatusColor(editStatus),
+                      border: `1px solid color-mix(in srgb, ${getEliosStatusColor(editStatus)} 32%, transparent)`
                     }}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
-                    {editStatus}
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getEliosStatusColor(editStatus) }}></span>
+                    <span>{editStatus}</span>
                   </span>
 
                   {/* Badge Rappel si délai dépassé */}
@@ -1688,13 +1806,14 @@ export default function CRMEliosPage() {
                     <div className="space-y-0.5">
                       <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">STATUT</span>
                       <div 
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shadow-2xs whitespace-nowrap"
                         style={{
-                          backgroundColor: `color-mix(in srgb, ${ELIOS_STATUS_COLORS[editStatus] || '#77766F'} 14%, transparent)`,
-                          color: ELIOS_STATUS_COLORS[editStatus] || '#77766F'
+                          backgroundColor: `color-mix(in srgb, ${getEliosStatusColor(editStatus)} 14%, var(--card))`,
+                          color: getEliosStatusColor(editStatus),
+                          border: `1px solid color-mix(in srgb, ${getEliosStatusColor(editStatus)} 32%, transparent)`
                         }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ELIOS_STATUS_COLORS[editStatus] || '#77766F' }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getEliosStatusColor(editStatus) }}></span>
                         <span>{editStatus}</span>
                       </div>
                     </div>
@@ -1789,21 +1908,22 @@ export default function CRMEliosPage() {
                       <div className="flex gap-2">
                         <input 
                           inputMode="tel" 
-                          maxLength={8}
+                          maxLength={16}
+                          placeholder="Ex : 92 330 331"
                           value={editPhone} 
                           onChange={(e) => {
-                            const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
-                            setEditPhone(raw);
+                            setEditPhone(formatPhone(e.target.value));
+                            if (editErr) setEditErr('');
                           }}
                           className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 min-w-0 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
                         />
                         <a 
                           className="p-2 rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-emerald-500/15 hover:text-emerald-600 text-emerald-600 transition flex items-center justify-center flex-shrink-0 shadow-2xs"
-                          href={editPhone.trim() ? `tel:+216${editPhone.replace(/\D/g, '')}` : '#'} 
+                          href={normalizePhoneForUrl(editPhone) ? `tel:+${normalizePhoneForUrl(editPhone)}` : '#'} 
                           title="Appeler le client" 
                           aria-label="Appeler le client"
                           onClick={(e) => {
-                            if (!editPhone.trim()) e.preventDefault();
+                            if (!normalizePhoneForUrl(editPhone)) e.preventDefault();
                           }}
                         >
                           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.phone}</svg>
@@ -1830,7 +1950,13 @@ export default function CRMEliosPage() {
                       </label>
                       <select 
                         value={editGrade} 
-                        onChange={(e) => setEditGrade(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditGrade(val);
+                          if (isClassWithoutSection(val)) {
+                            setEditSection('');
+                          }
+                        }}
                         className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
                       >
                         <option value="">Sélectionner…</option>
@@ -1843,12 +1969,20 @@ export default function CRMEliosPage() {
                         SECTION
                       </label>
                       <select 
-                        value={editSection} 
+                        value={isClassWithoutSection(editGrade) ? '' : editSection} 
+                        disabled={isClassWithoutSection(editGrade)}
                         onChange={(e) => setEditSection(e.target.value)}
-                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        title={isClassWithoutSection(editGrade) ? "Les classes de 7ème à 1ère Année n'ont pas de section" : "Section"}
+                        className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--hover)] transition-all"
                       >
-                        <option value="">Sélectionner…</option>
-                        {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        {isClassWithoutSection(editGrade) ? (
+                          <option value="">Sans section</option>
+                        ) : (
+                          <>
+                            <option value="">Sélectionner…</option>
+                            {ELIOS_SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </>
+                        )}
                       </select>
                     </div>
 
@@ -1929,7 +2063,7 @@ export default function CRMEliosPage() {
                         className="text-xs font-mono font-semibold text-[var(--ink2)] hover:text-[var(--acc)] px-2.5 py-1 rounded-lg hover:bg-[var(--hover)] transition border border-[var(--line)]"
                         title="Ouvrir le module WhatsApp"
                       >
-                        {formatPhone(editPhone) ? `+216 ${formatPhone(editPhone)}` : 'Envoyer'}
+                        {formatPhone(editPhone) || 'Envoyer'}
                       </button>
                     </div>
                   </div>
@@ -2115,7 +2249,7 @@ export default function CRMEliosPage() {
       {/* ========================================================= */}
       {showUnsavedConfirm && (
         <div 
-          className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs"
+          className="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md"
           onClick={(e) => {
             if (e.target === e.currentTarget) setShowUnsavedConfirm(false);
           }}
@@ -2197,6 +2331,8 @@ export default function CRMEliosPage() {
         studentPhone={whatsAppModal.studentPhone}
         targetStatus={whatsAppModal.targetStatus}
         defaultMessage={whatsAppModal.message}
+        frenchMessage={whatsAppModal.frenchMessage}
+        arabicMessage={whatsAppModal.arabicMessage}
         onSent={() => showToast('WhatsApp ouvert avec succès !')}
       />
 

@@ -1,6 +1,31 @@
 import { NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
+import { formatPhone } from '@/lib/phoneUtils';
+import { isClassWithoutSection } from '@/types/crm';
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ crmType: string; id: string }> }
+) {
+  const { crmType, id } = await params;
+  try {
+    await connectMongo();
+    const query = id.match(/^[0-9a-fA-F]{24}$/) ? { _id: id } : { id };
+    const crmFilter = crmType === 'formatic'
+      ? { $or: [{ crmType: 'formatic' }, { crmType: 'elios', fromFormatic: true }] }
+      : { crmType };
+
+    const lead = await Lead.findOne({ ...query, ...crmFilter }).lean();
+    if (!lead) {
+      return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
+    }
+    return NextResponse.json(lead);
+  } catch (error: any) {
+    console.error('Failed to fetch lead:', error);
+    return NextResponse.json({ error: error.message || 'Erreur récupération prospect' }, { status: 500 });
+  }
+}
 
 export async function PATCH(
   request: Request,
@@ -95,6 +120,10 @@ export async function PATCH(
     }
 
     // Cas 4 : Mise à jour globale des informations prospect
+    if (body.phone !== undefined) {
+      body.phone = formatPhone(body.phone) || body.phone;
+    }
+
     if (body.status === 'Converti') {
       body.status = 'Approved';
     }
@@ -105,6 +134,10 @@ export async function PATCH(
       if (!body.name) {
         body.name = [fName, lName].filter(Boolean).join(' ') || 'Prospect sans nom';
       }
+    }
+
+    if (body.grade !== undefined && isClassWithoutSection(body.grade)) {
+      body.section = '';
     }
 
     // Toute modification met à jour updatedAt et lastModifiedBy (ce qui réinitialise le cycle de Rappels)

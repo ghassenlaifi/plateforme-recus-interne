@@ -4,6 +4,7 @@ import React, { useState, useRef, FormEvent } from 'react';
 import { CloudUpload, X, FileText, Loader2 } from 'lucide-react';
 import { useToast } from './Toast';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
+import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
 
 interface UploadZoneProps {
   activeUser: string | null;
@@ -37,15 +38,6 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
   const [errors, setErrors] = useState<Record<string, boolean>>({});
 
   const digitsOf = (s: string) => s.replace(/\D/g, '');
-  const formatPhone = (val: string) => {
-    let p = val.replace(/[^\d+]/g, '');
-    if (p.startsWith('+216')) p = p.substring(4);
-    else if (p.startsWith('00216')) p = p.substring(5);
-    const d = p.replace(/\D/g, '').slice(0, 8);
-    if (d.length <= 2) return d;
-    if (d.length <= 5) return `${d.slice(0,2)} ${d.slice(2)}`;
-    return `${d.slice(0,2)} ${d.slice(2,5)} ${d.slice(5)}`;
-  };
 
   const formatDateInput = (val: string) => {
     const d = digitsOf(val).slice(0, 8);
@@ -145,7 +137,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
     const finalClasse = formData.classeSelect === 'Offre personnalisé' ? formData.classeCustom : formData.classeSelect;
 
-    check('phone', digitsOf(formData.phone).length !== 8);
+    check('phone', extractPhoneDigits(formData.phone).length !== 8);
     check('mode', !formData.mode);
     check('paymentDetails', !formData.paymentDetails.trim());
     check('amount', !formData.amount.trim() || isNaN(parseFloat(formData.amount)));
@@ -170,7 +162,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       const payload = new FormData();
       payload.append('file', fileData.file);
       payload.append('nom', formData.name.trim());
-      payload.append('telephone', digitsOf(formData.phone));
+      payload.append('telephone', formatPhone(formData.phone));
       payload.append('classe', finalClasse.trim());
       if (formData.email.trim()) payload.append('email', formData.email.trim());
       if (formData.familyGroup.trim()) payload.append('familyGroup', formData.familyGroup.trim());
@@ -323,23 +315,20 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
               <div>
                 <label className="label" htmlFor="f-phone">Numéro de téléphone</label>
-                <div className="relative">
-                  <span className="tnum pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-400">+216</span>
-                  <input 
-                    id="f-phone" 
-                    name="phone" 
-                    type="tel" 
-                    inputMode="tel" 
-                    maxLength={20} 
-                    className="input tnum pl-12" 
-                    placeholder="XX XXX XXX" 
-                    autoComplete="off" 
-                    aria-invalid={errors.phone ? 'true' : 'false'}
-                    value={formData.phone}
-                    disabled={isUploading}
-                    onChange={(e) => { setFormData({...formData, phone: formatPhone(e.target.value)}); setErrors({...errors, phone: false}); }}
-                  />
-                </div>
+                <input 
+                  id="f-phone" 
+                  name="phone" 
+                  type="tel" 
+                  inputMode="tel" 
+                  maxLength={16} 
+                  className="input tnum" 
+                  placeholder="Ex : 92 330 331" 
+                  autoComplete="off" 
+                  aria-invalid={errors.phone ? 'true' : 'false'}
+                  value={formData.phone}
+                  disabled={isUploading}
+                  onChange={(e) => { setFormData({...formData, phone: formatPhone(e.target.value)}); setErrors({...errors, phone: false}); }}
+                />
               </div>
 
               <div>

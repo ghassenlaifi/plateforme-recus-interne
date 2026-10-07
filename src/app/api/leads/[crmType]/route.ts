@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
+import { formatPhone } from '@/lib/phoneUtils';
+import { isClassWithoutSection } from '@/types/crm';
 
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
@@ -44,7 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     }
 
     const body = await request.json();
-    const cleanPhone = String(body.phone || '').replace(/\D/g, '').replace(/^216(?=\d{8}$)/, '');
+    const cleanPhone = formatPhone(body.phone) || String(body.phone || '').trim();
     const firstName = (body.firstName || '').trim();
     const lastName = (body.lastName || '').trim();
     const computedName = body.name || [firstName, lastName].filter(Boolean).join(' ') || 'Prospect sans nom';
@@ -55,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     // Si nouveau prospect créé avec To Elios activé : création directe dans Elios (MIGRATION, zéro copie dans Formatic)
     const isToEliosActive = Boolean(body.toElios);
     if (crmType === 'formatic' && isToEliosActive) {
-      const existingElios = await Lead.findOne({ crmType: 'elios', phone: cleanPhone || String(body.phone || '') });
+      const existingElios = await Lead.findOne({ crmType: 'elios', phone: cleanPhone });
       if (existingElios) {
         existingElios.fromFormatic = true;
         existingElios.updatedAt = now;
@@ -97,12 +99,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
         firstName,
         lastName,
         name: computedName,
-        phone: cleanPhone || String(body.phone || ''),
+        phone: cleanPhone,
         offer: body.offer || 'Zero to Hero',
         amount: body.amount || '',
         source: 'From Formatic',
         grade: body.grade || '',
-        section: body.section || '',
+        section: isClassWithoutSection(body.grade) ? '' : (body.section || ''),
         status: leadStatus,
         staff: body.staff || 'Système',
         crmType: 'elios',
@@ -150,12 +152,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       firstName,
       lastName,
       name: computedName,
-      phone: cleanPhone || String(body.phone || ''),
+      phone: cleanPhone,
       offer: body.offer || 'Zero to Hero',
       amount: body.amount || '',
       source: body.source || 'Facebook',
       grade: body.grade || '',
-      section: body.section || '',
+      section: isClassWithoutSection(body.grade) ? '' : (body.section || ''),
       status: leadStatus,
       staff: body.staff || 'Système',
       crmType: crmType,

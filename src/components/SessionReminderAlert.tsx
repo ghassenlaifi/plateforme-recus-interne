@@ -9,6 +9,9 @@ import {
   formatTeacherReminder, 
   formatGroupReminder 
 } from '@/lib/sessionHelpers';
+import { CommunicationGroup } from '@/types/communicationGroup';
+import { resolveCommunicationGroup } from '@/lib/communicationGroupHelper';
+import { WhatsAppTemplates } from '@/types/settings';
 
 const fetcher = (url: string) => fetch(url).then(res => res.ok ? res.json() : null);
 
@@ -19,12 +22,25 @@ export function SessionReminderAlert() {
     { refreshInterval: 30000, revalidateOnFocus: true }
   );
 
+  const { data: groupsData } = useSWR<{ groups: CommunicationGroup[] }>(
+    '/api/settings/groups',
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  const { data: whatsappData } = useSWR<{ templates: WhatsAppTemplates }>(
+    '/api/settings/whatsapp',
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
   const [activeAlertSession, setActiveAlertSession] = useState<Session | null>(null);
   const [remindedTeacher, setRemindedTeacher] = useState<Record<string, boolean>>({});
   const [remindedGroup, setRemindedGroup] = useState<Record<string, boolean>>({});
   const [isCopiedZoom, setIsCopiedZoom] = useState(false);
 
   const sessions = useMemo(() => sessionData?.sessions || [], [sessionData]);
+  const commGroups = useMemo(() => groupsData?.groups || [], [groupsData]);
 
   // Vérification périodique des séances démarrant dans moins de 60 minutes
   useEffect(() => {
@@ -92,7 +108,7 @@ export function SessionReminderAlert() {
   };
 
   const handleSendTeacherReminder = async () => {
-    const text = formatTeacherReminder(activeAlertSession);
+    const text = formatTeacherReminder(activeAlertSession, 'fr', whatsappData?.templates?.teacherReminder);
     const cleanPhone = normalizePhone(activeAlertSession.teacherPhone);
 
     if (cleanPhone) {
@@ -115,9 +131,19 @@ export function SessionReminderAlert() {
   };
 
   const handleSendGroupReminder = async () => {
-    const text = formatGroupReminder(activeAlertSession);
+    if (!activeAlertSession) return;
+    const text = formatGroupReminder(activeAlertSession, 'fr', whatsappData?.templates?.groupReminder);
     navigator.clipboard.writeText(text);
-    window.open('https://web.whatsapp.com/', '_blank', 'noopener');
+
+    const targetGroup = resolveCommunicationGroup(activeAlertSession, commGroups);
+    if (targetGroup && targetGroup.whatsappLink && targetGroup.whatsappLink.trim()) {
+      const link = targetGroup.whatsappLink.trim();
+      const finalUrl = link.startsWith('http') ? link : `https://${link}`;
+      window.open(finalUrl, '_blank', 'noopener');
+    } else {
+      alert(`Message copié dans le presse-papier ! Aucun lien WhatsApp direct n'est configuré pour « ${targetGroup?.name || 'ce groupe'} ». Ouverture de WhatsApp Web.`);
+      window.open('https://web.whatsapp.com/', '_blank', 'noopener');
+    }
 
     setRemindedGroup(prev => ({ ...prev, [activeAlertSession._id]: true }));
     try {
@@ -142,8 +168,9 @@ export function SessionReminderAlert() {
       className="modal-overlay" 
       style={{ 
         zIndex: 9999, 
-        backgroundColor: 'rgba(15, 23, 42, 0.65)', 
-        backdropFilter: 'blur(5px)',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)', 
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -308,9 +335,11 @@ export function SessionReminderAlert() {
           </button>
 
           {/* Action 2 : Rappel Groupe Élèves WhatsApp */}
+          {/* Action 2 : Rappel Groupe Élèves WhatsApp */}
           <button 
             type="button" 
             onClick={handleSendGroupReminder}
+            title={`Ouvrir ${resolveCommunicationGroup(activeAlertSession, commGroups).name}`}
             style={{ 
               display: 'flex', 
               alignItems: 'center', 
@@ -329,7 +358,9 @@ export function SessionReminderAlert() {
             <svg viewBox="0 0 24 24" style={{ width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
               <circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/>
             </svg>
-            {isGroupReminded ? '✓ Groupe Élèves déjà rappelé' : 'Envoyer Rappel au Groupe des Élèves'}
+            {isGroupReminded 
+              ? `✓ ${resolveCommunicationGroup(activeAlertSession, commGroups).name} déjà rappelé` 
+              : `Envoyer Rappel (${resolveCommunicationGroup(activeAlertSession, commGroups).name})`}
           </button>
 
           {/* Action 3 : Rejoindre Zoom */}

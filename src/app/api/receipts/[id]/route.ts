@@ -2,8 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { deleteFileFromDrive } from '@/lib/googleDrive';
+import { formatPhone } from '@/lib/phoneUtils';
 
 type Params = { id: string };
+
+export async function GET(req: NextRequest, { params }: { params: Params | Promise<Params> }) {
+  try {
+    const { id } = await Promise.resolve(params);
+    await connectToDatabase();
+    const receipt = await Receipt.findById(id).lean();
+    if (!receipt) {
+      return NextResponse.json({ error: 'Receipt not found' }, { status: 404 });
+    }
+    return NextResponse.json(receipt, { status: 200 });
+  } catch (error: any) {
+    console.error(`Error in GET /api/receipts/[id]:`, error);
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+  }
+}
 
 export async function PATCH(req: NextRequest, { params }: { params: Params | Promise<Params> }) {
   try {
@@ -17,19 +33,35 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
       return NextResponse.json({ error: 'Receipt not found' }, { status: 404 });
     }
 
-    // Règle stricte: si le reçu est déjà traité, ses informations ne sont jamais modifiables
-    if (existingReceipt.status === 'PROCESSED') {
-      return NextResponse.json(
-        { error: "Les informations d'un reçu déjà traité ne sont pas modifiables." },
-        { status: 403 }
-      );
-    }
-
     const updateOps: any = {};
     const setFields: any = {};
 
-    // 1. Mise à jour des informations de l'élève
+    // Verrouillage / Concurrence : si un autre opérateur a verrouillé ce reçu depuis moins de 45s
+    if (body.lock === true) {
+      if (
+        existingReceipt.lockedBy &&
+        existingReceipt.lockedBy !== body.lockedBy &&
+        existingReceipt.lockedAt &&
+        (Date.now() - new Date(existingReceipt.lockedAt).getTime()) < 45000
+      ) {
+        return NextResponse.json(
+          { error: `Ce reçu est actuellement ouvert par ${existingReceipt.lockedBy}.` },
+          { status: 423 }
+        );
+      }
+      setFields.lockedBy = body.lockedBy || 'Elios';
+      setFields.lockedAt = new Date();
+    } else if (body.lock === false) {
+      setFields.lockedBy = null;
+      setFields.lockedAt = null;
+    }
+
+    // 1. Mise à jour des informations de l'élève (traçable)
     if (body.clientDetails) {
+      const rawTel = body.clientDetails.telephone || body.clientDetails.phone;
+      if (rawTel) {
+        body.clientDetails.telephone = formatPhone(rawTel) || rawTel;
+      }
       setFields.clientDetails = body.clientDetails;
     }
 
@@ -40,36 +72,37 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
     if (body.amount !== undefined) setFields.amount = Number(body.amount);
 
     // 3. Statut Traité / En attente
-    if (body.status === 'PROCESSED') {
-      setFields.status = 'PROCESSED';
-      setFields.processedBy = body.processedBy || 'Elios';
-      setFields.processedAt = new Date();
+    if (body.status === 'PROCESSED' || body.status === 'ARCHIVED') {
+      setFields.status = body.status;
+      setFields.processedBy = body.processedBy || body.lastModifiedBy || 'Elios';
+      setFields.processedAt = existingReceipt.processedAt || new Date();
       setFields.lockedBy = null;
       setFields.lockedAt = null;
     } else if (body.status) {
       setFields.status = body.status;
     }
 
-    // 4. Verrouillage
-    if (typeof body.lock === 'boolean') {
-      setFields.lockedBy = body.lock ? body.lockedBy : null;
-      setFields.lockedAt = body.lock ? new Date() : null;
+    // 4. Traçabilité : Auteur de la modification
+    if (body.lastModifiedBy || body.operatorName) {
+      setFields.lastModifiedBy = body.lastModifiedBy || body.operatorName;
+    }
+
+    // 5. Ajout de note (avec auteur et date)
+    const noteText = body.note || body.noteText;
+    if (noteText && String(noteText).trim()) {
+      const noteAuthor = body.addedBy || body.lastModifiedBy || body.processedBy || 'Elios';
+      updateOps.$push = {
+        notes: {
+          text: String(noteText).trim(),
+          addedBy: noteAuthor,
+          addedAt: new Date(),
+        },
+      };
+      setFields.lastModifiedBy = noteAuthor;
     }
 
     if (Object.keys(setFields).length > 0) {
       updateOps.$set = setFields;
-    }
-
-    // 5. Ajout de note
-    const noteText = body.note || body.noteText;
-    if (noteText && String(noteText).trim()) {
-      updateOps.$push = {
-        notes: {
-          text: String(noteText).trim(),
-          addedBy: body.addedBy || body.processedBy || 'Elios',
-          addedAt: new Date(),
-        },
-      };
     }
 
     if (Object.keys(updateOps).length === 0) {

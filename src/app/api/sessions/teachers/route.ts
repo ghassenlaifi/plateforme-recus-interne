@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Teacher from '@/models/Teacher';
 import Session from '@/models/Session';
 import { normalizePhone, validatePhone } from '@/lib/sessionHelpers';
+import { formatPhone } from '@/lib/phoneUtils';
 
 export async function GET(req: NextRequest) {
   try {
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const phone = normalizePhone(body.phone);
+    const phone = formatPhone(body.phone);
 
     const teacher = await Teacher.create({
       name,

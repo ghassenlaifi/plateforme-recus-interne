@@ -19,7 +19,16 @@ interface EliosHeaderProps {
   showSettings?: boolean;
 }
 
-export function EliosHeader({ crumb, parentCrumb, parentHref, activeUser, setActiveUser, showSearch, onOpenSearch, showSettings }: EliosHeaderProps) {
+export function EliosHeader({ 
+  crumb, 
+  parentCrumb, 
+  parentHref, 
+  activeUser, 
+  setActiveUser, 
+  showSearch, 
+  onOpenSearch, 
+  showSettings = true 
+}: EliosHeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const userRef = useRef<HTMLDivElement>(null);
@@ -120,12 +129,17 @@ export function EliosHeader({ crumb, parentCrumb, parentHref, activeUser, setAct
 
       <div className="sp"></div>
 
-      {showSettings && (
+      {showSettings !== false && (
         <Link 
           href="/settings" 
-          className="btn" 
+          className={`btn ${crumb === 'Paramètres' ? 'active' : ''}`}
           id="btnSettings" 
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          style={{ 
+            display: 'inline-flex', 
+            alignItems: 'center', 
+            gap: '6px',
+            ...(crumb === 'Paramètres' ? { borderColor: 'var(--brand)', color: 'var(--brand)', fontWeight: 600 } : {})
+          }}
           title="Paramètres"
         >
           <svg className="i" viewBox="0 0 24 24">

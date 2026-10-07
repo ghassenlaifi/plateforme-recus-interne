@@ -72,7 +72,7 @@ export function PaymentReceiptModal({ isOpen, onClose, data }: PaymentReceiptMod
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-4 overflow-hidden print:static print:bg-white print:p-0"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 backdrop-blur-md p-2 sm:p-4 overflow-hidden print:static print:bg-white print:p-0"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

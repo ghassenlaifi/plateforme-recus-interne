@@ -40,23 +40,23 @@ interface ReceiptItem {
 }
 
 const OPERATOR_COLORS: Record<string, string> = {
-  Amine: '#8B5CF6',
-  Elyes: '#4F46E5',
-  Soumaya: '#E5484D',
-  Narjess: '#0891B2',
-  Koussay: '#64748B',
-  Aya: '#D946EF',
-  Mariem: '#A855F7',
-  Asma: '#F97316',
-  Ghassen: '#E08A12',
+  Amine: '#23356E',   // Bleu Marine officiel
+  Elyes: '#3D4E7F',   // Bleu Marine 80%
+  Soumaya: '#F49E1F', // Ambre chaud officiel
+  Narjess: '#7BA25B', // Vert Olive officiel
+  Koussay: '#67759F', // Bleu Marine 60%
+  Aya: '#F6B047',     // Ambre 80%
+  Mariem: '#92B277',  // Vert Olive 80%
+  Asma: '#F8C374',    // Ambre 60%
+  Ghassen: '#23356E', // Bleu Marine officiel
 };
 
 function getOperatorColor(name?: string): string {
-  if (!name) return '#8B5CF6';
+  if (!name) return '#23356E';
   const found = Object.entries(OPERATOR_COLORS).find(
     ([k]) => k.toLowerCase() === name.trim().toLowerCase()
   );
-  return found ? found[1] : '#8B5CF6';
+  return found ? found[1] : '#23356E';
 }
 
 function getWalletGrads(mode: string, details: string): { g1: string; g2: string } {

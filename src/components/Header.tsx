@@ -284,7 +284,7 @@ export function Header({ activeUser, setActiveUser, attention }: HeaderProps) {
 
       {/* Modal Palette de Commande / Recherche Rapide (Ctrl + K) */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 sm:pt-24 px-4 bg-gray-900/40 backdrop-blur-sm animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 sm:pt-24 px-4 bg-black/65 backdrop-blur-md animate-in fade-in duration-150">
           <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden animate-in zoom-in-95 duration-150">
             {/* Input de recherche */}
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">

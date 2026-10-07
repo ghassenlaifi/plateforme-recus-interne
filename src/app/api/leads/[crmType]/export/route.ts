@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import * as xlsx from 'xlsx';
+import { formatPhone } from '@/lib/phoneUtils';
+import { isClassWithoutSection } from '@/types/crm';
 
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
@@ -42,12 +44,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
         'ID': lead.id || '',
         'Prenom': fName,
         'Nom': lName,
-        'Telephone': lead.phone || '',
+        'Telephone': formatPhone(lead.phone) || lead.phone || '',
         'Offre': lead.offer || '',
         'Source': lead.source || '',
         'Grade': lead.grade || '',
-        'Specialite': lead.section || '',
+        'Specialite': isClassWithoutSection(lead.grade) ? '' : (lead.section || ''),
         'Statut': lead.status || '',
+        'Operateur': lead.staff || lead.lastModifiedBy || 'Système',
       };
 
       if (crmType === 'formatic') {
@@ -65,8 +68,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
 
     // Create workbook & worksheet (with fallback headers if empty)
     const fallbackHeaders = crmType === 'formatic'
-      ? ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'To Elios', 'DateCreation', 'DerniereMiseAJour', 'Notes']
-      : ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'From Formatic', 'DateCreation', 'DerniereMiseAJour', 'Notes'];
+      ? ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'Operateur', 'To Elios', 'DateCreation', 'DerniereMiseAJour', 'Notes']
+      : ['ID', 'Prenom', 'Nom', 'Telephone', 'Offre', 'Source', 'Grade', 'Specialite', 'Statut', 'Operateur', 'From Formatic', 'DateCreation', 'DerniereMiseAJour', 'Notes'];
 
     const ws = data.length > 0
       ? xlsx.utils.json_to_sheet(data)
@@ -83,6 +86,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       { wch: 14 }, // Grade
       { wch: 16 }, // Specialite
       { wch: 18 }, // Statut
+      { wch: 16 }, // Operateur
     ];
 
     if (crmType === 'formatic') {

@@ -110,7 +110,7 @@ export default function TasksPage() {
   const { data: tasksData, mutate: mutateTasks } = useSWR<{ tasks: TaskItem[] }>(
     '/api/tasks',
     fetcher,
-    { refreshInterval: 15000, revalidateOnFocus: true }
+    { refreshInterval: sheetTask ? 1500 : 4000, revalidateOnFocus: true }
   );
 
   const rawTasks: TaskItem[] = useMemo(() => tasksData?.tasks || [], [tasksData]);
@@ -135,16 +135,19 @@ export default function TasksPage() {
     });
   }, [rawTasks]);
 
-  // Synchronisation de la fiche de tâche avec les données à jour
+  // Synchronisation instantanée de la fiche de tâche avec les données à jour (notes, statut, modifications)
   useEffect(() => {
     if (sheetTask) {
       const currentId = sheetTask._id || sheetTask.id;
       const updated = tasks.find(t => (t._id || t.id) === currentId);
       if (updated) {
-        setSheetTask(updated);
+        const notesChanged = JSON.stringify(sheetTask.notes || []) !== JSON.stringify(updated.notes || []);
+        if (notesChanged || updated.updatedAt !== sheetTask.updatedAt || updated.completed !== sheetTask.completed) {
+          setSheetTask(updated);
+        }
       }
     }
-  }, [tasks]);
+  }, [tasks, sheetTask]);
 
   // Initialisation de l'utilisateur actif
   useEffect(() => {
@@ -1187,7 +1190,7 @@ export default function TasksPage() {
       {isModalOpen && (
         <div 
           className="modal-overlay" 
-          style={{ zIndex: 90 }}
+          style={{ zIndex: 100 }}
           onClick={(e) => { if (e.target === e.currentTarget) setIsModalOpen(false); }}
         >
           <div className="modal-dialog" style={{ width: 'min(520px, 94vw)' }}>

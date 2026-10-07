@@ -3,6 +3,7 @@
 import React from 'react';
 import { Phone, FileText } from 'lucide-react';
 import { Receipt, Operator, getThemeColors, FALLBACK_USER } from '@/types';
+import { formatPhone } from '@/lib/phoneUtils';
 
 interface ReceiptCardProps {
   receipt: Receipt;
@@ -14,13 +15,6 @@ interface ReceiptCardProps {
 export function ReceiptCard({ receipt, operators, justAddedId, onOpen }: ReceiptCardProps) {
   const op = (operators || []).find((o) => o.name === receipt.operatorName);
   const u = op ? { name: op.name, ...getThemeColors(op.theme) } : FALLBACK_USER;
-  
-  const formatPhone = (raw: string) => {
-    let d = raw.replace(/\D/g, '');
-    if (d.length > 8 && d.startsWith('216')) d = d.slice(3);
-    d = d.slice(0, 8);
-    return [d.slice(0, 2), d.slice(2, 5), d.slice(5, 8)].filter(Boolean).join(' ');
-  };
 
   const fmtDate = (iso: string | undefined) => { 
     if (!iso) return '—'; 

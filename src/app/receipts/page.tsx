@@ -7,6 +7,7 @@ import { EliosHeader } from '@/components/EliosHeader';
 import { PaymentReceiptModal } from '@/components/PaymentReceiptModal';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { useToast } from '@/components/Toast';
+import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données');
@@ -79,8 +80,15 @@ export default function ReceiptsPage() {
   const [tab, setTab] = useState<'todo' | 'done'>('todo');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Modal détail / traitement & édition
+  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
+  const [isDlgOpen, setIsDlgOpen] = useState(false);
+
   // Données MongoDB
-  const { data: rawReceipts, mutate } = useSWR<Receipt[]>('/api/receipts?status=all', fetcher);
+  const { data: rawReceipts, mutate } = useSWR<Receipt[]>('/api/receipts?status=all', fetcher, {
+    refreshInterval: isDlgOpen ? 2000 : 4000,
+    revalidateOnFocus: true
+  });
   const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher);
 
   // Persistence utilisateur
@@ -153,16 +161,6 @@ export default function ReceiptsPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const formatPhone = (val: string) => {
-    let p = val.replace(/[^\d+]/g, '');
-    if (p.startsWith('+216')) p = p.substring(4);
-    else if (p.startsWith('00216')) p = p.substring(5);
-    const d = p.replace(/\D/g, '').slice(0, 8);
-    if (d.length <= 2) return d;
-    if (d.length <= 5) return `${d.slice(0, 2)} ${d.slice(2)}`;
-    return `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5)}`;
-  };
-
   const handleModeChange = (newMode: string) => {
     const cfg = PAYMENT_MODES_CONFIG[newMode];
     const defaultWallet = cfg?.options[0] || '';
@@ -174,9 +172,11 @@ export default function ReceiptsPage() {
   };
 
   // Modal détail / traitement & édition
-  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
-  const [isDlgOpen, setIsDlgOpen] = useState(false);
   const [modalNote, setModalNote] = useState('');
+  const [newNoteText, setNewNoteText] = useState('');
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [isDownloadingImage, setIsDownloadingImage] = useState(false);
+  const [showAuditInfo, setShowAuditInfo] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -191,7 +191,26 @@ export default function ReceiptsPage() {
   const [isSavingChanges, setIsSavingChanges] = useState(false);
   const [isDeletingReceipt, setIsDeletingReceipt] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const isProcessed = selectedReceipt?.status === 'PROCESSED';
+
+  // Reçu considéré comme traité si PROCESSED ou ARCHIVED
+  const isProcessed = selectedReceipt?.status === 'PROCESSED' || selectedReceipt?.status === 'ARCHIVED';
+
+  // Fermeture modale avec libération du verrou
+  const closeReceiptModal = () => {
+    if (selectedReceipt?._id) {
+      fetch(`/api/receipts/${selectedReceipt._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lock: false }),
+      }).catch(() => {});
+    }
+    setIsDlgOpen(false);
+    setSelectedReceipt(null);
+    setNewNoteText('');
+    setShowAuditInfo(false);
+    setShowDeleteConfirm(false);
+    mutate();
+  };
 
   // Fermeture modale par touche Échap
   useEffect(() => {
@@ -200,29 +219,112 @@ export default function ReceiptsPage() {
         if (showDeleteConfirm) {
           setShowDeleteConfirm(false);
         } else if (isDlgOpen && !isSavingChanges && !isDeletingReceipt) {
-          setIsDlgOpen(false);
+          closeReceiptModal();
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDlgOpen, showDeleteConfirm, isSavingChanges, isDeletingReceipt]);
+  }, [isDlgOpen, showDeleteConfirm, isSavingChanges, isDeletingReceipt, selectedReceipt?._id]);
 
-  const openReceiptModal = (r: Receipt) => {
+  const openReceiptModal = async (r: Receipt) => {
+    // Si déjà verrouillé par un autre opérateur (< 45s)
+    if (r.lockedBy && r.lockedBy !== activeUser && r.lockedAt) {
+      const lockAge = Date.now() - new Date(r.lockedAt).getTime();
+      if (lockAge < 45000) {
+        toast({ message: `Ce reçu est actuellement en cours de traitement par ${r.lockedBy}.`, tone: 'warn' });
+        return;
+      }
+    }
+
     setSelectedReceipt(r);
     setEditNom(r.clientDetails?.nom || '');
-    setEditPhone(r.clientDetails?.telephone || '');
+    setEditPhone(formatPhone(r.clientDetails?.telephone || ''));
     setEditAmount(r.amount !== undefined ? String(r.amount) : '');
     const dt = r.paymentDate || r.createdAt;
     setEditDate(dt ? new Date(dt).toISOString().split('T')[0] : '');
     setEditOffer(r.clientDetails?.classe || 'Standard');
     setEditMode(r.paymentMode || 'Espèces');
     setEditWallet(r.paymentDetails || 'Bab Saadoun');
-    setModalNote(r.notes && r.notes.length > 0 ? r.notes[0].text : '');
+    setModalNote('');
+    setNewNoteText('');
+    setShowAuditInfo(false);
     setShowDeleteConfirm(false);
     setImgError(false);
     setIsDlgOpen(true);
+
+    // Verrouillage instantané pour masquer immédiatement la fiche auprès des autres opérateurs
+    try {
+      await fetch(`/api/receipts/${r._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lock: true, lockedBy: activeUser || 'Elios' }),
+      });
+      mutate();
+    } catch (err) {
+      console.warn('[Lock] Erreur pose verrou:', err);
+    }
   };
+
+  // Heartbeat de verrouillage en temps réel
+  useEffect(() => {
+    if (!isDlgOpen || !selectedReceipt?._id) return;
+    const receiptId = selectedReceipt._id;
+
+    const interval = setInterval(() => {
+      fetch(`/api/receipts/${receiptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lock: true, lockedBy: activeUser || 'Elios' }),
+      }).catch(() => {});
+    }, 20000);
+
+    const handleUnload = () => {
+      navigator.sendBeacon(`/api/receipts/${receiptId}`, JSON.stringify({ lock: false }));
+    };
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleUnload);
+      fetch(`/api/receipts/${receiptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lock: false }),
+      }).catch(() => {});
+    };
+  }, [isDlgOpen, selectedReceipt?._id, activeUser]);
+
+  // Synchronisation instantanée en temps réel des notes lorsque la fiche reçu est ouverte
+  const activeReceiptId = isDlgOpen && selectedReceipt ? selectedReceipt._id : null;
+  const { data: liveReceipt } = useSWR<Receipt>(
+    activeReceiptId ? `/api/receipts/${activeReceiptId}` : null,
+    fetcher,
+    {
+      refreshInterval: 1500,
+      revalidateOnFocus: true,
+      dedupingInterval: 600
+    }
+  );
+
+  useEffect(() => {
+    if (!liveReceipt || !selectedReceipt) return;
+    const currentNotes = selectedReceipt.notes || [];
+    const incomingNotes = liveReceipt.notes || [];
+    const notesChanged = JSON.stringify(currentNotes) !== JSON.stringify(incomingNotes);
+
+    if (notesChanged) {
+      setSelectedReceipt(prev => prev ? { 
+        ...prev, 
+        notes: incomingNotes,
+        updatedAt: liveReceipt.updatedAt || prev.updatedAt,
+        lastModifiedBy: liveReceipt.lastModifiedBy || prev.lastModifiedBy,
+        status: liveReceipt.status || prev.status,
+        processedBy: liveReceipt.processedBy || prev.processedBy,
+        processedAt: liveReceipt.processedAt || prev.processedAt
+      } : null);
+    }
+  }, [liveReceipt, selectedReceipt]);
 
   const handleFileSelect = (f: File | null) => {
     setFileErr('');
@@ -301,8 +403,9 @@ export default function ReceiptsPage() {
       fd.append('paymentDetails', formData.wallet);
       fd.append('name', formData.name.trim() || 'Élève non renseigné');
       fd.append('nom', formData.name.trim() || 'Élève non renseigné');
-      fd.append('phone', formData.phone.trim());
-      fd.append('telephone', formData.phone.trim());
+      const cleanPhone = formatPhone(formData.phone);
+      fd.append('phone', cleanPhone);
+      fd.append('telephone', cleanPhone);
       if (formData.email.trim()) fd.append('email', formData.email.trim());
       fd.append('classe', finalOffer);
       fd.append('offer', finalOffer);
@@ -327,7 +430,7 @@ export default function ReceiptsPage() {
       setGeneratedTicket({
         reference: createdReceipt.reference,
         studentName: createdReceipt.clientDetails?.nom || formData.name.trim() || 'Élève non renseigné',
-        phone: createdReceipt.clientDetails?.telephone || formData.phone.trim(),
+        phone: formatPhone(createdReceipt.clientDetails?.telephone || formData.phone),
         offer: createdReceipt.clientDetails?.classe || finalOffer,
         familyGroup: createdReceipt.clientDetails?.familyGroup || formData.familyGroup.trim(),
         amount: createdReceipt.amount || amt,
@@ -345,16 +448,16 @@ export default function ReceiptsPage() {
     }
   };
 
-  // Sauvegarder les modifications du reçu
+  // Sauvegarder les modifications du reçu (accessible pour tous les reçus avec traçabilité)
   const handleSaveChanges = async () => {
-    if (!selectedReceipt || isProcessed) return;
+    if (!selectedReceipt) return;
     try {
       setIsSavingChanges(true);
       const parsedAmount = parseFloat(String(editAmount));
       const payload: any = {
         clientDetails: {
           nom: editNom.trim(),
-          telephone: editPhone.trim(),
+          telephone: formatPhone(editPhone),
           classe: editOffer.trim(),
           email: selectedReceipt.clientDetails?.email || '',
           familyGroup: selectedReceipt.clientDetails?.familyGroup || ''
@@ -363,9 +466,11 @@ export default function ReceiptsPage() {
         paymentDetails: editWallet,
         amount: isNaN(parsedAmount) ? 0 : parsedAmount,
         paymentDate: editDate ? new Date(editDate) : new Date(),
+        lastModifiedBy: activeUser || 'Elios'
       };
       if (modalNote.trim()) {
         payload.note = modalNote.trim();
+        payload.addedBy = activeUser || 'Elios';
       }
       const res = await fetch(`/api/receipts/${selectedReceipt._id}`, {
         method: 'PATCH',
@@ -376,11 +481,77 @@ export default function ReceiptsPage() {
       const updated = await res.json();
       toast({ message: 'Modifications enregistrées avec succès', tone: 'ok' });
       setSelectedReceipt(updated);
+      setModalNote('');
       mutate();
     } catch (err: any) {
       toast({ message: err.message || 'Erreur lors de la sauvegarde', tone: 'warn' });
     } finally {
       setIsSavingChanges(false);
+    }
+  };
+
+  // Ajouter une note dédiée avec bouton et enregistrement de l'auteur
+  const handleAddNote = async () => {
+    if (!selectedReceipt || !newNoteText.trim()) return;
+    try {
+      setIsAddingNote(true);
+      const res = await fetch(`/api/receipts/${selectedReceipt._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          note: newNoteText.trim(),
+          addedBy: activeUser || 'Elios',
+          lastModifiedBy: activeUser || 'Elios'
+        }),
+      });
+
+      if (!res.ok) throw new Error('Échec de l’enregistrement de la note');
+      const updated = await res.json();
+      setSelectedReceipt(prev => prev ? { 
+        ...prev, 
+        notes: updated.notes || prev.notes,
+        updatedAt: updated.updatedAt || prev.updatedAt,
+        lastModifiedBy: activeUser || 'Elios'
+      } : null);
+      setNewNoteText('');
+      toast({ message: 'Note ajoutée avec succès', tone: 'ok' });
+      mutate();
+    } catch (err: any) {
+      console.error('Erreur ajout note:', err);
+      toast({ message: err.message || 'Erreur lors de l’ajout de la note', tone: 'warn' });
+    } finally {
+      setIsAddingNote(false);
+    }
+  };
+
+  // Télécharger directement le fichier image / PDF du reçu
+  const handleDownloadReceiptImage = async () => {
+    if (!selectedReceipt?.gDriveFileId) {
+      toast({ message: 'Aucun fichier attaché à ce reçu', tone: 'warn' });
+      return;
+    }
+    try {
+      setIsDownloadingImage(true);
+      const downloadUrl = `/api/image/${selectedReceipt.gDriveFileId}`;
+      const res = await fetch(downloadUrl);
+      if (!res.ok) throw new Error('Erreur de téléchargement');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const isPdf = blob.type.includes('pdf');
+      const refClean = (selectedReceipt.reference || selectedReceipt.clientDetails?.nom || 'recu').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `Recu-${refClean}.${isPdf ? 'pdf' : 'png'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({ message: 'Reçu téléchargé avec succès', tone: 'ok' });
+    } catch (err: any) {
+      console.error('Erreur téléchargement reçu:', err);
+      window.open(`/api/image/${selectedReceipt.gDriveFileId}`, '_blank');
+    } finally {
+      setIsDownloadingImage(false);
     }
   };
 
@@ -393,9 +564,10 @@ export default function ReceiptsPage() {
       const payload: any = {
         status: 'PROCESSED',
         processedBy: activeUser || 'Elios',
+        lastModifiedBy: activeUser || 'Elios',
         clientDetails: {
           nom: editNom.trim(),
-          telephone: editPhone.trim(),
+          telephone: formatPhone(editPhone),
           classe: editOffer.trim(),
           email: selectedReceipt.clientDetails?.email || '',
           familyGroup: selectedReceipt.clientDetails?.familyGroup || ''
@@ -404,20 +576,20 @@ export default function ReceiptsPage() {
         paymentDetails: editWallet,
         amount: isNaN(parsedAmount) ? 0 : parsedAmount,
         paymentDate: editDate ? new Date(editDate) : new Date(),
-        note: modalNote.trim(),
-        lock: false,
-        lockedBy: null
+        lock: false
       };
+      if (modalNote.trim()) {
+        payload.note = modalNote.trim();
+        payload.addedBy = activeUser || 'Elios';
+      }
       const res = await fetch(`/api/receipts/${selectedReceipt._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error('Erreur lors de la validation du reçu');
-      toast({ message: 'Reçu modifié et marqué comme traité', tone: 'ok' });
-      setIsDlgOpen(false);
-      setSelectedReceipt(null);
-      setModalNote('');
+      toast({ message: 'Reçu validé et marqué comme traité', tone: 'ok' });
+      closeReceiptModal();
       mutate();
     } catch (err: any) {
       toast({ message: err.message, tone: 'warn' });
@@ -442,9 +614,7 @@ export default function ReceiptsPage() {
         message: `Reçu supprimé avec succès. ${decaissAmount} DT a été décaissé de ${targetDest}.`, 
         tone: 'ok' 
       });
-      setShowDeleteConfirm(false);
-      setIsDlgOpen(false);
-      setSelectedReceipt(null);
+      closeReceiptModal();
       mutate();
     } catch (err: any) {
       toast({ message: err.message || 'Impossible de supprimer le reçu', tone: 'warn' });
@@ -456,25 +626,41 @@ export default function ReceiptsPage() {
   // Normalisation des reçus
   const receipts = rawReceipts || [];
 
-  // Statistiques
+  // Détecter si un reçu est verrouillé par un AUTRE opérateur depuis moins de 45s
+  const isLockedByOther = (r: Receipt) => {
+    if (!r.lockedBy || r.lockedBy === activeUser) return false;
+    if (!r.lockedAt) return false;
+    return (Date.now() - new Date(r.lockedAt).getTime()) < 45000;
+  };
+
+  // Statistiques avec exclusion des reçus verrouillés par d'autres opérateurs
   const stats = useMemo(() => {
-    const todo = receipts.filter(r => r.status === 'PENDING');
-    const done = receipts.filter(r => r.status === 'PROCESSED' || r.status === 'ARCHIVED');
+    const available = receipts.filter(r => !isLockedByOther(r));
+    const todo = available.filter(r => r.status === 'PENDING');
+    const done = available.filter(r => r.status === 'PROCESSED' || r.status === 'ARCHIVED');
     const totalAmount = done.reduce((sum, r) => sum + (r.amount || 0), 0);
     return {
       totalAmount,
       doneCount: done.length,
       todoCount: todo.length
     };
-  }, [receipts]);
+  }, [receipts, activeUser]);
 
-  // Filtrage liste
+  // Filtrage liste (disparaît instantanément si ouvert par un autre opérateur)
   const filteredRows = useMemo(() => {
     const s = searchQuery.trim().toLowerCase();
+    const queryDigits = s.replace(/\D/g, '');
     return receipts.filter(r => {
+      // Disparaît de la liste si actuellement ouvert par un autre opérateur
+      if (isLockedByOther(r)) return false;
+
       if (tab === 'todo' && r.status !== 'PENDING') return false;
       if (tab === 'done' && r.status !== 'PROCESSED' && r.status !== 'ARCHIVED') return false;
       if (!s) return true;
+      if (queryDigits && queryDigits.length >= 2) {
+        const telDigits = (r.clientDetails?.telephone || '').replace(/\D/g, '');
+        if (telDigits.includes(queryDigits)) return true;
+      }
       const haystack = [
         r.clientDetails?.nom,
         r.clientDetails?.telephone,
@@ -485,9 +671,23 @@ export default function ReceiptsPage() {
       ].join(' ').toLowerCase();
       return haystack.includes(s);
     });
-  }, [receipts, tab, searchQuery]);
+  }, [receipts, tab, searchQuery, activeUser]);
 
   const formatFileSize = (b: number) => b > 1e6 ? (b / 1e6).toFixed(1) + ' Mo' : Math.round(b / 1e3) + ' Ko';
+
+  const formatFullDateTime = (d?: string | Date | null) => {
+    if (!d) return '—';
+    try {
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return '—';
+      return date.toLocaleDateString('fr-FR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    } catch {
+      return '—';
+    }
+  };
 
   return (
     <div data-page="receipts">
@@ -664,7 +864,8 @@ export default function ReceiptsPage() {
                 <input 
                   id="fp" 
                   inputMode="tel" 
-                  placeholder="+216 XX XXX XXX"
+                  placeholder="Ex : 92 330 331"
+                  maxLength={16}
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
                 />
@@ -888,7 +1089,7 @@ export default function ReceiptsPage() {
               {filteredRows.length > 0 ? (
                 filteredRows.map((r, n) => {
                   const opMatch = Array.isArray(operators) ? operators.find(o => o.name.toLowerCase() === (r.operatorName || '').toLowerCase()) : undefined;
-                  const opColor = opMatch ? getThemeColors(opMatch.theme).dot : '#0F9D82';
+                  const opColor = opMatch ? getThemeColors(opMatch.theme).dot : '#7BA25B';
                   const dateStr = new Date(r.paymentDate || r.createdAt).toLocaleDateString("fr-FR");
 
                   return (
@@ -905,7 +1106,7 @@ export default function ReceiptsPage() {
                           <h3>{r.clientDetails?.nom || 'Élève non renseigné'}</h3>
                           <div className="ph2">
                             <svg className="i" viewBox="0 0 24 24">{IC.phone}</svg>
-                            {r.clientDetails?.telephone || 'Sans numéro'}
+                            {r.clientDetails?.telephone ? formatPhone(r.clientDetails.telephone) : 'Sans numéro'}
                           </div>
                         </div>
                         <div className="rr">
@@ -958,13 +1159,14 @@ export default function ReceiptsPage() {
       </main>
 
       {/* Modale Visualisation, Traitement & Édition */}
+      {/* Modale Visualisation, Traitement & Édition */}
       {isDlgOpen && selectedReceipt && (
         <div 
           className="modal-overlay" 
-          style={{ zIndex: 60 }}
+          style={{ zIndex: 100 }}
           onClick={(e) => {
             if (e.target === e.currentTarget && !isSavingChanges && !isDeletingReceipt) {
-              setIsDlgOpen(false);
+              closeReceiptModal();
             }
           }}
         >
@@ -972,7 +1174,7 @@ export default function ReceiptsPage() {
             className="enc-dialog-container animate-in fade-in zoom-in-95 duration-150" 
             id="dc" 
             style={{ 
-              width: 'min(580px, 95vw)', 
+              width: 'min(620px, 95vw)', 
               maxHeight: '92vh', 
               display: 'flex', 
               flexDirection: 'column',
@@ -980,104 +1182,295 @@ export default function ReceiptsPage() {
               overflow: 'hidden'
             }}
           >
-            <div className="dh" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div className="dh" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '14px 20px', borderBottom: '1px solid var(--line)', position: 'relative' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1, flexWrap: 'wrap' }}>
                 <h2 id="dt" style={{ margin: 0, fontSize: '17px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {editNom || 'Élève non renseigné'}
+                  {editNom || selectedReceipt.clientDetails?.nom || 'Élève non renseigné'}
                 </h2>
                 <span className="amt" style={{ flexShrink: 0 }}>
-                  {(Number(editAmount) || 0).toLocaleString('fr-FR')} DT
+                  {(Number(editAmount) || selectedReceipt.amount || 0).toLocaleString('fr-FR')} DT
                 </span>
+                
+                {/* Badge Statut Fiable */}
                 {isProcessed ? (
                   <span style={{ 
                     display: 'inline-flex', 
                     alignItems: 'center', 
-                    gap: '4px', 
+                    gap: '5px', 
                     fontSize: '11px', 
                     fontWeight: 700,
-                    padding: '3px 8px', 
+                    padding: '3px 9px', 
                     borderRadius: '20px',
                     background: '#ECFDF5', 
                     color: '#065F46', 
                     border: '1px solid #A7F3D0' 
                   }}>
-                    <svg viewBox="0 0 24 24" style={{ width: 12, height: 12, fill: 'none', stroke: 'currentColor', strokeWidth: 2.5 }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                    </svg>
-                    Traité (Verrouillé)
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', display: 'inline-block' }} />
+                    {selectedReceipt.processedBy ? `Traité par ${selectedReceipt.processedBy}` : 'Traité'}
                   </span>
                 ) : (
                   <span style={{ 
                     display: 'inline-flex', 
                     alignItems: 'center', 
+                    gap: '5px', 
                     fontSize: '11px', 
                     fontWeight: 700,
-                    padding: '3px 8px', 
+                    padding: '3px 9px', 
                     borderRadius: '20px',
                     background: '#FFFBEB', 
                     color: '#92400E', 
                     border: '1px solid #FDE68A' 
                   }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F59E0B', display: 'inline-block' }} />
                     À traiter
                   </span>
                 )}
+
+                {/* Petit i informatif & traçabilité (Non gras & Italique) */}
+                <button
+                  type="button"
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    border: showAuditInfo ? '1.5px solid #2563EB' : '1px solid var(--line)',
+                    background: showAuditInfo ? '#EFF6FF' : 'var(--card)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: showAuditInfo ? '#2563EB' : 'var(--ink2)',
+                    padding: 0,
+                    fontFamily: 'Georgia, "Times New Roman", serif',
+                    fontStyle: 'italic',
+                    fontWeight: 400,
+                    fontSize: '14px',
+                    lineHeight: 1,
+                    boxShadow: showAuditInfo ? '0 0 0 3px rgba(37, 99, 235, 0.12)' : '0 1px 2px rgba(0,0,0,0.04)',
+                    transition: 'all 0.18s ease',
+                    userSelect: 'none',
+                    flexShrink: 0
+                  }}
+                  onClick={() => setShowAuditInfo(!showAuditInfo)}
+                  title="Historique des modifications & Traçabilité"
+                  aria-label="Historique et audit"
+                >
+                  i
+                </button>
               </div>
+
               <button 
                 type="button" 
                 className="x" 
-                onClick={() => setIsDlgOpen(false)}
+                onClick={closeReceiptModal}
                 disabled={isSavingChanges || isDeletingReceipt}
                 aria-label="Fermer"
               >
                 <svg className="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
               </button>
+
+              {/* Volet de Traçabilité & Historique - Ancré responsivement à l'en-tête de la modale */}
+              {showAuditInfo && (
+                <>
+                  {/* Overlay invisible pour fermer au clic en dehors */}
+                  <div 
+                    style={{ position: 'fixed', inset: 0, zIndex: 70 }} 
+                    onClick={() => setShowAuditInfo(false)} 
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    right: '16px',
+                    background: 'var(--card)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '12px',
+                    padding: '13px 15px',
+                    boxShadow: '0 18px 38px -6px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.05)',
+                    zIndex: 75,
+                    width: 'min(330px, calc(100% - 32px))',
+                    maxWidth: 'calc(100% - 32px)',
+                    fontSize: '12px',
+                    color: 'var(--ink)',
+                    animation: 'rise .15s ease both',
+                    boxSizing: 'border-box'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '9px', borderBottom: '1px solid var(--line)', paddingBottom: '7px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                        <span style={{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          width: 18, 
+                          height: 18, 
+                          borderRadius: '50%', 
+                          background: '#EFF6FF', 
+                          color: '#2563EB', 
+                          fontSize: '11px', 
+                          fontFamily: 'Georgia, serif', 
+                          fontStyle: 'italic', 
+                          fontWeight: 400 
+                        }}>i</span>
+                        <strong style={{ fontSize: '12.5px', color: 'var(--ink)' }}>Traçabilité & Historique</strong>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAuditInfo(false)} 
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: '18px', lineHeight: 1, padding: '2px 4px', borderRadius: '4px' }}
+                        aria-label="Fermer"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                        <span style={{ color: 'var(--ink3)', flexShrink: 0 }}>Référence :</span>
+                        <span style={{ fontWeight: 600, wordBreak: 'break-all', textAlign: 'right' }}>{selectedReceipt.reference || selectedReceipt._id}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ color: 'var(--ink3)', flexShrink: 0 }}>Importé par :</span>
+                        <span style={{ fontWeight: 600, textAlign: 'right' }}>{selectedReceipt.operatorName || 'Système'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ color: 'var(--ink3)', flexShrink: 0 }}>Créé le :</span>
+                        <span style={{ textAlign: 'right' }}>{formatFullDateTime(selectedReceipt.createdAt)}</span>
+                      </div>
+                      {selectedReceipt.updatedAt && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                          <span style={{ color: 'var(--ink3)', flexShrink: 0 }}>Dernière modif :</span>
+                          <span style={{ textAlign: 'right' }}>
+                            {formatFullDateTime(selectedReceipt.updatedAt)}
+                            {selectedReceipt.lastModifiedBy ? ` (${selectedReceipt.lastModifiedBy})` : ''}
+                          </span>
+                        </div>
+                      )}
+                      {isProcessed && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F0FDF4', padding: '6px 8px', borderRadius: '7px', color: '#166534', border: '1px solid #DCFCE7', marginTop: '2px', gap: '8px' }}>
+                          <span style={{ fontWeight: 600, flexShrink: 0 }}>Validé / Traité :</span>
+                          <span style={{ fontWeight: 600, textAlign: 'right' }}>
+                            {formatFullDateTime(selectedReceipt.processedAt || selectedReceipt.updatedAt)}
+                            {selectedReceipt.processedBy ? ` (${selectedReceipt.processedBy})` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="db" style={{ overflowY: 'auto', flex: 1, padding: '16px 20px', gap: '14px' }}>
               {/* Image ou Lien Reçu */}
-              <div className="shot" style={{ position: 'relative', minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="shot" style={{ position: 'relative', minHeight: '180px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                 {selectedReceipt.gDriveFileId && !imgError ? (
-                  <a 
-                    href={`/api/image/${selectedReceipt.gDriveFileId}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    title="Cliquez pour agrandir l'image"
-                    style={{ display: 'block', width: '100%', height: '100%' }}
-                  >
-                    <img 
-                      src={`/api/image/${selectedReceipt.gDriveFileId}`} 
-                      alt={`Reçu ${editNom || selectedReceipt.clientDetails?.nom || ''}`}
-                      onError={() => setImgError(true)}
-                      style={{ maxHeight: '320px', width: 'auto', margin: '0 auto', display: 'block', borderRadius: '8px' }}
-                    />
-                  </a>
+                  <>
+                    <a 
+                      href={`/api/image/${selectedReceipt.gDriveFileId}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      title="Cliquez pour agrandir l'image dans un nouvel onglet"
+                      style={{ display: 'block', width: '100%', textAlign: 'center' }}
+                    >
+                      <img 
+                        src={`/api/image/${selectedReceipt.gDriveFileId}`} 
+                        alt={`Reçu ${editNom || selectedReceipt.clientDetails?.nom || ''}`}
+                        onError={() => setImgError(true)}
+                        style={{ maxHeight: '320px', width: 'auto', margin: '0 auto', display: 'block', borderRadius: '8px' }}
+                      />
+                    </a>
+                    {/* Bouton d'action Télécharger */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadReceiptImage}
+                      disabled={isDownloadingImage}
+                      className="btn"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '7px',
+                        padding: '7px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        background: 'var(--card)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '9px',
+                        cursor: 'pointer',
+                        color: 'var(--ink)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                      }}
+                      title="Télécharger le fichier original du reçu"
+                    >
+                      <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      {isDownloadingImage ? 'Téléchargement...' : 'Télécharger le reçu'}
+                    </button>
+                  </>
                 ) : (
-                  <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <p style={{ color: '#9CA3AF', fontSize: '13.5px', marginBottom: selectedReceipt.gDriveViewUrl ? '10px' : '0' }}>
-                      Aucune image jointe
-                    </p>
-                    {selectedReceipt.gDriveViewUrl && (
-                      <a
-                        href={selectedReceipt.gDriveViewUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
+                  <div style={{ textAlign: 'center', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    {selectedReceipt.gDriveFileId ? (
+                      <>
+                        <div style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '6px',
-                          background: '#F3F4F6',
-                          color: '#374151',
-                          padding: '8px 14px',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          textDecoration: 'none',
-                          border: '1px solid #E5E7EB',
-                        }}
-                      >
-                        Ouvrir le document sur Google Drive ↗
-                      </a>
+                          gap: '8px',
+                          padding: '10px 16px',
+                          background: 'var(--hover)',
+                          borderRadius: '10px',
+                          border: '1px solid var(--line)',
+                          color: 'var(--ink)'
+                        }}>
+                          <svg viewBox="0 0 24 24" style={{ width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, color: '#DC2626' }}>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="9" y1="15" x2="15" y2="15"/>
+                          </svg>
+                          <span style={{ fontSize: '13px', fontWeight: 600 }}>Document PDF / Fichier attaché</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                          <a
+                            href={`/api/image/${selectedReceipt.gDriveFileId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn"
+                            style={{ fontSize: '12.5px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            Ouvrir le document ↗
+                          </a>
+                          <button
+                            type="button"
+                            onClick={handleDownloadReceiptImage}
+                            disabled={isDownloadingImage}
+                            className="btn"
+                            style={{ fontSize: '12.5px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                              <polyline points="7 10 12 15 17 10"/>
+                              <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            {isDownloadingImage ? 'Téléchargement...' : 'Télécharger le document'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ color: '#9CA3AF', fontSize: '13.5px', margin: 0 }}>
+                          Aucune image jointe
+                        </p>
+                        {selectedReceipt.gDriveViewUrl && (
+                          <a
+                            href={selectedReceipt.gDriveViewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn"
+                            style={{ fontSize: '12.5px', fontWeight: 600 }}
+                          >
+                            Ouvrir sur Google Drive ↗
+                          </a>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -1134,28 +1527,6 @@ export default function ReceiptsPage() {
                 </div>
               )}
 
-              {/* Bannière explicative si le reçu est déjà traité */}
-              {isProcessed && (
-                <div style={{
-                  background: 'var(--hover)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '11px',
-                  padding: '11px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  color: 'var(--ink2)',
-                  fontSize: '12.5px'
-                }}>
-                  <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2, flexShrink: 0, color: 'var(--ink3)' }}>
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                  </svg>
-                  <span>
-                    Ce reçu est <strong>traité et comptabilisé</strong>. Ses informations sont verrouillées en lecture seule et ne peuvent plus être modifiées.
-                  </span>
-                </div>
-              )}
 
               {/* Formulaire complet et modifiable */}
               <div 
@@ -1174,7 +1545,6 @@ export default function ReceiptsPage() {
                     placeholder="Nom(s) de l'élève..." 
                     value={editNom}
                     onChange={(e) => setEditNom(e.target.value)}
-                    disabled={isProcessed}
                   />
                 </label>
 
@@ -1183,11 +1553,10 @@ export default function ReceiptsPage() {
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Téléphone</span>
                   <input 
                     inputMode="tel"
-                    placeholder="XX XXX XXX"
-                    maxLength={14}
+                    placeholder="Ex : 92 330 331"
+                    maxLength={16}
                     value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
-                    disabled={isProcessed}
+                    onChange={(e) => setEditPhone(formatPhone(e.target.value))}
                   />
                 </label>
 
@@ -1203,7 +1572,6 @@ export default function ReceiptsPage() {
                       style={{ paddingRight: '36px', width: '100%', boxSizing: 'border-box' }}
                       value={editAmount}
                       onChange={(e) => setEditAmount(e.target.value)}
-                      disabled={isProcessed}
                       onWheel={(e) => e.currentTarget.blur()}
                       onKeyDown={(e) => {
                         if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
@@ -1225,7 +1593,6 @@ export default function ReceiptsPage() {
                     style={{ width: '100%', boxSizing: 'border-box' }}
                     value={editDate}
                     onChange={(e) => setEditDate(e.target.value)}
-                    disabled={isProcessed}
                   />
                 </label>
 
@@ -1234,7 +1601,6 @@ export default function ReceiptsPage() {
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Mode</span>
                   <select 
                     value={editMode}
-                    disabled={isProcessed}
                     onChange={(e) => {
                       const newMode = e.target.value;
                       setEditMode(newMode);
@@ -1253,7 +1619,6 @@ export default function ReceiptsPage() {
                   </span>
                   <select 
                     value={editWallet}
-                    disabled={isProcessed}
                     onChange={(e) => setEditWallet(e.target.value)}
                   >
                     {PAYMENT_MODES_CONFIG[editMode]?.options.map(opt => (
@@ -1269,8 +1634,7 @@ export default function ReceiptsPage() {
                     placeholder="Offre / Formation..."
                     value={editOffer}
                     onChange={(e) => setEditOffer(e.target.value)}
-                    list={isProcessed ? undefined : "dlg-offers-list"}
-                    disabled={isProcessed}
+                    list="dlg-offers-list"
                   />
                   <datalist id="dlg-offers-list">
                     {OFFERS.map(o => <option key={o} value={o} />)}
@@ -1295,22 +1659,126 @@ export default function ReceiptsPage() {
                     {selectedReceipt.operatorName || 'Elios'}
                   </div>
                 </label>
+              </div>
 
-                {/* Note */}
-                <label className="full" title="Note">
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Note</span>
-                  <textarea 
-                    rows={2} 
-                    placeholder={isProcessed ? "Aucune note" : "Ajoutez ou modifiez une note..."}
-                    value={modalNote}
-                    onChange={(e) => setModalNote(e.target.value)}
-                    disabled={isProcessed}
+              {/* Section Notes Collaborative & Traçable */}
+              <div style={{
+                border: '1px solid var(--line)',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                background: 'var(--card)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                marginTop: '4px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2, color: 'var(--ink3)' }}>
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink)' }}>
+                      Notes & Observations internes ({selectedReceipt.notes?.length || 0})
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--ink3)' }}>
+                    Synchronisation active
+                  </span>
+                </div>
+
+                {/* Historique des notes */}
+                <div style={{
+                  maxHeight: '140px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  paddingRight: '4px'
+                }}>
+                  {selectedReceipt.notes && selectedReceipt.notes.length > 0 ? (
+                    selectedReceipt.notes.map((n, idx) => (
+                      <div 
+                        key={idx} 
+                        style={{
+                          background: 'var(--hover)',
+                          borderRadius: '8px',
+                          padding: '9px 12px',
+                          border: '1px solid var(--line)',
+                          fontSize: '12.5px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--ink)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} />
+                            {n.addedBy || n.author || (n as any).by || 'Opérateur'}
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--ink3)' }}>
+                            {formatFullDateTime(n.addedAt || n.date)}
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, color: 'var(--ink2)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                          {n.text}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--ink3)', fontSize: '12px', fontStyle: 'italic' }}>
+                      Aucune note sur ce reçu pour le moment.
+                    </div>
+                  )}
+                </div>
+
+                {/* Compositeur de nouvelle note */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
+                  <textarea
+                    rows={2}
+                    placeholder="Rédiger une observation ou remarque..."
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      fontSize: '13px',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--card)',
+                      color: 'var(--ink)',
+                      resize: 'vertical'
+                    }}
                   />
-                </label>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={handleAddNote}
+                      disabled={isAddingNote || !newNoteText.trim()}
+                      className="btn"
+                      style={{
+                        padding: '6px 14px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        background: newNoteText.trim() ? '#2563EB' : 'var(--hover)',
+                        color: newNoteText.trim() ? '#fff' : 'var(--ink3)',
+                        borderColor: newNoteText.trim() ? '#2563EB' : 'var(--line)',
+                        cursor: newNoteText.trim() ? 'pointer' : 'not-allowed',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                      </svg>
+                      {isAddingNote ? 'Enregistrement...' : 'Ajouter la note'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="df" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', padding: '14px 20px' }}>
+            <div className="df" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', padding: '14px 20px', borderTop: '1px solid var(--line)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* Bouton Reçu officiel (s'ouvre en avant-plan) */}
                 <button 
@@ -1321,7 +1789,7 @@ export default function ReceiptsPage() {
                     setGeneratedTicket({
                       reference: selectedReceipt.reference,
                       studentName: editNom || selectedReceipt.clientDetails?.nom,
-                      phone: editPhone || selectedReceipt.clientDetails?.telephone || '',
+                      phone: formatPhone(editPhone || selectedReceipt.clientDetails?.telephone || ''),
                       offer: editOffer || selectedReceipt.clientDetails?.classe,
                       familyGroup: selectedReceipt.clientDetails?.familyGroup,
                       amount: Number(editAmount) || selectedReceipt.amount || 0,
@@ -1366,29 +1834,28 @@ export default function ReceiptsPage() {
                 <button 
                   className="btn" 
                   type="button" 
-                  onClick={() => setIsDlgOpen(false)}
+                  onClick={closeReceiptModal}
                   disabled={isSavingChanges || isDeletingReceipt}
                 >
                   Fermer
                 </button>
 
-                {/* Enregistrer les modifications (uniquement pour les reçus non traités) */}
-                {!isProcessed && (
-                  <button 
-                    className="btn" 
-                    type="button" 
-                    disabled={isSavingChanges || isDeletingReceipt}
-                    onClick={handleSaveChanges}
-                    style={{ fontWeight: 600 }}
-                  >
-                    {isSavingChanges ? 'Enregistrement...' : 'Enregistrer'}
-                  </button>
-                )}
+                {/* Enregistrer les modifications */}
+                <button 
+                  className="btn" 
+                  type="button" 
+                  disabled={isSavingChanges || isDeletingReceipt}
+                  onClick={handleSaveChanges}
+                  style={{ fontWeight: 600 }}
+                  title="Enregistrer les modifications avec traçabilité complète de l'auteur et de l'heure"
+                >
+                  {isSavingChanges ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
 
                 {selectedReceipt.status === 'PENDING' && (
                   <button 
                     className="btn pri" 
-                    type="button"
+                    type="button" 
                     id="ok"
                     disabled={isProcessing || isSavingChanges || isDeletingReceipt}
                     onClick={handleProcessReceipt}

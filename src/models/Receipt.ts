@@ -10,6 +10,7 @@ export interface IReceipt extends Document {
   operatorName: string; // anciennement uploadedBy
   processedBy?: string | null;
   processedAt?: Date | null;
+  lastModifiedBy?: string | null;
   clientDetails: {
     nom?: string;
     telephone: string;
@@ -49,6 +50,10 @@ const ReceiptSchema = new Schema<IReceipt>({
   },
   processedAt: {
     type: Date,
+    default: null,
+  },
+  lastModifiedBy: {
+    type: String,
     default: null,
   },
   clientDetails: {

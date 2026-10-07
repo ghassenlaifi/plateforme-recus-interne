@@ -1,4 +1,5 @@
 import { Session } from '@/types/session';
+import { formatPhone as formatPhoneUtil, extractPhoneDigits, normalizePhoneForUrl } from '@/lib/phoneUtils';
 
 export const COUNTRY_CODE = '216';
 
@@ -59,43 +60,7 @@ export const SUBJECTS = [
  * et formate automatiquement au format 'XX XXX XXX' ou '+216 XX XXX XXX'.
  */
 export function formatPhoneInput(value: string): string {
-  if (!value) return '';
-
-  const trimmed = value.trim();
-  const startsWithPlus = trimmed.startsWith('+');
-  
-  // Extraction des chiffres uniquement
-  let digits = trimmed.replace(/\D/g, '');
-  if (!digits) return startsWithPlus ? '+' : '';
-
-  // Cas 1 : Préfixe international Tunisie (+216 ou 00216 ou 216 au début)
-  if (startsWithPlus && digits.startsWith('216')) {
-    const localDigits = digits.slice(3).slice(0, 8); // max 8 chiffres locaux
-    if (localDigits.length <= 2) return `+216 ${localDigits}`;
-    if (localDigits.length <= 5) return `+216 ${localDigits.slice(0, 2)} ${localDigits.slice(2)}`;
-    return `+216 ${localDigits.slice(0, 2)} ${localDigits.slice(2, 5)} ${localDigits.slice(5, 8)}`;
-  }
-
-  // Cas 2 : L'utilisateur a collé '216' sans '+' au début
-  if (!startsWithPlus && digits.startsWith('216') && digits.length > 8) {
-    const localDigits = digits.slice(3).slice(0, 8);
-    if (localDigits.length <= 2) return `+216 ${localDigits}`;
-    if (localDigits.length <= 5) return `+216 ${localDigits.slice(0, 2)} ${localDigits.slice(2)}`;
-    return `+216 ${localDigits.slice(0, 2)} ${localDigits.slice(2, 5)} ${localDigits.slice(5, 8)}`;
-  }
-
-  // Cas 3 : Autre indicatif international (+33, +213, +1, etc.)
-  if (startsWithPlus) {
-    // International libre jusqu'à 15 chiffres (standard E.164)
-    const intlDigits = digits.slice(0, 15);
-    return `+${intlDigits}`;
-  }
-
-  // Cas 4 : Numéro local tunisien standard (8 chiffres max)
-  const localDigits = digits.slice(0, 8);
-  if (localDigits.length <= 2) return localDigits;
-  if (localDigits.length <= 5) return `${localDigits.slice(0, 2)} ${localDigits.slice(2)}`;
-  return `${localDigits.slice(0, 2)} ${localDigits.slice(2, 5)} ${localDigits.slice(5, 8)}`;
+  return formatPhoneUtil(value);
 }
 
 /**
@@ -118,46 +83,25 @@ export function validatePhone(
   }
 
   const str = raw.trim();
-  const digits = str.replace(/\D/g, '');
+  const digits = extractPhoneDigits(str);
 
   if (digits.length === 0) {
     return { isValid: false, error: 'Veuillez saisir un numéro valide.' };
   }
 
-  // Détection indicatif Tunisie
-  let localDigits = digits;
-  if (digits.startsWith('216') && digits.length >= 10) {
-    localDigits = digits.slice(3);
-  } else if (digits.startsWith('00216')) {
-    localDigits = digits.slice(5);
-  }
-
-  // Si c'est un numéro tunisien
-  if (str.startsWith('+216') || !str.startsWith('+')) {
-    if (localDigits.length !== 8) {
-      return {
-        isValid: false,
-        error: `Numéro tunisien invalide : 8 chiffres requis (${localDigits.length}/8 saisis).`,
-      };
-    }
-
-    const firstDigit = localDigits.charAt(0);
-    const validPrefixes = ['2', '3', '4', '5', '7', '9'];
-    if (!validPrefixes.includes(firstDigit)) {
-      return {
-        isValid: false,
-        error: 'Préfixe opérateur invalide en Tunisie. Doit débuter par 2, 4, 5, 9 (mobile) ou 3, 7 (fixe).',
-      };
-    }
-
-    return { isValid: true };
-  }
-
-  // Si c'est un numéro international étranger (+...)
-  if (digits.length < 7 || digits.length > 15) {
+  if (digits.length !== 8) {
     return {
       isValid: false,
-      error: 'Format international invalide (entre 7 et 15 chiffres requis).',
+      error: `Numéro tunisien invalide : 8 chiffres requis (${digits.length}/8 saisis).`,
+    };
+  }
+
+  const firstDigit = digits.charAt(0);
+  const validPrefixes = ['2', '3', '4', '5', '7', '9'];
+  if (!validPrefixes.includes(firstDigit)) {
+    return {
+      isValid: false,
+      error: 'Préfixe opérateur invalide en Tunisie. Doit débuter par 2, 4, 5, 9 (mobile) ou 3, 7 (fixe).',
     };
   }
 
@@ -169,37 +113,14 @@ export function validatePhone(
  * Renvoie une chaîne propre sans '+' ni espaces, prête pour les liens 'wa.me/'.
  */
 export function normalizePhone(raw?: string | null): string {
-  if (!raw) return '';
-  let digits = String(raw).replace(/\D/g, '');
-  if (!digits) return '';
-
-  digits = digits.replace(/^00/, '');
-
-  // 8 chiffres tunisiens => préfixe 216
-  if (digits.length === 8) {
-    return COUNTRY_CODE + digits;
-  }
-  // 11 chiffres commençant par 216
-  if (digits.length === 11 && digits.startsWith(COUNTRY_CODE)) {
-    return digits;
-  }
-
-  return digits;
+  return normalizePhoneForUrl(raw);
 }
 
 /**
  * Formate un numéro de téléphone pour un affichage lisible dans l'interface (ex: +216 22 987 775)
  */
 export function formatPhone(raw?: string | null): string {
-  const norm = normalizePhone(raw);
-  if (!norm) return raw ? String(raw) : '';
-  if (norm.length === 11 && norm.startsWith(COUNTRY_CODE)) {
-    return `+${norm.slice(0, 3)} ${norm.slice(3, 5)} ${norm.slice(5, 8)} ${norm.slice(8)}`;
-  }
-  if (norm.length === 8) {
-    return `${norm.slice(0, 2)} ${norm.slice(2, 5)} ${norm.slice(5)}`;
-  }
-  return norm;
+  return formatPhoneUtil(raw);
 }
 
 // ============================================================================
@@ -390,52 +311,56 @@ export function formatDateFR(dateStr?: string): string {
 // ============================================================================
 
 /**
- * Génère le message WhatsApp de rappel pour l'enseignant
+ * Génère le message WhatsApp de rappel pour l'enseignant (SANS lien Zoom, aujourd'hui + heure exacte)
  */
-export function formatTeacherReminder(session: Partial<Session>): string {
+export function formatTeacherReminder(session: Partial<Session>, lang: 'fr' | 'ar' = 'fr', customTemplate?: string): string {
   const teacher = session.teacherName || 'Professeur';
   const subject = session.subject || session.title || 'Séance';
-  const level = session.level || '';
-  const section = session.section && session.section !== 'Sans section' ? ` - ${session.section}` : '';
-  const date = formatDateFR(session.startDate);
-  const time = session.startTime || '';
-  const zoom = session.zoomJoinUrl ? `\n🔗 Lien Zoom : ${session.zoomJoinUrl}` : '';
-  const meetingId = session.zoomMeetingId ? `\n🔑 ID Réunion : ${session.zoomMeetingId}` : '';
+  const level = session.level ? (session.section && session.section !== 'Sans section' ? `${session.level} - ${session.section}` : session.level) : '';
+  const time = session.startTime || '18:00';
 
-  return `Bonjour ${teacher},
-Rappel pour votre séance en direct :
-📚 Matière : ${subject} (${level}${section})
-📅 Date : ${date}
-⏰ Heure : ${time}${zoom}${meetingId}
+  if (customTemplate) {
+    return customTemplate
+      .replace(/\{prof\}/gi, teacher)
+      .replace(/\{nom\}/gi, teacher)
+      .replace(/\{matiere\}/gi, subject)
+      .replace(/\{matière\}/gi, subject)
+      .replace(/\{niveau\}/gi, level)
+      .replace(/\{heure\}/gi, time)
+      .trim();
+  }
 
-Merci de confirmer votre disponibilité.`;
+  if (lang === 'ar') {
+    return `تحية طيبة أستاذ(ة) ${teacher}،\n\nنذكركم بحصتكم المباشرة في مادة ${subject}${level ? ` (${level})` : ''} المبرمجة اليوم على الساعة ${time}.\n\nيرجى تأكيد حضوركم وجاهزيتكم.`;
+  }
+
+  return `Bonjour ${teacher},\n\nRappel pour votre séance en direct de ${subject}${level ? ` (${level})` : ''} prévue aujourd'hui à ${time}.\n\nMerci de confirmer votre disponibilité.`;
 }
 
 /**
- * Génère le message WhatsApp de rappel pour le GROUPE DES ÉLÈVES
+ * Génère le message WhatsApp de rappel pour le GROUPE DES ÉLÈVES (SANS lien Zoom, aujourd'hui + heure exacte)
  */
-export function formatGroupReminder(session: Partial<Session>): string {
+export function formatGroupReminder(session: Partial<Session>, lang: 'fr' | 'ar' = 'fr', customTemplate?: string): string {
   const subject = session.subject || session.title || 'Séance';
-  const level = session.level || '';
-  const section = session.section && session.section !== 'Sans section' ? ` (${session.section})` : '';
-  const teacher = session.teacherName || 'Votre enseignant';
-  const date = formatDateFR(session.startDate);
-  const start = session.startTime || '';
-  const end = session.endTime ? ` à ${session.endTime}` : '';
-  const zoom = session.zoomJoinUrl ? `\n🔗 Lien d'accès Zoom : ${session.zoomJoinUrl}` : '';
-  const meetingId = session.zoomMeetingId ? `\n🔑 ID Réunion : ${session.zoomMeetingId}` : '';
+  const level = session.level ? (session.section && session.section !== 'Sans section' ? `${session.level} (${session.section})` : session.level) : '';
+  const time = session.startTime || '18:00';
 
-  return `📢 *Rappel de séance en direct - Elios Academy*
+  if (customTemplate) {
+    return customTemplate
+      .replace(/\{matiere\}/gi, subject)
+      .replace(/\{matière\}/gi, subject)
+      .replace(/\{niveau\}/gi, level)
+      .replace(/\{heure\}/gi, time)
+      .replace(/\{prof\}/gi, session.teacherName || '')
+      .replace(/\{enseignant\}/gi, session.teacherName || '')
+      .trim();
+  }
 
-Chers élèves de *${level}${section}*,
+  if (lang === 'ar') {
+    return `📢 *تذكير بالحصّة - Elios Academy*\n\nأعزائنا التلاميذ${level ? ` (${level})` : ''}،\n\nنذكركم بأن حصتكم في مادة ${subject} ستكون اليوم على الساعة ${time}.\n\nيرجى الحضور في الموعد المحدد وتجهيز دروسكم !`;
+  }
 
-Votre cours en direct aura lieu aujourd'hui :
-📖 *Matière* : ${subject}
-👨‍🏫 *Enseignant* : ${teacher}
-📅 *Date* : ${date}
-⏰ *Horaire* : ${start}${end}${zoom}${meetingId}
-
-⚠️ *Merci d'être ponctuels et de préparer vos questions pour le direct !*`;
+  return `📢 *Rappel de séance - Elios Academy*\n\nChers élèves${level ? ` de *${level}*` : ''},\n\nNous vous rappelons que votre séance de ${subject} aura lieu aujourd'hui à ${time}.\n\nSoyez au rendez-vous et préparez vos cours !`;
 }
 
 /**

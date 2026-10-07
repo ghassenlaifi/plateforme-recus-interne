@@ -52,7 +52,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div id="toastHost" className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4" style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }} aria-live="polite">
+      <div id="toastHost" className="pointer-events-none fixed inset-x-0 z-[9999] flex flex-col items-center gap-2 px-4" style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }} aria-live="polite">
         {toasts.map((t) => {
           const isWarn = t.tone === 'warn';
           const bgClass = isWarn ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-400';

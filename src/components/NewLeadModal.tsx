@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { formatPhone } from '@/lib/phoneUtils';
 
 const CLASSE_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère de Base', '2ème de Base', '3ème de Base', 'BAC'];
 const SECTION_OPTIONS = ['Sciences Expérimentales', 'Mathématiques', 'Technique', 'Informatique', 'Économie', 'Lettres', 'Sport'];
@@ -11,6 +12,12 @@ interface NewLeadModalProps {
 }
 
 export function NewLeadModal({ isOpen, onClose, theme }: NewLeadModalProps) {
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) setPhone('');
+  }, [isOpen]);
+
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -26,7 +33,7 @@ export function NewLeadModal({ isOpen, onClose, theme }: NewLeadModalProps) {
 
   return (
     <div 
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/65 backdrop-blur-md animate-in fade-in duration-200"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -51,7 +58,10 @@ export function NewLeadModal({ isOpen, onClose, theme }: NewLeadModalProps) {
             </label>
             <input 
               type="tel"
-              placeholder="Ex: 20 123 456"
+              placeholder="Ex : 92 330 331"
+              maxLength={16}
+              value={phone}
+              onChange={(e) => setPhone(formatPhone(e.target.value))}
               className={`w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${themeRing} text-gray-900 font-medium text-sm transition-all shadow-sm`}
             />
           </div>

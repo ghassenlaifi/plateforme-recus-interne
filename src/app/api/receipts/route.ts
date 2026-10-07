@@ -4,6 +4,7 @@ import Receipt from '@/models/Receipt';
 import Lead from '@/models/Lead';
 import { uploadFileToDrive } from '@/lib/googleDrive';
 import { generateReceiptReference } from '@/lib/receiptReference';
+import { formatPhone } from '@/lib/phoneUtils';
 
 export async function GET(req: NextRequest) {
   try {
@@ -128,7 +129,8 @@ export async function POST(req: NextRequest) {
       else if (mode.toLowerCase().startsWith('edinar') || mode.toLowerCase().includes('d17')) mode = 'Edinar - D17';
       else if (mode.toLowerCase().includes('esp')) mode = 'Espèces';
 
-      const phoneVal = body.clientDetails?.telephone || body.clientDetails?.phone || body.telephone || body.phone || '00000000';
+      const rawPhone = body.clientDetails?.telephone || body.clientDetails?.phone || body.telephone || body.phone || '00000000';
+      const phoneVal = formatPhone(rawPhone) || rawPhone;
       const nameVal = body.clientDetails?.nom || body.clientDetails?.name || body.nom || body.name || 'DÉDUCTION MANUELLE';
       const classVal = body.clientDetails?.classe || body.clientDetails?.offer || body.classe || 'N/A';
 
@@ -172,7 +174,8 @@ export async function POST(req: NextRequest) {
     // Tolérance pour les noms de champs venant de l'ancien/nouveau frontend
     const operatorName = (formData.get('operatorName') || formData.get('uploadedBy')) as string;
     const nom = (formData.get('clientName') || formData.get('nom')) as string;
-    const telephone = (formData.get('clientPhone') || formData.get('telephone')) as string;
+    const rawTelephone = ((formData.get('clientPhone') || formData.get('telephone')) as string) || '';
+    const telephone = formatPhone(rawTelephone) || rawTelephone;
     const classe = (formData.get('clientClass') || formData.get('classe')) as string;
     
     const email = (formData.get('clientEmail') || formData.get('email')) as string | null;

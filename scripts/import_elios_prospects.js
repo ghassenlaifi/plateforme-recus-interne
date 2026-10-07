@@ -13,7 +13,8 @@ function parseDate(str) {
   if (str instanceof Date && !isNaN(str.getTime())) return str;
   const strVal = String(str).trim();
   
-  // Format DD/MM/YYYY HH:mm:ss ou DD/MM/YYYY
+  // Format DD/MM/YYYY HH:mm:ss
+  //  ou DD/MM/YYYY
   const m = strVal.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (m) {
     return new Date(

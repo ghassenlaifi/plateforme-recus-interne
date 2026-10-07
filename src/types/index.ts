@@ -6,18 +6,20 @@ export type User = {
 };
 
 export const THEMES: Record<string, { dot: string; bg: string; fg: string; label: string }> = {
-  indigo:  { label: 'Indigo', dot: '#6366f1', bg: '#eef2ff', fg: '#4338ca' },
-  sky:     { label: 'Bleu', dot: '#0ea5e9', bg: '#f0f9ff', fg: '#0369a1' },
-  rose:    { label: 'Rose', dot: '#f43f5e', bg: '#fff1f2', fg: '#be123c' },
-  amber:   { label: 'Ambre', dot: '#f59e0b', bg: '#fffbeb', fg: '#b45309' },
-  teal:    { label: 'Émeraude', dot: '#14b8a6', bg: '#f0fdfa', fg: '#0f766e' },
-  purple:  { label: 'Violet', dot: '#a855f7', bg: '#faf5ff', fg: '#7e22ce' },
-  gray:    { label: 'Gris', dot: '#6b7280', bg: '#f9fafb', fg: '#374151' },
-  red:     { label: 'Rouge', dot: '#ef4444', bg: '#fef2f2', fg: '#b91c1c' },
-  green:   { label: 'Vert', dot: '#22c55e', bg: '#f0fdf4', fg: '#15803d' },
-  orange:  { label: 'Orange', dot: '#f97316', bg: '#fff7ed', fg: '#c2410c' },
-  cyan:    { label: 'Cyan', dot: '#06b6d4', bg: '#ecfeff', fg: '#0e7490' },
-  fuchsia: { label: 'Fuchsia', dot: '#d946ef', bg: '#fdf4ff', fg: '#a21caf' },
+  navy:    { label: 'Marine (Officiel)', dot: '#23356E', bg: '#EEF1F7', fg: '#23356E' },
+  amber:   { label: 'Ambre (Officiel)', dot: '#F49E1F', bg: '#FFF7ED', fg: '#B45309' },
+  olive:   { label: 'Olive (Officiel)', dot: '#7BA25B', bg: '#F3F7F0', fg: '#4D6938' },
+  indigo:  { label: 'Indigo', dot: '#3D4E7F', bg: '#EEF1F7', fg: '#23356E' },
+  sky:     { label: 'Bleu', dot: '#67759F', bg: '#F0F4FA', fg: '#23356E' },
+  rose:    { label: 'Rose', dot: '#F43F5E', bg: '#FFF1F2', fg: '#BE123C' },
+  teal:    { label: 'Émeraude', dot: '#92B277', bg: '#F3F7F0', fg: '#3D532C' },
+  purple:  { label: 'Violet', dot: '#A855F7', bg: '#FAF5FF', fg: '#7E22CE' },
+  gray:    { label: 'Gris', dot: '#6B7280', bg: '#F9FAFB', fg: '#374151' },
+  red:     { label: 'Rouge', dot: '#EF4444', bg: '#FEF2F2', fg: '#B91C1C' },
+  green:   { label: 'Vert', dot: '#7BA25B', bg: '#F3F7F0', fg: '#4D6938' },
+  orange:  { label: 'Orange', dot: '#F49E1F', bg: '#FFF7ED', fg: '#C2410C' },
+  cyan:    { label: 'Cyan', dot: '#06B6D4', bg: '#ECFEFF', fg: '#0E7490' },
+  fuchsia: { label: 'Fuchsia', dot: '#D946EF', bg: '#FDF4FF', fg: '#A21CAF' },
 };
 
 export const getThemeColors = (themeKey: string) => {
@@ -90,11 +92,11 @@ export type Operator = {
 };
 
 export type Note = {
-  author: string;
-  date: string;
+  author?: string;
+  date?: string;
   text: string;
-  addedBy: string; // From the backend INote schema
-  addedAt: Date | string; // From the backend INote schema
+  addedBy?: string;
+  addedAt?: Date | string;
 };
 
 export type Receipt = {
@@ -102,6 +104,7 @@ export type Receipt = {
   operatorName: string; // anciennement uploadedBy
   processedBy: string | null;
   processedAt?: string | null;
+  lastModifiedBy?: string | null;
   clientDetails: {
     nom?: string;
     telephone: string;
