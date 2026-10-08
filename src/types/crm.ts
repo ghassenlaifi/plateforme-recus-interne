@@ -50,15 +50,15 @@ export type EliosStatus = typeof ELIOS_STATUSES[number];
 
 export const ELIOS_STATUS_COLORS: Record<string, string> = {
   "Lead": "#23356E",              // Bleu Marine officiel (100%)
-  "Approved": "#3D4E7F",          // Bleu Marine degré 80% (autre degré de bleu de la palette)
+  "Approved": "#7BA25B",          // Vert Olive officiel de la palette (100%) [Inversé avec Approved Prospect]
   "N/A": "#6B7280",               // Gris neutre
   "Potential Prospect": "#F49E1F",// Orangé officiel de la palette (100%)
-  "Approved Prospect": "#7BA25B", // Vert Olive officiel de la palette (100%)
+  "Approved Prospect": "#3D4E7F", // Bleu Marine degré 80% [Inversé avec Approved]
   "Rejected": "#DC2626",          // Rouge refusé / alerte
   "rejected": "#DC2626",          // Rouge refusé (tolérance minuscule)
   // Rétrocompatibilité
   "Nouveau": "#23356E",
-  "Converti": "#3D4E7F",
+  "Converti": "#7BA25B",
   "À rappeler": "#F49E1F"
 };
 
@@ -71,10 +71,10 @@ export function getEliosStatusColor(status?: string | null): string {
   if (ELIOS_STATUS_COLORS[s]) return ELIOS_STATUS_COLORS[s];
   const lower = s.toLowerCase();
   if (lower === 'lead' || lower === 'nouveau') return '#23356E';
-  if (lower === 'approved' || lower === 'converti') return '#3D4E7F';
+  if (lower === 'approved' || lower === 'converti') return '#7BA25B';
   if (lower === 'n/a' || lower === 'na') return '#6B7280';
   if (lower === 'potential prospect' || lower === 'à rappeler' || lower === 'a rappeler') return '#F49E1F';
-  if (lower === 'approved prospect') return '#7BA25B';
+  if (lower === 'approved prospect') return '#3D4E7F';
   if (lower === 'rejected') return '#DC2626';
   return '#6B7280';
 }

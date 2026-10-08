@@ -962,15 +962,15 @@ export default function CRMEliosPage() {
           {/* CARTE 2 : APPROVED */}
           <button 
             className={`stat clickable ${activeCard === 'approved' ? 'active-card' : ''}`}
-            style={{ '--c': '#3D4E7F' } as React.CSSProperties}
+            style={{ '--c': '#7BA25B' } as React.CSSProperties}
             aria-pressed={activeCard === 'approved'}
             onClick={() => handleCardClick('approved')}
             type="button"
           >
             <small>Approved</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#3D4E7F' }}>{stats.approved.toLocaleString('fr-FR')}</b>
+            <b className="text-xl sm:text-2xl" style={{ color: '#7BA25B' }}>{stats.approved.toLocaleString('fr-FR')}</b>
             <span className="text-xs">Validés & Payés</span>
-            <i className="si" style={{ color: '#3D4E7F', background: 'rgba(61, 78, 127, 0.12)' }}>
+            <i className="si" style={{ color: '#7BA25B', background: 'rgba(123, 162, 91, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.ok}</svg>
             </i>
           </button>

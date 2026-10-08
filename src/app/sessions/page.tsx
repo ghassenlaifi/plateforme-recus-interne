@@ -151,6 +151,27 @@ export default function SessionsPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
   const [showAllActions, setShowAllActions] = useState(false);
+  const [isActionsCollapsed, setIsActionsCollapsed] = useState(false);
+
+  // Charger la préférence d'affichage empilé/déplié du bloc Actions requises
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('receipthub_actions_box_collapsed');
+      if (saved !== null) {
+        setIsActionsCollapsed(saved === 'true');
+      }
+    } catch (e) {}
+  }, []);
+
+  const toggleActionsCollapse = () => {
+    setIsActionsCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('receipthub_actions_box_collapsed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   // Auto-remplissage du téléphone quand l'enseignant est choisi
   const handleTeacherInput = (nameVal: string) => {
@@ -762,25 +783,80 @@ export default function SessionsPage() {
           <section id="p-seances">
             {/* Actions requises (si des documents manquent) */}
             {requiredActionSessions.length > 0 && (
-              <div className="card act-box">
-                <div className="act-head">
-                  <h2>
-                    <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-                      <path d="M12 4 2.5 20h19zM12 10v4M12 17h.01"/>
-                    </svg>
-                    Actions requises ({requiredActionSessions.length})
-                  </h2>
+              <div 
+                className={`card act-box ${isActionsCollapsed ? 'is-collapsed' : ''}`}
+                style={isActionsCollapsed ? { padding: '12px 20px', transition: 'all 0.25s ease' } : { transition: 'all 0.25s ease' }}
+              >
+                <div className="act-head" style={isActionsCollapsed ? { marginBottom: 0 } : undefined}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <h2 
+                      onClick={toggleActionsCollapse}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                      title={isActionsCollapsed ? "Cliquez pour déplier le bloc" : "Cliquez pour empiler / réduire le bloc"}
+                    >
+                      <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                        <path d="M12 4 2.5 20h19zM12 10v4M12 17h.01"/>
+                      </svg>
+                      Actions requises ({requiredActionSessions.length})
+                    </h2>
+                    {isActionsCollapsed && (
+                      <span style={{ fontSize: '12px', color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 15%, transparent)', padding: '2px 9px', borderRadius: '6px', fontWeight: 600 }}>
+                        Bloc empilé · {requiredActionSessions.length} séance{requiredActionSessions.length > 1 ? 's' : ''} en attente
+                      </span>
+                    )}
+                  </div>
+
                   <div className="act-actions">
-                    {requiredActionSessions.length > 6 && (
+                    {/* Bouton Empiler / Réduire (Inverse de Déplier) */}
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{ 
+                        border: '1px solid color-mix(in srgb, var(--warn) 40%, var(--line))', 
+                        background: isActionsCollapsed ? 'color-mix(in srgb, var(--warn) 14%, var(--card))' : 'var(--card)', 
+                        color: 'var(--ink)', 
+                        fontSize: '13px', 
+                        fontWeight: 600, 
+                        padding: '5px 12px', 
+                        borderRadius: '8px', 
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                      onClick={toggleActionsCollapse}
+                      title={isActionsCollapsed ? "Déplier et afficher les cartes des séances" : "Réduire la taille de ce bloc (Empiler / Replier les cartes)"}
+                    >
+                      {isActionsCollapsed ? (
+                        <>
+                          <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                            <path d="M6 9l6 6 6-6"/>
+                          </svg>
+                          Déplier ({requiredActionSessions.length})
+                        </>
+                      ) : (
+                        <>
+                          <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                            <path d="M18 15l-6-6-6 6"/>
+                          </svg>
+                          Empiler / Réduire
+                        </>
+                      )}
+                    </button>
+
+                    {/* Si le bloc est déplié et qu'il y a plus de 6 séances : Déplier tout / Afficher moins */}
+                    {!isActionsCollapsed && requiredActionSessions.length > 6 && (
                       <button 
                         type="button" 
                         className="btn" 
                         style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink)', fontSize: '13px', fontWeight: 600, padding: '5px 12px', borderRadius: '8px', cursor: 'pointer' }}
                         onClick={() => setShowAllActions(!showAllActions)}
+                        title={showAllActions ? "Afficher les 6 premières séances" : `Afficher l'intégralité des ${requiredActionSessions.length} séances`}
                       >
                         {showAllActions ? 'Afficher moins' : `Déplier tout (${requiredActionSessions.length})`}
                       </button>
                     )}
+
                     <button 
                       type="button" 
                       className="btn pri" 
@@ -800,7 +876,9 @@ export default function SessionsPage() {
                     </button>
                   </div>
                 </div>
-                <div className="ag">
+
+                {!isActionsCollapsed && (
+                  <div className="ag">
                   {(showAllActions ? requiredActionSessions : requiredActionSessions.slice(0, 6)).map(s => {
                     const missing = [!s.pdf && 'PDF', !s.rec && 'Enregistrement'].filter(Boolean);
                     const tColor = hue(s.teacherName || s.subject);
@@ -871,7 +949,8 @@ export default function SessionsPage() {
                       </div>
                     );
                   })}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1071,6 +1150,18 @@ export default function SessionsPage() {
                         onChange={handleToggleSelectAll}
                         aria-label="Sélectionner toutes les séances visibles"
                       />
+                      <span className={`chk-box ${isAllFilteredSelected ? 'is-checked' : isSomeFilteredSelected ? 'is-indeterminate' : ''}`}>
+                        {isAllFilteredSelected && (
+                          <svg viewBox="0 0 24 24" className="chk-tick">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                        {isSomeFilteredSelected && !isAllFilteredSelected && (
+                          <svg viewBox="0 0 24 24" className="chk-tick">
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                        )}
+                      </span>
                       <span>Tout sélectionner ({filteredSessions.length})</span>
                     </label>
                     {selectedSessionIds.length > 0 && (
@@ -1128,9 +1219,9 @@ export default function SessionsPage() {
                         >
                           <div className="sh">
                             <label 
-                              className="card-select-chk" 
+                              className={`card-select-chk ${isSelected ? 'is-checked' : ''}`} 
                               onClick={(e) => e.stopPropagation()} 
-                              title="Sélectionner pour suppression groupée"
+                              title={isSelected ? "Désélectionner cette séance" : "Sélectionner cette séance"}
                             >
                               <input 
                                 type="checkbox" 
@@ -1138,6 +1229,13 @@ export default function SessionsPage() {
                                 onChange={() => handleToggleSelectSession(s._id)}
                                 aria-label={`Sélectionner la séance ${s.subject}`}
                               />
+                              <span className="chk-box">
+                                {isSelected && (
+                                  <svg viewBox="0 0 24 24" className="chk-tick">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                )}
+                              </span>
                             </label>
                             <h3>
                               {s.subject} <small style={{ fontWeight: 400, color: 'var(--ink3)', fontSize: '14px' }}>· {s.title}</small>

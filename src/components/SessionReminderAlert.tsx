@@ -53,17 +53,28 @@ export function SessionReminderAlert() {
       for (const s of sessions) {
         if (s.done) continue;
         if (!s.startDate || !s.startTime) continue;
+        // Si l'enseignant ET le groupe d'élèves ont déjà été rappelés, pas de popup intrusif
+        if (s.remTeacher && s.remGroup) continue;
 
-        // Calcul du delta temps en minutes
-        const [hours, minutes] = s.startTime.split(':').map(Number);
-        const sessionDate = new Date(`${s.startDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
+        // Découpage strict et parsing local pour éviter tout décalage horaire ou UTC
+        const datePart = (s.startDate || '').split('T')[0];
+        const [y, m, d] = datePart.split('-').map(Number);
+        if (!y || !m || !d) continue;
+
+        const timeParts = (s.startTime || '').replace('h', ':').split(':');
+        const hours = parseInt(timeParts[0], 10);
+        const minutes = parseInt(timeParts[1] || '0', 10);
+        if (isNaN(hours) || isNaN(minutes)) continue;
+
+        const sessionDate = new Date(y, m - 1, d, hours, minutes, 0);
+        if (isNaN(sessionDate.getTime())) continue;
         
         // Différence en minutes
         const diffMs = sessionDate.getTime() - now.getTime();
         const diffMinutes = Math.round(diffMs / 60000);
 
-        // Alerte si la séance démarre dans 60 min ou moins (et jusqu'à 30 min après le début)
-        if (diffMinutes <= 60 && diffMinutes >= -30) {
+        // Alerte STRICTEMENT 1 heure avant le début de séance (entre 60 min avant et le début de séance)
+        if (diffMinutes <= 60 && diffMinutes >= 0) {
           const dismissKey = `elios.dismissed_alert_${s._id}_${s.startDate}`;
           const dismissedUntil = sessionStorage.getItem(dismissKey);
 
@@ -88,11 +99,15 @@ export function SessionReminderAlert() {
 
   if (!activeAlertSession) return null;
 
-  // Calcul du compte à rebours pour la séance active
+  // Calcul du compte à rebours précis pour la séance active
   const now = new Date();
-  const [hours, minutes] = activeAlertSession.startTime.split(':').map(Number);
-  const sessionDate = new Date(`${activeAlertSession.startDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
-  const diffMinutes = Math.round((sessionDate.getTime() - now.getTime()) / 60000);
+  const datePart = (activeAlertSession.startDate || '').split('T')[0];
+  const [y, m, d] = datePart.split('-').map(Number);
+  const timeParts = (activeAlertSession.startTime || '').replace('h', ':').split(':');
+  const hours = parseInt(timeParts[0], 10);
+  const minutes = parseInt(timeParts[1] || '0', 10);
+  const sessionDate = new Date(y, m - 1, d, hours, minutes, 0);
+  const diffMinutes = Math.max(0, Math.round((sessionDate.getTime() - now.getTime()) / 60000));
 
   const isTeacherReminded = remindedTeacher[activeAlertSession._id] || activeAlertSession.remTeacher;
   const isGroupReminded = remindedGroup[activeAlertSession._id] || activeAlertSession.remGroup;
@@ -293,25 +308,26 @@ export function SessionReminderAlert() {
 
           {activeAlertSession.zoomJoinUrl && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid var(--line)' }}>
-              <span style={{ color: 'var(--ink2)' }}>🔗 Réunion Zoom :</span>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <a 
-                  href={activeAlertSession.zoomJoinUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="link"
-                  style={{ fontSize: '13px', fontWeight: 600, color: 'var(--acc)' }}
-                >
-                  Ouvrir le direct
-                </a>
-                <button 
-                  type="button" 
-                  onClick={handleCopyZoom} 
-                  style={{ border: '1px solid var(--line)', background: 'var(--card)', borderRadius: '6px', padding: '2px 6px', fontSize: '11px', cursor: 'pointer' }}
-                >
-                  {isCopiedZoom ? 'Copié !' : 'Copier'}
-                </button>
-              </div>
+              <span style={{ color: 'var(--ink2)' }}>🔗 Lien Zoom :</span>
+              <button 
+                type="button" 
+                onClick={handleCopyZoom} 
+                style={{ 
+                  border: '1px solid var(--line)', 
+                  background: 'var(--card)', 
+                  borderRadius: '6px', 
+                  padding: '3px 8px', 
+                  fontSize: '11.5px', 
+                  fontWeight: 600, 
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="Copier le lien de la réunion Zoom dans le presse-papier"
+              >
+                {isCopiedZoom ? '✓ Copié !' : '📋 Copier le lien'}
+              </button>
             </div>
           )}
         </div>
