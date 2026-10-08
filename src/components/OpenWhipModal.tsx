@@ -17,9 +17,7 @@ interface OpenWhipModalProps {
 const PRESET_MESSAGES = [
   { icon: '🎯', text: 'Chway blabla, barchaa résultat' },
   { icon: '💸', text: 'Chrayek ntaftfou chwaya mn chahriytek' },
-  { icon: '😴', text: 'Ekhdem yaa wejh dodo' },
   { icon: '🚨', text: 'Amine bch yjik' },
-  { icon: '👀', text: 'Soumaya toghzorlk' },
 ];
 
 export function OpenWhipModal({
@@ -338,7 +336,7 @@ export function OpenWhipModal({
               </label>
               <input
                 type="text"
-                placeholder="Ex: ekhdem yaa wejh dodo"
+                placeholder="Ex: Amine bch yjik"
                 value={customMessage}
                 maxLength={150}
                 onChange={(e) => setCustomMessage(e.target.value)}
