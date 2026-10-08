@@ -114,6 +114,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
         date: now,
         updatedAt: now,
         lastModifiedBy: body.staff || 'Système',
+        modifiers: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné') ? [body.staff] : [],
         notes: [
           ...(body.notes || []),
           {
@@ -166,6 +167,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       date: now,
       updatedAt: now,
       lastModifiedBy: body.staff || 'Système',
+      modifiers: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné') ? [body.staff] : [],
       notes: body.notes || []
     });
 

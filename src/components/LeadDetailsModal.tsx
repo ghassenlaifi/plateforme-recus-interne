@@ -53,8 +53,13 @@ export function LeadDetailsModal({ isOpen, onClose, lead, theme }: LeadDetailsMo
           <div className="w-full space-y-6">
             <div>
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Status</div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-gray-200 text-xs font-bold text-gray-700 shadow-sm">
-                <span className={`w-1.5 h-1.5 rounded-full ${lead.status === 'Approved' ? 'bg-emerald-500' : lead.status === 'Rejected' ? 'bg-rose-500' : 'bg-gray-400'}`}></span>
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold shadow-sm ${
+                lead.status === 'Lead' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                lead.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                lead.status === 'Rejected' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                'bg-white border-gray-200 text-gray-700'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${lead.status === 'Lead' ? 'bg-sky-500' : lead.status === 'Approved' ? 'bg-emerald-500' : lead.status === 'Rejected' ? 'bg-rose-500' : 'bg-gray-400'}`}></span>
                 {lead.status || 'N/A'}
               </div>
             </div>

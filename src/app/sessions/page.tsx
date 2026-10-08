@@ -310,9 +310,17 @@ export default function SessionsPage() {
       if (session[key] === nextVal) return;
 
       // Mise à jour optimiste immédiate dans l'UI
+      const updatedSessions = sessions.map(s => s._id === session._id ? { ...s, [key]: nextVal } : s);
+      const optCompleted = updatedSessions.filter(s => s.done).length;
+      const optMissing = updatedSessions.filter(s => s.done && (!s.pdf || !s.rec)).length;
       mutateSessions({
         ...sessionData!,
-        sessions: sessions.map(s => s._id === session._id ? { ...s, [key]: nextVal } : s)
+        sessions: updatedSessions,
+        stats: {
+          ...sessionData!.stats,
+          completedSessions: optCompleted,
+          missingDocs: optMissing,
+        }
       }, false);
 
       await fetch(`/api/sessions/${session._id}`, {
@@ -460,9 +468,9 @@ export default function SessionsPage() {
       if (filterSection && s.section !== filterSection) return false;
 
       // Chips
-      if (filterChip === 'act') return !s.pdf || !s.rec;
-      if (filterChip === 'pdf') return !s.pdf;
-      if (filterChip === 'rec') return !s.rec;
+      if (filterChip === 'act') return s.done && (!s.pdf || !s.rec);
+      if (filterChip === 'pdf') return s.done && !s.pdf;
+      if (filterChip === 'rec') return s.done && !s.rec;
       if (filterChip === 'day') return s.startDate === today;
       if (filterChip === 'nr') return !s.remTeacher;
       if (filterChip === 'done') return s.done;
@@ -494,10 +502,10 @@ export default function SessionsPage() {
     });
   }, [sessions, q, filterLevel, filterSection, filterChip]);
 
-  // Actions requises (manque PDF ou enregistrement)
+  // Actions requises (uniquement si la séance est marquée terminée et qu'il manque PDF ou enregistrement)
   const requiredActionSessions = useMemo(() => {
     const today = ymd(new Date());
-    return sessions.filter(s => !s.pdf || !s.rec).sort((a, b) => {
+    return sessions.filter(s => s.done && (!s.pdf || !s.rec)).sort((a, b) => {
       const prioA = a.startDate === today ? 0 : a.startDate > today ? 1 : 2;
       const prioB = b.startDate === today ? 0 : b.startDate > today ? 1 : 2;
       if (prioA !== prioB) return prioA - prioB;
@@ -1207,8 +1215,8 @@ export default function SessionsPage() {
                     </div>
                   ) : (
                     filteredSessions.map((s, i) => {
-                      const isNeeded = !s.pdf || !s.rec;
-                      const missing = [!s.pdf && 'PDF', !s.rec && 'Enregistrement'].filter(Boolean);
+                      const isNeeded = s.done && (!s.pdf || !s.rec);
+                      const missing = s.done ? [!s.pdf && 'PDF', !s.rec && 'Enregistrement'].filter(Boolean) : [];
                       const isSelected = selectedSessionIds.includes(s._id);
                       const isToday = s.startDate === ymd(new Date());
                       return (
@@ -1407,8 +1415,8 @@ export default function SessionsPage() {
                             </button>
                           </div>
 
-                          {/* Demandes documents manquants */}
-                          {(!s.pdf || !s.rec) && (
+                          {/* Demandes documents manquants (uniquement si séance terminée) */}
+                          {s.done && (!s.pdf || !s.rec) && (
                             <div className="rq">
                               {!s.pdf && (
                                 <button 
@@ -1931,8 +1939,17 @@ export default function SessionsPage() {
                             )}
                           </div>
                           <div className="pl" style={{ marginTop: '6px', marginBottom: 0, gap: '6px' }}>
-                            <span className={`dbg ${s.pdf ? 'ok' : 'no'}`}>PDF {s.pdf ? '✓' : 'manquant'}</span>
-                            <span className={`dbg ${s.rec ? 'ok' : 'no'}`}>Enreg. {s.rec ? '✓' : 'manquant'}</span>
+                            {s.done ? (
+                              <>
+                                <span className={`dbg ${s.pdf ? 'ok' : 'no'}`}>PDF {s.pdf ? '✓' : 'manquant'}</span>
+                                <span className={`dbg ${s.rec ? 'ok' : 'no'}`}>Enreg. {s.rec ? '✓' : 'manquant'}</span>
+                              </>
+                            ) : (
+                              <>
+                                {s.pdf && <span className="dbg ok">PDF ✓</span>}
+                                {s.rec && <span className="dbg ok">Enreg. ✓</span>}
+                              </>
+                            )}
                             <span className={`st ${evState}`}>{evLabel}</span>
                           </div>
                         </div>
@@ -2342,7 +2359,7 @@ export default function SessionsPage() {
         const teacherSessions = sessions
           .filter(s => (s.teacherName || '').toLowerCase() === t.name.toLowerCase())
           .sort((a, b) => `${b.startDate}T${b.startTime}`.localeCompare(`${a.startDate}T${a.startTime}`));
-        const missingSessions = teacherSessions.filter(s => !s.pdf || !s.rec);
+        const missingSessions = teacherSessions.filter(s => s.done && (!s.pdf || !s.rec));
         const docsCount = missingSessions.reduce((acc, s) => acc + (!s.pdf ? 1 : 0) + (!s.rec ? 1 : 0), 0);
 
         return (
@@ -2436,8 +2453,17 @@ export default function SessionsPage() {
                             <small style={{ display: 'block', color: 'var(--ink2)' }}>{s.level} · {s.section}</small>
                           </div>
                           <div className="pl" style={{ margin: 0, justifyContent: 'flex-end' }}>
-                            <span className={`dbg ${s.pdf ? 'ok' : 'no'}`}>PDF</span>
-                            <span className={`dbg ${s.rec ? 'ok' : 'no'}`}>Enreg.</span>
+                            {s.done ? (
+                              <>
+                                <span className={`dbg ${s.pdf ? 'ok' : 'no'}`}>PDF</span>
+                                <span className={`dbg ${s.rec ? 'ok' : 'no'}`}>Enreg.</span>
+                              </>
+                            ) : (
+                              <>
+                                {s.pdf && <span className="dbg ok">PDF</span>}
+                                {s.rec && <span className="dbg ok">Enreg.</span>}
+                              </>
+                            )}
                             <span className={`st ${evState}`}>{evLabel}</span>
                           </div>
                         </div>

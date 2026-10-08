@@ -13,6 +13,12 @@ interface WalletData {
   details: string;
   totalAmount: number;
   count: number;
+  currentTotalAmount?: number;
+  currentCount?: number;
+  dayAmount?: number;
+  dayOut?: number;
+  dayCount?: number;
+  selectedDate?: string | null;
 }
 
 interface ReceiptItem {
@@ -86,7 +92,7 @@ function getWalletGrads(mode: string, details: string): { g1: string; g2: string
   return { g1: '#374151', g2: '#111827' };
 }
 
-const formatDT = (n: number) =>
+const formatDT = (n: number | undefined | null) =>
   (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const fdt = (iso: string | Date | undefined) => {
@@ -100,6 +106,38 @@ const fdt = (iso: string | Date | undefined) => {
   );
 };
 
+const formatFrenchDate = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [year, month, day] = parts;
+  const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const mIndex = parseInt(month, 10) - 1;
+  return `${parseInt(day, 10)} ${months[mIndex] || month} ${year}`;
+};
+
+const formatShortFrenchDate = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [year, month, day] = parts;
+  const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const mIndex = parseInt(month, 10) - 1;
+  return `${parseInt(day, 10)} ${months[mIndex] || month}`;
+};
+
+const getTodayIso = (): string => {
+  const now = new Date();
+  const tunis = new Date(now.getTime() + 60 * 60 * 1000);
+  return tunis.toISOString().slice(0, 10);
+};
+
+const getYesterdayIso = (): string => {
+  const now = new Date();
+  const tunis = new Date(now.getTime() + 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  return tunis.toISOString().slice(0, 10);
+};
+
 export default function PortefeuillesPage() {
   const { toast } = useToast();
   const [activeUser, setActiveUser] = useState<string | null>(null);
@@ -111,8 +149,12 @@ export default function PortefeuillesPage() {
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
   const authPinRef = useRef<HTMLInputElement | null>(null);
 
-  // Data fetching
-  const { data: wallets, isLoading, error, mutate } = useSWR<WalletData[]>('/api/portefeuilles', fetcher);
+  // Filtre temporel (Date Filter)
+  const [selectedDate, setSelectedDate] = useState<string>('');
+
+  // Data fetching (réactif au filtre de date)
+  const walletApiUrl = selectedDate ? `/api/portefeuilles?date=${selectedDate}` : '/api/portefeuilles';
+  const { data: wallets, isLoading, error, mutate } = useSWR<WalletData[]>(walletApiUrl, fetcher);
   const { data: allReceipts } = useSWR<ReceiptItem[]>('/api/receipts?status=all', fetcher);
 
   // Active Category Filter Tab
@@ -129,9 +171,16 @@ export default function PortefeuillesPage() {
   // Extrait Modal
   const [extraitWallet, setExtraitWallet] = useState<WalletData | null>(null);
   const [extraitReceipts, setExtraitReceipts] = useState<ReceiptItem[]>([]);
+  const [extraitFilter, setExtraitFilter] = useState<'all' | 'upTo' | 'dayOnly'>('all');
   const [isLoadingExtrait, setIsLoadingExtrait] = useState(false);
   const [isDownloadingExtrait, setIsDownloadingExtrait] = useState(false);
   const exportTicketRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset temporal filter handler
+  const handleResetDateFilter = () => {
+    setSelectedDate('');
+    toast({ message: 'Filtre temporel réinitialisé (Vue globale)', tone: 'ok' });
+  };
 
   // Reset Modal
   const [resetWallet, setResetWallet] = useState<WalletData | null>(null);
@@ -244,10 +293,25 @@ export default function PortefeuillesPage() {
     return wallets.filter(w => w.mode === tab);
   }, [wallets, tab]);
 
-  // Overall statistics
+  // Overall statistics (synchronisées avec le filtre temporel)
   const totalBalance = useMemo(() => {
     if (!wallets) return 0;
     return wallets.reduce((acc, w) => acc + (w.totalAmount || 0), 0);
+  }, [wallets]);
+
+  const allTimeTotalBalance = useMemo(() => {
+    if (!wallets) return 0;
+    return wallets.reduce((acc, w) => acc + (w.currentTotalAmount ?? w.totalAmount ?? 0), 0);
+  }, [wallets]);
+
+  const totalDayCashIn = useMemo(() => {
+    if (!wallets) return 0;
+    return wallets.reduce((acc, w) => acc + (w.dayAmount || 0), 0);
+  }, [wallets]);
+
+  const totalDayMovements = useMemo(() => {
+    if (!wallets) return 0;
+    return wallets.reduce((acc, w) => acc + (w.dayCount || 0), 0);
   }, [wallets]);
 
   const activeWalletsCount = useMemo(() => {
@@ -256,12 +320,12 @@ export default function PortefeuillesPage() {
 
   const todayMovementsCount = useMemo(() => {
     if (!allReceipts) return 0;
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const targetDate = selectedDate || getTodayIso();
     return allReceipts.filter(r => {
       const d = (r.paymentDate || r.createdAt || '').slice(0, 10);
-      return d === todayStr;
+      return d === targetDate;
     }).length;
-  }, [allReceipts]);
+  }, [allReceipts, selectedDate]);
 
   // 3D Card tilt handlers
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -368,6 +432,7 @@ export default function PortefeuillesPage() {
   // Open Extrait modal
   const openExtrait = async (w: WalletData) => {
     setExtraitWallet(w);
+    setExtraitFilter('all');
     setIsLoadingExtrait(true);
     try {
       const url = new URL('/api/receipts', window.location.origin);
@@ -390,20 +455,34 @@ export default function PortefeuillesPage() {
   const closeExtrait = () => {
     setExtraitWallet(null);
     setExtraitReceipts([]);
+    setExtraitFilter('all');
   };
 
-  // Computed running balance and summary for Extrait
+  // Computed running balance and summary for Extrait (sensible au filtre temporel)
   const { statementRows, totalIn, totalOut } = useMemo(() => {
     if (!extraitReceipts || extraitReceipts.length === 0) {
       return { statementRows: [], totalIn: 0, totalOut: 0 };
     }
 
-    const tIn = extraitReceipts.filter(r => (r.amount || 0) > 0).reduce((acc, r) => acc + r.amount, 0);
-    const tOut = extraitReceipts.filter(r => (r.amount || 0) < 0).reduce((acc, r) => acc + Math.abs(r.amount), 0);
+    let filtered = extraitReceipts;
+    if (selectedDate && extraitFilter === 'upTo') {
+      filtered = extraitReceipts.filter(r => {
+        const d = (r.paymentDate || r.createdAt || '').slice(0, 10);
+        return d <= selectedDate;
+      });
+    } else if (selectedDate && extraitFilter === 'dayOnly') {
+      filtered = extraitReceipts.filter(r => {
+        const d = (r.paymentDate || r.createdAt || '').slice(0, 10);
+        return d === selectedDate;
+      });
+    }
+
+    const tIn = filtered.filter(r => (r.amount || 0) > 0).reduce((acc, r) => acc + r.amount, 0);
+    const tOut = filtered.filter(r => (r.amount || 0) < 0).reduce((acc, r) => acc + Math.abs(r.amount), 0);
 
     // Sort chronologically ascending to calculate running balance accurately
     let run = 0;
-    const chronological = [...extraitReceipts].sort((a, b) => {
+    const chronological = [...filtered].sort((a, b) => {
       const timeA = new Date(a.paymentDate || a.createdAt).getTime();
       const timeB = new Date(b.paymentDate || b.createdAt).getTime();
       return timeA - timeB;
@@ -423,7 +502,7 @@ export default function PortefeuillesPage() {
       totalIn: tIn,
       totalOut: tOut,
     };
-  }, [extraitReceipts]);
+  }, [extraitReceipts, selectedDate, extraitFilter]);
 
   // Handler for downloading high-resolution Extrait/Reçu image
   const handleDownloadExtraitImage = async () => {
@@ -517,8 +596,8 @@ export default function PortefeuillesPage() {
 
       const safeMode = (extraitWallet.mode || 'Mode').replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeDetails = (extraitWallet.details || 'Portefeuille').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const today = new Date().toISOString().slice(0, 10);
-      const fileName = `Extrait_${safeMode}_${safeDetails}_${today}.png`;
+      const fileDate = selectedDate || new Date().toISOString().slice(0, 10);
+      const fileName = `Extrait_${safeMode}_${safeDetails}_${fileDate}.png`;
 
       const link = document.createElement('a');
       link.download = fileName;
@@ -684,30 +763,260 @@ export default function PortefeuillesPage() {
             </button>
           </div>
 
+          {/* =========================================================================
+              BARRE DE FILTRE TEMPOREL (Date Picker + Raccourcis + Bouton Reset)
+              ========================================================================= */}
+          <div
+            className="temporal-filter-bar"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '14px',
+              flexWrap: 'wrap',
+              background: 'var(--card)',
+              border: '1px solid var(--line)',
+              borderRadius: '16px',
+              padding: '12px 18px',
+              marginTop: '18px',
+              boxShadow: 'var(--shadow)',
+            }}
+          >
+            {/* Gauche: Titre et état */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '220px' }}>
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: '10px',
+                  background: selectedDate
+                    ? 'linear-gradient(135deg, var(--pri), #1E293B)'
+                    : 'var(--fin-s)',
+                  color: selectedDate ? '#ffffff' : 'var(--fin)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                  boxShadow: selectedDate ? '0 4px 10px rgba(0,0,0,0.15)' : 'none',
+                }}
+              >
+                <svg className="i" style={{ width: 18, height: 18 }} viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </div>
+              <div>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--ink)', display: 'block', letterSpacing: '-0.2px' }}>
+                  Filtre temporel
+                </span>
+                <small style={{ fontSize: '12px', color: selectedDate ? 'var(--fin)' : 'var(--ink2)', fontWeight: 600, display: 'block' }}>
+                  {selectedDate ? (
+                    <>
+                      Arrêté au <b>{formatFrenchDate(selectedDate)}</b>
+                    </>
+                  ) : (
+                    'Vue globale (temps réel)'
+                  )}
+                </small>
+              </div>
+            </div>
+
+            {/* Centre: Sélecteur de date & Raccourcis */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                max={getTodayIso()}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--hover)',
+                  color: 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--mono)',
+                }}
+                title="Choisir une date pour arrêter les soldes et encaissements"
+              />
+
+              <div style={{ display: 'inline-flex', background: 'var(--hover)', borderRadius: '9px', padding: '2px', gap: '2px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(getTodayIso())}
+                  style={{
+                    border: 'none',
+                    background: selectedDate === getTodayIso() ? 'var(--card)' : 'transparent',
+                    color: selectedDate === getTodayIso() ? 'var(--ink)' : 'var(--ink2)',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    padding: '5px 10px',
+                    borderRadius: '7px',
+                    cursor: 'pointer',
+                    boxShadow: selectedDate === getTodayIso() ? 'var(--shadow)' : 'none',
+                  }}
+                >
+                  Aujourd'hui
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(getYesterdayIso())}
+                  style={{
+                    border: 'none',
+                    background: selectedDate === getYesterdayIso() ? 'var(--card)' : 'transparent',
+                    color: selectedDate === getYesterdayIso() ? 'var(--ink)' : 'var(--ink2)',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    padding: '5px 10px',
+                    borderRadius: '7px',
+                    cursor: 'pointer',
+                    boxShadow: selectedDate === getYesterdayIso() ? 'var(--shadow)' : 'none',
+                  }}
+                >
+                  Hier
+                </button>
+              </div>
+            </div>
+
+            {/* Droite: Bouton Reset */}
+            <div>
+              {selectedDate ? (
+                <button
+                  type="button"
+                  onClick={handleResetDateFilter}
+                  className="btn"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 14px',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    background: 'color-mix(in srgb, var(--bad) 10%, transparent)',
+                    borderColor: 'color-mix(in srgb, var(--bad) 30%, transparent)',
+                    color: 'var(--bad)',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                  }}
+                  title="Effacer le filtre temporel et revenir au solde global"
+                >
+                  <svg className="i" style={{ width: 14, height: 14 }} viewBox="0 0 24 24">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  Réinitialiser le filtre
+                </button>
+              ) : (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    color: 'var(--ink3)',
+                    fontWeight: 500,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: 'var(--fin)',
+                      boxShadow: '0 0 0 3px var(--fin-s)',
+                    }}
+                  />
+                  Toutes les dates
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Bandeau d'information quand le filtre est actif */}
+          {selectedDate && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'color-mix(in srgb, var(--fin) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--fin) 35%, transparent)',
+                borderRadius: '12px',
+                padding: '10px 16px',
+                marginTop: '12px',
+                fontSize: '13px',
+                color: 'var(--ink)',
+                gap: '12px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '15px' }}>📅</span>
+                <span>
+                  Affichage arrêté au <b>{formatFrenchDate(selectedDate)}</b>. Chaque carte affiche le <b>solde encaissé ce jour</b> ainsi que sa <b>balance totale à ce jour</b>.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetDateFilter}
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  color: 'var(--fin)',
+                  fontWeight: 700,
+                  fontSize: '12.5px',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                Réinitialiser le filtre
+              </button>
+            </div>
+          )}
+
           {/* Stats Summary */}
           <section className="stats stats-enc" aria-label="Résumé">
             <div className="stat">
               <small>
                 <i style={{ background: 'var(--fin)' }}></i>
-                Solde total
+                {selectedDate ? `Solde au ${formatShortFrenchDate(selectedDate)}` : 'Solde total'}
               </small>
               <b>
                 {formatDT(totalBalance)} <u>DT</u>
               </b>
+              {selectedDate && (
+                <span style={{ fontSize: '11.5px', color: 'var(--ink3)', marginTop: '3px', display: 'block' }}>
+                  Solde actuel global : {formatDT(allTimeTotalBalance)} DT
+                </span>
+              )}
             </div>
             <div className="stat">
               <small>
                 <i style={{ background: 'var(--fin)' }}></i>
-                Portefeuilles actifs
+                {selectedDate ? `Encaissé le ${formatShortFrenchDate(selectedDate)}` : "Encaissé aujourd'hui"}
               </small>
-              <b>{activeWalletsCount}</b>
+              <b style={{ color: totalDayCashIn > 0 ? 'var(--fin)' : undefined }}>
+                {totalDayCashIn > 0 ? '+' : ''}{formatDT(totalDayCashIn)} <u>DT</u>
+              </b>
+              <span style={{ fontSize: '11.5px', color: 'var(--ink3)', marginTop: '3px', display: 'block' }}>
+                {totalDayMovements} encaissement{totalDayMovements > 1 ? 's' : ''}
+              </span>
             </div>
             <div className="stat">
               <small>
                 <i style={{ background: 'var(--fin)' }}></i>
-                Mouvements du jour
+                {selectedDate ? `Mouvements du ${formatShortFrenchDate(selectedDate)}` : 'Mouvements du jour'}
               </small>
-              <b>{todayMovementsCount}</b>
+              <b>{selectedDate ? totalDayMovements : todayMovementsCount}</b>
+              <span style={{ fontSize: '11.5px', color: 'var(--ink3)', marginTop: '3px', display: 'block' }}>
+                {activeWalletsCount} portefeuilles actifs
+              </span>
             </div>
           </section>
 
@@ -777,7 +1086,9 @@ export default function PortefeuillesPage() {
                         <span className="chip" />
                         <div className="bal">
                           <small>
-                            SOLDE COURANT{' '}
+                            {selectedDate
+                              ? `BALANCE AU ${formatShortFrenchDate(selectedDate).toUpperCase()}`
+                              : 'SOLDE COURANT'}{' '}
                             <svg viewBox="0 0 24 24">
                               <path d="M8 8a6 6 0 0 1 0 8M12 5a10 10 0 0 1 0 14M16 3a14 14 0 0 1 0 18"/>
                             </svg>
@@ -788,8 +1099,48 @@ export default function PortefeuillesPage() {
                           </b>
                         </div>
                       </div>
+
+                      {/* Pillule financière : Solde encaissé le jour mentionné */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: 'rgba(255, 255, 255, 0.14)',
+                          backdropFilter: 'blur(10px)',
+                          border: '1px solid rgba(255, 255, 255, 0.22)',
+                          borderRadius: '10px',
+                          padding: '7px 12px',
+                          margin: '4px 0 10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <svg style={{ width: 13, height: 13, stroke: 'currentColor', fill: 'none', strokeWidth: 2 }} viewBox="0 0 24 24">
+                            <path d="M12 5v14M19 12l-7 7-7-7"/>
+                          </svg>
+                          <span style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', opacity: 0.9 }}>
+                            {selectedDate ? `Encaissé le ${formatShortFrenchDate(selectedDate)}` : `Encaissé ce jour`}
+                          </span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <b style={{ fontSize: '14px', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: (w.dayAmount || 0) > 0 ? '#8DF5B8' : '#FFFFFF' }}>
+                            {(w.dayAmount || 0) > 0 ? `+${formatDT(w.dayAmount || 0)}` : `${formatDT(0)}`}
+                            <i style={{ fontStyle: 'normal', fontSize: '10.5px', marginLeft: '3px', fontWeight: 600 }}>DT</i>
+                          </b>
+                          {(w.dayOut || 0) > 0 && (
+                            <span style={{ display: 'block', fontSize: '10px', color: '#FECACA', fontWeight: 600 }}>
+                              −{formatDT(w.dayOut || 0)} sortie
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="bot">
-                        <span className="stt">STATUT: ACTIF</span>
+                        <span className="stt">
+                          {selectedDate
+                            ? `ARRÊTÉ AU ${formatShortFrenchDate(selectedDate).toUpperCase()}`
+                            : 'STATUT: ACTIF'}
+                        </span>
                         <span className="wm">ELIOS</span>
                       </div>
                     </div>
@@ -1066,7 +1417,9 @@ export default function PortefeuillesPage() {
                     Extrait du portefeuille
                   </h2>
                   <small style={{ display: 'block', color: 'var(--ink2)', fontSize: '13px', marginTop: '2px' }}>
-                    {extraitWallet.mode} - {extraitWallet.details} · solde {formatDT(extraitWallet.totalAmount)} DT
+                    {selectedDate
+                      ? `${extraitWallet.mode} - ${extraitWallet.details} · balance arrêtée au ${formatShortFrenchDate(selectedDate)} : ${formatDT(extraitWallet.totalAmount)} DT`
+                      : `${extraitWallet.mode} - ${extraitWallet.details} · solde ${formatDT(extraitWallet.currentTotalAmount ?? extraitWallet.totalAmount)} DT`}
                   </small>
                 </div>
               </div>
@@ -1081,6 +1434,90 @@ export default function PortefeuillesPage() {
             </div>
 
             <div className="db">
+              {/* Option de filtrage par date dans l'extrait si un filtre est actif sur la page */}
+              {selectedDate && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 14px',
+                    background: 'var(--hover)',
+                    borderRadius: '11px',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ink)' }}>
+                      Filtre d'extrait :
+                    </span>
+                    <small style={{ fontSize: '11.5px', color: 'var(--ink2)' }}>
+                      Arrêté au {formatFrenchDate(selectedDate)}
+                    </small>
+                  </div>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      background: 'var(--card)',
+                      borderRadius: '8px',
+                      padding: '2px',
+                      border: '1px solid var(--line)',
+                      gap: '2px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setExtraitFilter('all')}
+                      style={{
+                        border: 'none',
+                        background: extraitFilter === 'all' ? 'var(--fin-s)' : 'transparent',
+                        color: extraitFilter === 'all' ? 'var(--fin)' : 'var(--ink2)',
+                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Tout ({extraitReceipts.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExtraitFilter('upTo')}
+                      style={{
+                        border: 'none',
+                        background: extraitFilter === 'upTo' ? 'var(--fin-s)' : 'transparent',
+                        color: extraitFilter === 'upTo' ? 'var(--fin)' : 'var(--ink2)',
+                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Jusqu'au {formatShortFrenchDate(selectedDate)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExtraitFilter('dayOnly')}
+                      style={{
+                        border: 'none',
+                        background: extraitFilter === 'dayOnly' ? 'var(--fin-s)' : 'transparent',
+                        color: extraitFilter === 'dayOnly' ? 'var(--fin)' : 'var(--ink2)',
+                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Le {formatShortFrenchDate(selectedDate)} uniquement
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="sum">
                 <div>
                   <small>Total encaissé</small>
@@ -1237,7 +1674,7 @@ export default function PortefeuillesPage() {
                   textTransform: 'uppercase',
                 }}
               >
-                Extrait de compte
+                {selectedDate ? `Extrait au ${formatShortFrenchDate(selectedDate)}` : 'Extrait de compte'}
               </span>
               <p style={{ margin: 0, fontSize: '12px', color: '#6B7280', textAlign: 'center' }}>
                 Émis le : <b>{fdt(new Date())}</b>
@@ -1268,10 +1705,10 @@ export default function PortefeuillesPage() {
             </div>
             <div style={{ textAlign: 'right' }}>
               <span style={{ fontSize: '10.5px', fontFamily: 'monospace', letterSpacing: '1.4px', opacity: 0.85, display: 'block' }}>
-                SOLDE COURANT
+                {selectedDate ? `BALANCE AU ${formatShortFrenchDate(selectedDate).toUpperCase()}` : 'SOLDE COURANT'}
               </span>
               <b style={{ fontSize: '28px', fontWeight: 800, letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
-                {formatDT(extraitWallet.totalAmount)} <span style={{ fontSize: '16px', fontWeight: 600 }}>DT</span>
+                {formatDT(selectedDate ? (extraitWallet.totalAmount) : (extraitWallet.currentTotalAmount ?? extraitWallet.totalAmount))} <span style={{ fontSize: '16px', fontWeight: 600 }}>DT</span>
               </b>
             </div>
           </div>

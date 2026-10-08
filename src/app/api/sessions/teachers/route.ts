@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         (s: any) => (s.teacherName || '').toLowerCase() === t.name.toLowerCase()
       );
       const sessionCount = teacherSessions.length;
-      const missingDocsCount = teacherSessions.filter((s: any) => !s.pdf || !s.rec).length;
+      const missingDocsCount = teacherSessions.filter((s: any) => s.done && (!s.pdf || !s.rec)).length;
 
       // Prochaine séance à venir
       const upcoming = teacherSessions

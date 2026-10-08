@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import useSWR from 'swr';
 import { EliosHeader } from '@/components/EliosHeader';
 import { useToast } from '@/components/Toast';
+import { OpenWhipModal } from '@/components/OpenWhipModal';
 import { Operator, getOperatorColors } from '@/types';
 import { TaskItem, TaskCategory, TaskPriority, TaskNote } from '@/types/task';
 
@@ -97,6 +98,22 @@ export default function TasksPage() {
   const [sheetTask, setSheetTask] = useState<TaskItem | null>(null);
   const [noteText, setNoteText] = useState('');
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+
+  // Modale OpenWhip
+  const [whipTask, setWhipTask] = useState<TaskItem | null>(null);
+
+  const handleOpenWhip = (task: TaskItem) => {
+    setWhipTask(task);
+  };
+
+  const handleWhipTriggered = (data: { triggeredBy: string; taskTitle: string; message: string }) => {
+    // Déclencher l'onde de choc et l'animation sonore localement pour le déclencheur
+    window.dispatchEvent(new CustomEvent('openwhip:trigger', { detail: data }));
+    toast({
+      message: `🤠💥 Fouet claqué sur « ${data.taskTitle} » !`,
+      tone: 'ok',
+    });
+  };
 
   // Opérateurs
   const { data: operatorsData } = useSWR<Operator[]>('/api/operators', fetcher);
@@ -737,6 +754,20 @@ export default function TasksPage() {
                       <span>Fiche</span>
                     </button>
 
+                    {/* Bouton OpenWhip (Claquer le fouet) */}
+                    <button
+                      type="button"
+                      className="task-btn-whip"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenWhip(task);
+                      }}
+                      title="Faire claquer le fouet sur l’équipe (OpenWhip) 🤠💥"
+                    >
+                      <span style={{ fontSize: '14px' }}>🤠💥</span>
+                      <span>Fouetter</span>
+                    </button>
+
                     <button
                       type="button"
                       className="ib"
@@ -811,6 +842,15 @@ export default function TasksPage() {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                  type="button" 
+                  className="task-btn-whip" 
+                  onClick={() => handleOpenWhip(sheetTask)}
+                  title="Faire claquer le fouet sur l’équipe 🤠💥"
+                >
+                  <span style={{ fontSize: '13px' }}>🤠💥</span>
+                  <span>Fouetter</span>
+                </button>
                 <button 
                   type="button" 
                   className="ib" 
@@ -932,34 +972,59 @@ export default function TasksPage() {
                     }
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleToggleComplete(sheetTask)}
-                  className={`btn ${sheetTask.completed ? '' : 'pri'}`}
-                  style={{
-                    borderRadius: '10px',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    padding: '8px 16px',
-                    ...(sheetTask.completed ? {} : { background: 'var(--ok)', borderColor: 'var(--ok)', color: '#fff' })
-                  }}
-                >
-                  {sheetTask.completed ? (
-                    <>
-                      <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
-                        <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                      </svg>
-                      <span>Rouvrir la tâche</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2.5 }}>
-                        <path d="M5 13l4 4L19 7"/>
-                      </svg>
-                      <span>Valider & Terminer</span>
-                    </>
-                  )}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenWhip(sheetTask)}
+                    style={{
+                      borderRadius: '10px',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      padding: '8px 14px',
+                      background: 'linear-gradient(135deg, #f59e0b, #ea580c)',
+                      border: 'none',
+                      color: '#fff',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                      cursor: 'pointer',
+                    }}
+                    title="Faire claquer le fouet sur l’équipe assignée"
+                  >
+                    <span>🤠💥</span>
+                    <span>Claquer le fouet</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleComplete(sheetTask)}
+                    className={`btn ${sheetTask.completed ? '' : 'pri'}`}
+                    style={{
+                      borderRadius: '10px',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      padding: '8px 16px',
+                      ...(sheetTask.completed ? {} : { background: 'var(--ok)', borderColor: 'var(--ok)', color: '#fff' })
+                    }}
+                  >
+                    {sheetTask.completed ? (
+                      <>
+                        <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 2 }}>
+                          <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        <span>Rouvrir la tâche</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2.5 }}>
+                          <path d="M5 13l4 4L19 7"/>
+                        </svg>
+                        <span>Valider & Terminer</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Collaborateurs assignés */}
@@ -1410,6 +1475,18 @@ export default function TasksPage() {
           </div>
         </div>
       )}
+
+      {/* ========================================================
+          MODALE OPENWHIP (Claquer le fouet en direct)
+          ======================================================== */}
+      <OpenWhipModal
+        task={whipTask}
+        isOpen={!!whipTask}
+        onClose={() => setWhipTask(null)}
+        activeUser={activeOperatorName}
+        operators={operators}
+        onTriggerSuccess={handleWhipTriggered}
+      />
     </div>
   );
 }

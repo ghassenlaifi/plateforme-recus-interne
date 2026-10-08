@@ -16,6 +16,7 @@ const LeadSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
   lastModifiedBy: { type: String, default: 'Système' },
+  modifiers: { type: [String], default: [] },
   notes: { type: Array, default: [] },
   familyGroup: { type: String, default: '' },
   toElios: { type: Boolean, default: false },
@@ -32,6 +33,7 @@ LeadSchema.index({ crmType: 1, updatedAt: -1 });
 LeadSchema.index({ crmType: 1, date: -1 });
 LeadSchema.index({ id: 1, crmType: 1 });
 LeadSchema.index({ phone: 1 });
+LeadSchema.index({ modifiers: 1 });
 
 // Ensure in-memory cached model has new fields during dev reload
 if (mongoose.models.Lead) {
@@ -58,6 +60,9 @@ if (mongoose.models.Lead) {
   }
   if (!mongoose.models.Lead.schema.path('lastModifiedBy')) {
     mongoose.models.Lead.schema.add({ lastModifiedBy: { type: String, default: 'Système' } });
+  }
+  if (!mongoose.models.Lead.schema.path('modifiers')) {
+    mongoose.models.Lead.schema.add({ modifiers: { type: [String], default: [] } });
   }
 }
 

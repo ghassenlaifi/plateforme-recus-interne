@@ -3,7 +3,7 @@ import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import * as xlsx from 'xlsx';
 import { formatPhone } from '@/lib/phoneUtils';
-import { isClassWithoutSection } from '@/types/crm';
+import { isClassWithoutSection, getLeadLastModifier } from '@/types/crm';
 
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
@@ -50,7 +50,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
         'Grade': lead.grade || '',
         'Specialite': isClassWithoutSection(lead.grade) ? '' : (lead.section || ''),
         'Statut': lead.status || '',
-        'Operateur': lead.staff || lead.lastModifiedBy || 'Système',
+        'Operateur': getLeadLastModifier(lead),
       };
 
       if (crmType === 'formatic') {

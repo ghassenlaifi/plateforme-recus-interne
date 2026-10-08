@@ -4328,6 +4328,29 @@ input:disabled, select:disabled, textarea:disabled {
   border-color: var(--pri);
 }
 
+.task-btn-whip {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--card));
+  color: #b45309;
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+
+.task-btn-whip:hover {
+  background: color-mix(in srgb, #f59e0b 24%, var(--card));
+  border-color: #f59e0b;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
+}
+
 @media (max-width: 640px) {
   .task-item {
     flex-direction: column;

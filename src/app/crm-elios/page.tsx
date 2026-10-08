@@ -16,7 +16,10 @@ import {
   isLeadInRappels,
   getRappelsDelayDays,
   isClassWithoutSection,
-  getEliosStatusColor
+  getEliosStatusColor,
+  getLeadLastModifier,
+  isLeadTouchedByStaff,
+  extractAllLeadStaff
 } from '@/types/crm';
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
@@ -105,12 +108,14 @@ export default function CRMEliosPage() {
   const availableStaff = useMemo(() => {
     const set = new Set<string>();
     safeOperators.forEach(o => {
-      if (o.name) set.add(o.name.trim());
+      if (o.name && o.name.trim() && o.name !== 'Système' && o.name !== 'Non assigné') {
+        set.add(o.name.trim());
+      }
     });
     if (Array.isArray(leads)) {
       leads.forEach(l => {
-        if (l.staff && l.staff !== 'Système' && l.staff !== 'Non assigné') set.add(l.staff.trim());
-        if (l.lastModifiedBy && l.lastModifiedBy !== 'Système' && l.lastModifiedBy !== 'Non assigné') set.add(l.lastModifiedBy.trim());
+        const staffList = extractAllLeadStaff(l);
+        staffList.forEach(s => set.add(s));
       });
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
@@ -512,12 +517,9 @@ export default function CRMEliosPage() {
         if (leadSec !== targetSec) return false;
       }
 
-      // 6. Filtre STAFF
+      // 6. Filtre STAFF (Tous les prospects créés, modifiés ou annotés par cet opérateur)
       if (filterStaff && filterStaff !== 'ALL') {
-        const staffVal = (l.staff || '').trim().toLowerCase();
-        const modVal = (l.lastModifiedBy || '').trim().toLowerCase();
-        const targetStaff = filterStaff.trim().toLowerCase();
-        if (staffVal !== targetStaff && modVal !== targetStaff) return false;
+        if (!isLeadTouchedByStaff(l, filterStaff)) return false;
       }
 
       // 7. Filtre DATE
@@ -1220,9 +1222,7 @@ export default function CRMEliosPage() {
           <div id="rows">
             {paginatedLeads.length > 0 ? (
               paginatedLeads.map((l, n) => {
-                const modifierName = (l.lastModifiedBy && l.lastModifiedBy !== 'Système')
-                  ? l.lastModifiedBy
-                  : (l.staff && l.staff !== 'Système' ? l.staff : (l.lastModifiedBy || l.staff || 'Non assigné'));
+                const modifierName = getLeadLastModifier(l);
                 const opTheme = getOperatorColors(modifierName, safeOperators);
                 const lastUpdatedDateStr = formatDateTimeFr(l.updatedAt || l.date);
                 const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
@@ -1388,9 +1388,7 @@ export default function CRMEliosPage() {
         <div className="md:hidden space-y-2.5">
           {paginatedLeads.length > 0 ? (
             paginatedLeads.map((l) => {
-              const modifierName = (l.lastModifiedBy && l.lastModifiedBy !== 'Système')
-                ? l.lastModifiedBy
-                : (l.staff && l.staff !== 'Système' ? l.staff : (l.lastModifiedBy || l.staff || 'Non assigné'));
+              const modifierName = getLeadLastModifier(l);
               const opTheme = getOperatorColors(modifierName, safeOperators);
               const lastUpdatedDateStr = formatDateTimeFr(l.updatedAt || l.date);
               const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
@@ -1836,6 +1834,13 @@ export default function CRMEliosPage() {
                       <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">ASSIGNÉ À</span>
                       <p className="text-[11px] font-semibold text-[var(--ink)] truncate" title={selectedLead.staff || activeUser || 'Non assigné'}>
                         {selectedLead.staff || activeUser || 'Non assigné'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-[9px] font-bold text-[var(--ink3)] uppercase tracking-wider block">DERNIÈRE MODIF PAR</span>
+                      <p className="text-[11px] font-semibold text-[var(--ink)] truncate" title={getLeadLastModifier(selectedLead)}>
+                        {getLeadLastModifier(selectedLead)}
                       </p>
                     </div>
 

@@ -43,11 +43,14 @@ export async function GET(req: NextRequest) {
 
     // Filtres spécialisés
     if (filter === 'act') {
-      // Actions requises (manque PDF ou enregistrement)
+      // Actions requises (séance terminée et manque PDF ou enregistrement)
+      query.done = true;
       query.$or = [{ pdf: false }, { rec: false }];
     } else if (filter === 'pdf') {
+      query.done = true;
       query.pdf = false;
     } else if (filter === 'rec') {
+      query.done = true;
       query.rec = false;
     } else if (filter === 'day') {
       query.startDate = today;
@@ -63,7 +66,7 @@ export async function GET(req: NextRequest) {
     const allSessions = await Session.find({}).lean();
     const totalSessions = allSessions.length;
     const completedSessions = allSessions.filter((s: any) => s.done).length;
-    const missingDocs = allSessions.filter((s: any) => !s.pdf || !s.rec).length;
+    const missingDocs = allSessions.filter((s: any) => s.done && (!s.pdf || !s.rec)).length;
     const todayReminders = allSessions.filter((s: any) => s.startDate === today && !s.remTeacher).length;
 
     // Calcul pour le mois courant

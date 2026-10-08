@@ -3,6 +3,7 @@ import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { GlobalInputGuard } from "@/components/GlobalInputGuard";
+import { GlobalWhipListener } from "@/components/GlobalWhipListener";
 
 export const metadata: Metadata = {
   title: "Elios Workspace",
@@ -24,6 +25,7 @@ export default function RootLayout({
         <ToastProvider>
           <GlobalInputGuard />
           <WelcomeModal />
+          <GlobalWhipListener />
           {children}
         </ToastProvider>
       </body>

@@ -55,12 +55,17 @@ export async function PATCH(
         addedAt: now,
       };
 
+      const updateNoteQuery: any = { 
+        $push: { notes: { $each: [newNote], $position: 0 } },
+        $set: { updatedAt: now, lastModifiedBy: operator }
+      };
+      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+        updateNoteQuery.$addToSet = { modifiers: operator };
+      }
+
       const updated = await Lead.findOneAndUpdate(
         { ...query, ...crmFilter },
-        { 
-          $push: { notes: { $each: [newNote], $position: 0 } },
-          $set: { updatedAt: now, lastModifiedBy: operator }
-        },
+        updateNoteQuery,
         { new: true }
       );
 
@@ -91,6 +96,10 @@ export async function PATCH(
       existing.notes = notes;
       existing.updatedAt = now;
       existing.lastModifiedBy = operator;
+      if (!existing.modifiers) existing.modifiers = [];
+      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !existing.modifiers.includes(operator)) {
+        existing.modifiers.push(operator);
+      }
       await existing.save();
 
       return NextResponse.json(existing);
@@ -114,6 +123,10 @@ export async function PATCH(
       );
       existing.updatedAt = now;
       existing.lastModifiedBy = operator;
+      if (!existing.modifiers) existing.modifiers = [];
+      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !existing.modifiers.includes(operator)) {
+        existing.modifiers.push(operator);
+      }
       await existing.save();
 
       return NextResponse.json(existing);
@@ -144,9 +157,14 @@ export async function PATCH(
     body.updatedAt = now;
     body.lastModifiedBy = operator;
 
+    const updateQuery: any = { $set: body };
+    if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+      updateQuery.$addToSet = { modifiers: operator };
+    }
+
     const updated = await Lead.findOneAndUpdate(
       { ...query, ...crmFilter },
-      { $set: body },
+      updateQuery,
       { new: true }
     );
 
@@ -183,6 +201,10 @@ export async function PATCH(
           existingElios.familyGroup = updated.familyGroup || existingElios.familyGroup || '';
           existingElios.updatedAt = now;
           existingElios.lastModifiedBy = operator;
+          if (!existingElios.modifiers) existingElios.modifiers = [];
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !existingElios.modifiers.includes(operator)) {
+            existingElios.modifiers.push(operator);
+          }
 
           // Fusion des notes sans doublons
           const eliosNoteTexts = new Set((existingElios.notes || []).map((n: any) => (n.text || '').trim()));
@@ -236,6 +258,10 @@ export async function PATCH(
           updated.source = updated.source || 'From Formatic';
           updated.updatedAt = now;
           updated.lastModifiedBy = operator;
+          if (!updated.modifiers) updated.modifiers = [];
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !updated.modifiers.includes(operator)) {
+            updated.modifiers.push(operator);
+          }
           updated.notes = [
             migrationNote,
             ...(updated.notes || [])
