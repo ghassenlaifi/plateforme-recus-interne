@@ -1,6 +1,7 @@
 /**
  * ============================================================================
  * MASTER SCRIPT : INGESTION & STANDARDISATION RIGOUROUSE DES CRM ELIOS & FORMATIC
+ * Source: EliosData.xlsx (3,189 lignes) & FormaticData.xlsx (917 lignes)
  * Architecture & Ingénierie des Données - Niveau CTO / Administrateur Système
  * ============================================================================
  */
@@ -24,8 +25,8 @@ if (!MONGODB_URI) {
   MONGODB_URI = 'mongodb+srv://ghassenlaifii_db_user:v5S91ZMkwGXEL1P4@receipthub-cluster.aqr9ofq.mongodb.net/?appName=ReceiptHub-Cluster';
 }
 
-const ELIOS_FILE_PATH = 'C:/Users/ghass/OneDrive/Desktop/ReceiptHub/EliosCRM.xlsx';
-const FORMATIC_FILE_PATH = 'C:/Users/ghass/OneDrive/Desktop/ReceiptHub/FormaticCRM.xlsx';
+const ELIOS_FILE_PATH = 'C:/Users/ghass/OneDrive/Desktop/ReceiptHub/EliosData.xlsx';
+const FORMATIC_FILE_PATH = 'C:/Users/ghass/OneDrive/Desktop/ReceiptHub/FormaticData.xlsx';
 
 // ----------------------------------------------------------------------------
 // 1. TAXONOMIE ET DICTIONNAIRES DE NORMALISATION CANONIQUE
@@ -57,18 +58,21 @@ const GRADE_MAP = {
   '9e': '9ème de Base',
   '9ème année': '9ème de Base',
   '9eme année': '9ème de Base',
+  '9eme annee': '9ème de Base',
   '9e année': '9ème de Base',
   '8ème de base': '8ème de Base',
   '8eme': '8ème de Base',
   '8e': '8ème de Base',
   '8ème année': '8ème de Base',
   '8eme année': '8ème de Base',
+  '8eme annee': '8ème de Base',
   '8e année': '8ème de Base',
   '7ème de base': '7ème de Base',
   '7eme': '7ème de Base',
   '7e': '7ème de Base',
   '7ème année': '7ème de Base',
   '7eme année': '7ème de Base',
+  '7eme annee': '7ème de Base',
   '7e année': '7ème de Base',
 };
 
@@ -194,6 +198,13 @@ function cleanSinglePhone(raw) {
   let str = String(raw).replace(/[\u200E\u200F\u202A-\u202E]/g, '').trim();
   str = str.replace(/\(.*?\)/g, '').trim();
 
+  // Omani prefix format (+968 or 00968)
+  if (/^(\+968|00968)/i.test(str)) {
+    const digits = str.replace(/\D/g, '');
+    const national = digits.startsWith('00968') ? digits.slice(5) : digits.slice(3);
+    return '+968' + national;
+  }
+
   if (str.startsWith('+')) {
     const digits = str.replace(/\D/g, '');
     if (digits.startsWith('216') && digits.length === 11) {
@@ -297,6 +308,7 @@ function formatProperName(val) {
 async function runMasterIngestion() {
   console.log('\n================================================================');
   console.log(' DÉBUT DU CHANTIER ULTIME : INGESTION & STANDARDISATION CRM');
+  console.log(' Fichiers sources : EliosData.xlsx & FormaticData.xlsx');
   console.log('================================================================');
 
   if (!fs.existsSync(ELIOS_FILE_PATH)) {
@@ -318,8 +330,8 @@ async function runMasterIngestion() {
   const currentLeadsCount = await leadsCollection.countDocuments();
   console.log(`Nombre de prospects actuels en BDD : ${currentLeadsCount}`);
   if (currentLeadsCount > 0) {
-    console.log('Création de la sauvegarde `leads_backup_before_excel_sync`...');
-    const backupCollection = db.collection('leads_backup_before_excel_sync');
+    console.log('Création de la sauvegarde `leads_backup_before_data_xlsx_sync`...');
+    const backupCollection = db.collection('leads_backup_before_data_xlsx_sync');
     await backupCollection.deleteMany({});
     const existingCursor = leadsCollection.find({});
     const backupBatch = [];
@@ -353,7 +365,7 @@ async function runMasterIngestion() {
   await leadsCollection.deleteMany({});
   console.log('Collection `leads` vidée.');
 
-  // 4. Traitement & Ingestion de EliosCRM.xlsx
+  // 4. Traitement & Ingestion de EliosData.xlsx
   console.log(`\nLecture et normalisation de : ${path.basename(ELIOS_FILE_PATH)}...`);
   const eliosWb = xlsx.readFile(ELIOS_FILE_PATH);
   const eliosRows = xlsx.utils.sheet_to_json(eliosWb.Sheets['Prospects'], { raw: true, defval: '' });
@@ -457,7 +469,7 @@ async function runMasterIngestion() {
   }
   console.log(`\nInsertion Elios terminée : ${eliosDocs.length} documents.`);
 
-  // 5. Traitement & Ingestion de FormaticCRM.xlsx
+  // 5. Traitement & Ingestion de FormaticData.xlsx
   console.log(`\nLecture et normalisation de : ${path.basename(FORMATIC_FILE_PATH)}...`);
   const formaticWb = xlsx.readFile(FORMATIC_FILE_PATH);
   const formaticRows = xlsx.utils.sheet_to_json(formaticWb.Sheets['Prospects'], { raw: true, defval: '' });
@@ -600,6 +612,21 @@ async function runMasterIngestion() {
   console.log('\nDistribution des Classes / Niveaux :');
   gradeAgg.forEach(g => console.log(`  [${g._id.crm.toUpperCase()}] ${g._id.grade || '[VIDE]'} : ${g.count}`));
 
+  const sectionAgg = await leadsCollection.aggregate([
+    { $group: { _id: { crm: '$crmType', section: '$section' }, count: { $sum: 1 } } },
+    { $sort: { '_id.crm': 1, count: -1 } }
+  ]).toArray();
+
+  console.log('\nDistribution des Sections :');
+  sectionAgg.forEach(s => console.log(`  [${s._id.crm.toUpperCase()}] ${s._id.section || '[VIDE]'} : ${s.count}`));
+
+  // Vérification de la contrainte absolue : Niveaux de base avec section vide
+  const illegalBaseWithSection = await leadsCollection.countDocuments({
+    grade: { $in: ['7ème de Base', '8ème de Base', '9ème de Base', '1ère Année'] },
+    section: { $ne: '' }
+  });
+  console.log(`\nContrôle d'intégrité stricte (Niveaux de Base avec Section non-vide) : ${illegalBaseWithSection} (Attendu : 0)`);
+
   const staffAgg = await leadsCollection.aggregate([
     { $group: { _id: '$staff', count: { $sum: 1 } } },
     { $sort: { count: -1 } }
@@ -607,6 +634,9 @@ async function runMasterIngestion() {
 
   console.log('\nAttribution globale des Opérateurs :');
   staffAgg.forEach(st => console.log(`  - ${st._id} : ${st.count} prospects attribués`));
+
+  const toEliosCount = await leadsCollection.countDocuments({ crmType: 'formatic', toElios: true });
+  console.log(`\nProspects Formatic marqués pour migration Elios (toElios = true) : ${toEliosCount}`);
 
   await mongoose.disconnect();
   console.log('\nConnexion MongoDB fermée proprement.');
@@ -619,4 +649,3 @@ runMasterIngestion().catch(err => {
   console.error('\nERREUR CRITIQUE PENDANT L\'INGESTION :', err);
   process.exit(1);
 });
-
