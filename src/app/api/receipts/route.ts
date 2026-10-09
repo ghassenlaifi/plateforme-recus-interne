@@ -6,6 +6,7 @@ import ReceiptImage from '@/models/ReceiptImage';
 import { uploadFileToDrive } from '@/lib/googleDrive';
 import { generateReceiptReference } from '@/lib/receiptReference';
 import { formatPhone } from '@/lib/phoneUtils';
+import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 export async function GET(req: NextRequest) {
   try {
@@ -227,7 +228,7 @@ export async function POST(req: NextRequest) {
     await connectToDatabase();
 
     // 5. Création et sauvegarde du document
-    const effectiveDate = paymentDate ? new Date(paymentDate) : new Date();
+    const effectiveDate = paymentDate ? resolveExactReceiptDate(paymentDate, new Date()) : new Date();
     const reference = generateReceiptReference(telephone, effectiveDate);
 
     const newReceipt = await Receipt.create({

@@ -8,6 +8,7 @@ import { PaymentReceiptModal } from '@/components/PaymentReceiptModal';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { useToast } from '@/components/Toast';
 import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
+import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données');
@@ -135,7 +136,27 @@ export default function ReceiptsPage() {
   const toISO = (dateStr: string) => {
     const [dd, mm, yyyy] = dateStr.split('/');
     if (!dd || !mm || !yyyy || yyyy.length !== 4) return '';
-    return `${yyyy}-${mm}-${dd}T12:00:00Z`;
+    const now = new Date();
+    const dDay = parseInt(dd, 10);
+    const dMonth = parseInt(mm, 10) - 1;
+    const dYear = parseInt(yyyy, 10);
+    // Injecter l'heure réelle courante pour garantir une traçabilité précise
+    const d = new Date(dYear, dMonth, dDay, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+    return d.toISOString();
+  };
+
+  const buildEditPaymentDate = (dateStr: string, existingDate?: Date | string | null) => {
+    if (!dateStr) return new Date();
+    const [yyyy, mm, dd] = dateStr.includes('-') ? dateStr.split('-') : dateStr.split('/').reverse();
+    const now = new Date();
+    const orig = existingDate ? resolveExactReceiptDate(existingDate) : null;
+    const d = new Date(parseInt(yyyy, 10), parseInt(mm, 10) - 1, parseInt(dd, 10));
+    if (orig && !isNaN(orig.getTime())) {
+      d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+    } else {
+      d.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+    }
+    return d;
   };
 
   const [formData, setFormData] = useState({
@@ -465,7 +486,9 @@ export default function ReceiptsPage() {
         paymentMode: editMode,
         paymentDetails: editWallet,
         amount: isNaN(parsedAmount) ? 0 : parsedAmount,
-        paymentDate: editDate ? new Date(editDate) : new Date(),
+        paymentDate: editDate
+          ? buildEditPaymentDate(editDate, selectedReceipt?.paymentDate || selectedReceipt?.createdAt)
+          : resolveExactReceiptDate(selectedReceipt?.paymentDate, selectedReceipt?.createdAt),
         lastModifiedBy: activeUser || 'Elios'
       };
       if (modalNote.trim()) {
@@ -575,7 +598,9 @@ export default function ReceiptsPage() {
         paymentMode: editMode,
         paymentDetails: editWallet,
         amount: isNaN(parsedAmount) ? 0 : parsedAmount,
-        paymentDate: editDate ? new Date(editDate) : new Date(),
+        paymentDate: editDate
+          ? buildEditPaymentDate(editDate, selectedReceipt?.paymentDate || selectedReceipt?.createdAt)
+          : resolveExactReceiptDate(selectedReceipt?.paymentDate, selectedReceipt?.createdAt),
         lock: false
       };
       if (modalNote.trim()) {
@@ -1794,7 +1819,9 @@ export default function ReceiptsPage() {
                       familyGroup: selectedReceipt.clientDetails?.familyGroup,
                       amount: Number(editAmount) || selectedReceipt.amount || 0,
                       operatorName: selectedReceipt.operatorName,
-                      paymentDate: editDate ? new Date(editDate) : (selectedReceipt.paymentDate || selectedReceipt.createdAt),
+                      paymentDate: editDate
+                        ? buildEditPaymentDate(editDate, selectedReceipt.paymentDate || selectedReceipt.createdAt)
+                        : resolveExactReceiptDate(selectedReceipt.paymentDate, selectedReceipt.createdAt),
                     });
                   }}
                 >

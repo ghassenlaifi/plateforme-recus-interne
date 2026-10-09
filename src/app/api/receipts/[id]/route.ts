@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { deleteFileFromDrive } from '@/lib/googleDrive';
 import { formatPhone } from '@/lib/phoneUtils';
+import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 type Params = { id: string };
 
@@ -68,7 +69,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
     // 2. Mise à jour du mode et portefeuille destination
     if (body.paymentMode !== undefined) setFields.paymentMode = body.paymentMode;
     if (body.paymentDetails !== undefined) setFields.paymentDetails = body.paymentDetails;
-    if (body.paymentDate !== undefined) setFields.paymentDate = new Date(body.paymentDate);
+    if (body.paymentDate !== undefined) {
+      setFields.paymentDate = resolveExactReceiptDate(
+        body.paymentDate,
+        existingReceipt.paymentDate || existingReceipt.createdAt || new Date()
+      );
+    }
     if (body.amount !== undefined) setFields.amount = Number(body.amount);
 
     // 3. Statut Traité / En attente

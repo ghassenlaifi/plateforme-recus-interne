@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import { EliosHeader } from '@/components/EliosHeader';
 import { useToast } from '@/components/Toast';
+import { resolveExactReceiptDate, formatFullDateTimeFR } from '@/lib/dateUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
@@ -95,15 +96,8 @@ function getWalletGrads(mode: string, details: string): { g1: string; g2: string
 const formatDT = (n: number | undefined | null) =>
   (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const fdt = (iso: string | Date | undefined) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
-  return (
-    d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) +
-    ' ' +
-    d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-  );
+const fdt = (iso: string | Date | undefined, fallbackIso?: string | Date | undefined) => {
+  return formatFullDateTimeFR(iso, fallbackIso);
 };
 
 const formatFrenchDate = (isoDate: string): string => {
@@ -483,8 +477,8 @@ export default function PortefeuillesPage() {
     // Sort chronologically ascending to calculate running balance accurately
     let run = 0;
     const chronological = [...filtered].sort((a, b) => {
-      const timeA = new Date(a.paymentDate || a.createdAt).getTime();
-      const timeB = new Date(b.paymentDate || b.createdAt).getTime();
+      const timeA = resolveExactReceiptDate(a.paymentDate, a.createdAt).getTime();
+      const timeB = resolveExactReceiptDate(b.paymentDate, b.createdAt).getTime();
       return timeA - timeB;
     });
 
@@ -1402,7 +1396,7 @@ export default function PortefeuillesPage() {
             if (e.target === e.currentTarget) closeExtrait();
           }}
         >
-          <div className="modal-dialog xl">
+          <div className="modal-dialog xl" style={{ width: 'min(760px, 96vw)', maxWidth: 'min(760px, 96vw)' }}>
             <div className="dh" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
                 <span
@@ -1433,7 +1427,7 @@ export default function PortefeuillesPage() {
               </button>
             </div>
 
-            <div className="db">
+            <div className="db" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}>
               {/* Option de filtrage par date dans l'extrait si un filtre est actif sur la page */}
               {selectedDate && (
                 <div
@@ -1538,44 +1532,46 @@ export default function PortefeuillesPage() {
                   Aucun mouvement enregistré pour ce portefeuille.
                 </div>
               ) : (
-                <div className="tx">
+                <div className="tx" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <div className="tr h">
                     <span>Date</span>
                     <span>Opération</span>
                     <span style={{ textAlign: 'right' }}>Montant</span>
                     <span style={{ textAlign: 'right' }}>Solde</span>
                   </div>
-                  {statementRows.map(tx => {
-                    const isNegative = (tx.amount || 0) < 0;
-                    const opType = isNegative ? 'Retrait' : 'Encaissement';
-                    const opColor = getOperatorColor(tx.operatorName);
-                    const labelText =
-                      tx.clientDetails?.note ||
-                      (isNegative ? 'Retrait manuel' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
+                  <div className="tx-scroll" style={{ overflowY: 'auto', maxHeight: 'min(50vh, 460px)', minHeight: 0, WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
+                    {statementRows.map(tx => {
+                      const isNegative = (tx.amount || 0) < 0;
+                      const opType = isNegative ? 'Retrait' : 'Encaissement';
+                      const opColor = getOperatorColor(tx.operatorName);
+                      const labelText =
+                        tx.clientDetails?.note ||
+                        (isNegative ? 'Retrait manuel' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
 
-                    return (
-                      <div key={tx._id} className="tr">
-                        <span>{fdt(tx.paymentDate || tx.createdAt)}</span>
-                        <span>
-                          {opType}
-                          <small>
-                            {labelText} ·{' '}
-                            <span
-                              className="by"
-                              style={{ '--u': opColor } as React.CSSProperties}
-                            >
-                              {tx.operatorName || 'Elios'}
-                            </span>
-                          </small>
-                        </span>
-                        <span className={`m ${isNegative ? 'neg' : 'pos'}`}>
-                          {isNegative ? '−' : '+'}
-                          {formatDT(Math.abs(tx.amount))}
-                        </span>
-                        <span className="s">{formatDT(tx.runningBalance || 0)}</span>
-                      </div>
-                    );
-                  })}
+                      return (
+                        <div key={tx._id} className="tr">
+                          <span>{fdt(tx.paymentDate, tx.createdAt)}</span>
+                          <span>
+                            {opType}
+                            <small>
+                              {labelText} ·{' '}
+                              <span
+                                className="by"
+                                style={{ '--u': opColor } as React.CSSProperties}
+                              >
+                                {tx.operatorName || 'Elios'}
+                              </span>
+                            </small>
+                          </span>
+                          <span className={`m ${isNegative ? 'neg' : 'pos'}`}>
+                            {isNegative ? '−' : '+'}
+                            {formatDT(Math.abs(tx.amount))}
+                          </span>
+                          <span className="s">{formatDT(tx.runningBalance || 0)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -1780,7 +1776,7 @@ export default function PortefeuillesPage() {
                     }}
                   >
                     <span style={{ color: '#4B5563', fontSize: '13px' }}>
-                      {fdt(tx.paymentDate || tx.createdAt)}
+                      {fdt(tx.paymentDate, tx.createdAt)}
                     </span>
                     <span style={{ color: '#111827' }}>
                       <span style={{ fontWeight: 700 }}>{opType}</span>

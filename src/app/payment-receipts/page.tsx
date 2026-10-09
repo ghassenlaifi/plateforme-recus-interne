@@ -8,6 +8,7 @@ import { PaymentReceiptTicket } from '@/components/PaymentReceiptTicket';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { generateReceiptReference } from '@/lib/receiptReference';
 import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
+import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données');
@@ -81,7 +82,7 @@ export default function PaymentReceiptsPage() {
     if (!rawReceipts || !Array.isArray(rawReceipts)) return [];
     return rawReceipts.map(r => {
       const phone = r.clientDetails?.telephone || '';
-      const date = r.paymentDate ? new Date(r.paymentDate) : new Date(r.createdAt);
+      const date = resolveExactReceiptDate(r.paymentDate, r.createdAt);
       const reference = r.reference || generateReceiptReference(phone, date);
       return {
         ...r,

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
 import { generateReceiptReference } from '@/lib/receiptReference';
+import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 export interface PaymentReceiptData {
   reference?: string;
@@ -24,14 +25,8 @@ interface PaymentReceiptTicketProps {
 export function PaymentReceiptTicket({ data, ticketRef }: PaymentReceiptTicketProps) {
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
-  // Date de référence (paymentDate ou createdAt ou date courante)
-  const dateObj = data.paymentDate
-    ? new Date(data.paymentDate)
-    : data.createdAt
-    ? new Date(data.createdAt)
-    : new Date();
-  
-  const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj;
+  // Date de référence authentique résolue
+  const validDate = resolveExactReceiptDate(data.paymentDate, data.createdAt);
 
   // Format JJ/MM/AAAA HH:mm
   const day = String(validDate.getDate()).padStart(2, '0');
