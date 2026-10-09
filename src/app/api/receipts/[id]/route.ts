@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import Lead from '@/models/Lead';
 import { deleteFileFromDrive } from '@/lib/googleDrive';
 import { formatPhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
+import { invalidateLeadsCache } from '@/lib/leadsCache';
 
 type Params = { id: string };
 
@@ -146,6 +148,21 @@ export async function DELETE(req: NextRequest, { params }: { params: Params | Pr
         await deleteFileFromDrive(deletedReceipt.gDriveFileId);
       } catch (driveErr: any) {
         console.warn(`[Delete Pipeline] Avertissement suppression Google Drive:`, driveErr.message);
+      }
+    }
+
+    // Cohérence bidirectionnelle : Purge des notes CRM associées au reçu supprimé
+    if (deletedReceipt.reference) {
+      try {
+        const escapedRef = deletedReceipt.reference.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        await Lead.updateMany(
+          { 'notes.text': { $regex: new RegExp(escapedRef, 'i') } },
+          { $pull: { notes: { text: { $regex: new RegExp(escapedRef, 'i') } } } }
+        );
+        invalidateLeadsCache('all');
+        console.log(`[Delete Pipeline] Purge des notes CRM effectuée pour le reçu supprimé ${deletedReceipt.reference}.`);
+      } catch (crmCleanErr) {
+        console.warn(`[Delete Pipeline] Avertissement nettoyage note CRM:`, crmCleanErr);
       }
     }
     

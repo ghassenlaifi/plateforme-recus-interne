@@ -26,6 +26,7 @@ import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl } from '@/lib/phoneUtils';
+import { getClientCachedLeads, setClientCachedLeads } from '@/lib/clientCache';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Formatic');
@@ -97,13 +98,26 @@ export default function CRMFormaticPage() {
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
   const [lastInteractedLeadId, setLastInteractedLeadId] = useState<string | null>(null);
 
-  // Récupération des données Formatic depuis MongoDB Atlas avec rafraîchissement temps réel
-  const { data: leads, mutate } = useSWR<LeadItem[]>('/api/leads/formatic', fetcher, {
-    refreshInterval: selectedLead ? 2000 : 4000,
+  // Récupération des données Formatic depuis MongoDB Atlas avec mise en cache optimisée et fallback client instantané
+  const { data: leads, mutate, isLoading } = useSWR<LeadItem[]>('/api/leads/formatic', fetcher, {
+    fallbackData: getClientCachedLeads('formatic_cached_leads'),
+    refreshInterval: selectedLead ? 0 : 30000,
     revalidateOnFocus: true,
-    revalidateOnReconnect: true
+    revalidateOnReconnect: true,
+    dedupingInterval: 10000
   });
-  const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher);
+
+  // Sauvegarde instantanée dans le cache client pour le prochain affichage à T=0ms
+  useEffect(() => {
+    if (Array.isArray(leads) && leads.length > 0) {
+      setClientCachedLeads('formatic_cached_leads', leads);
+    }
+  }, [leads]);
+
+  const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
   const safeOperators = useMemo(() => Array.isArray(operators) ? operators : [], [operators]);
 
   // Liste exhaustive de tous les opérateurs réels
@@ -215,8 +229,14 @@ export default function CRMFormaticPage() {
   });
 
   // Données de configuration pour WhatsApp et Modes de paiement
-  const { data: paymentsConfig } = useSWR<{ methods: PaymentMethod[] }>('/api/settings/payments', fetcher);
-  const { data: whatsappConfig } = useSWR<{ templates: WhatsAppTemplates }>('/api/settings/whatsapp', fetcher, { revalidateOnFocus: true });
+  const { data: paymentsConfig } = useSWR<{ methods: PaymentMethod[] }>('/api/settings/payments', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: whatsappConfig } = useSWR<{ templates: WhatsAppTemplates }>('/api/settings/whatsapp', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   const paymentMethods = useMemo(() => paymentsConfig?.methods || DEFAULT_PAYMENT_METHODS, [paymentsConfig]);
   const whatsappTemplates = useMemo(() => whatsappConfig?.templates || DEFAULT_WHATSAPP_TEMPLATES, [whatsappConfig]);
@@ -735,8 +755,15 @@ export default function CRMFormaticPage() {
     if (!selectedLead || !editingNoteText.trim()) return;
     const targetNote = (selectedLead.notes || []).find((n: any, idx: number) => (n.id || `n-${idx}`) === noteId);
     const author = targetNote?.by || targetNote?.addedBy || 'Système';
-    if (!activeUser || author.trim().toLowerCase() !== activeUser.trim().toLowerCase()) {
-      showToast('Seul l\'auteur de cette note peut la modifier');
+    const isAllowed = Boolean(
+      !author ||
+      author.trim().toLowerCase() === 'système' ||
+      author.trim().toLowerCase() === 'systeme' ||
+      (activeUser && author.trim().toLowerCase() === activeUser.trim().toLowerCase()) ||
+      (activeUser && ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase()))
+    );
+    if (!isAllowed) {
+      showToast('Seul l\'auteur de cette note ou un administrateur peut la modifier');
       return;
     }
     try {
@@ -765,13 +792,41 @@ export default function CRMFormaticPage() {
     }
   };
 
-  // Suppression atomique d'une note (réservée à l'auteur de la note)
+  // Suppression atomique d'une note (contrôle d'intégrité et restriction porteur de note)
   const handleDeleteNote = async (noteId: string) => {
     if (!selectedLead) return;
     const targetNote = (selectedLead.notes || []).find((n: any, idx: number) => (n.id || `n-${idx}`) === noteId);
-    const author = targetNote?.by || targetNote?.addedBy || 'Système';
-    if (!activeUser || author.trim().toLowerCase() !== activeUser.trim().toLowerCase()) {
-      showToast('Seul l\'auteur de cette note peut la supprimer');
+    const author = (targetNote?.by || targetNote?.addedBy || 'Système').trim();
+    const isValidationNote = Boolean(
+      (targetNote?.text && (
+        targetNote.text.includes('Inscription validée') ||
+        targetNote.text.includes('Inscription validée automatiquement')
+      )) ||
+      (targetNote?.id && typeof targetNote.id === 'string' && targetNote.id.startsWith('auto-'))
+    );
+
+    let isAllowed = false;
+    if (isValidationNote) {
+      if (author && author.toLowerCase() !== 'système' && author.toLowerCase() !== 'systeme') {
+        isAllowed = Boolean(activeUser && activeUser.trim().toLowerCase() === author.toLowerCase());
+      } else {
+        isAllowed = Boolean(activeUser && ['ghassen', 'admin', 'superadmin'].includes(activeUser.trim().toLowerCase()));
+      }
+    } else {
+      isAllowed = Boolean(
+        activeUser && (
+          (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
+          (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
+          ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
+        )
+      );
+    }
+
+    if (!isAllowed) {
+      showToast(isValidationNote 
+        ? `Seul l'opérateur porteur de cette note de validation (${author}) peut la supprimer`
+        : "Seul l'auteur de cette note ou un administrateur peut la supprimer"
+      );
       return;
     }
     try {
@@ -948,7 +1003,11 @@ export default function CRMFormaticPage() {
             type="button"
           >
             <small>Total prospects</small>
-            <b className="text-xl sm:text-2xl">{stats.total.toLocaleString('fr-FR')}</b>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-20 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl">{stats.total.toLocaleString('fr-FR')}</b>
+            )}
             <span className="text-xs">Base active globale</span>
             <i className="si"><svg className="i" viewBox="0 0 24 24">{IC.users}</svg></i>
           </button>
@@ -962,7 +1021,11 @@ export default function CRMFormaticPage() {
             type="button"
           >
             <small>Approved</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#7BA25B' }}>{stats.approved.toLocaleString('fr-FR')}</b>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-16 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl" style={{ color: '#7BA25B' }}>{stats.approved.toLocaleString('fr-FR')}</b>
+            )}
             <span className="text-xs">Validés & Payés</span>
             <i className="si" style={{ color: '#7BA25B', background: 'rgba(123, 162, 91, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.ok}</svg>
@@ -978,7 +1041,11 @@ export default function CRMFormaticPage() {
             type="button"
           >
             <small>Potential Prospect</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#F49E1F' }}>{stats.potential.toLocaleString('fr-FR')}</b>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-16 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl" style={{ color: '#F49E1F' }}>{stats.potential.toLocaleString('fr-FR')}</b>
+            )}
             <span className="text-xs">Forte Intention</span>
             <i className="si" style={{ color: '#F49E1F', background: 'rgba(244, 158, 31, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.up}</svg>
@@ -994,7 +1061,11 @@ export default function CRMFormaticPage() {
             type="button"
           >
             <small>TO ELIOS</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#F49E1F' }}>{stats.toElios.toLocaleString('fr-FR')}</b>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-16 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl" style={{ color: '#F49E1F' }}>{stats.toElios.toLocaleString('fr-FR')}</b>
+            )}
             <span className="text-xs">Migrés vers Elios</span>
             <i className="si" style={{ color: '#F49E1F', background: 'rgba(244, 158, 31, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.share}</svg>
@@ -1014,7 +1085,11 @@ export default function CRMFormaticPage() {
             type="button"
           >
             <small>Rappels</small>
-            <b className="text-xl sm:text-2xl" style={{ color: '#23356E' }}>{stats.rappels.toLocaleString('fr-FR')}</b>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-16 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl" style={{ color: '#23356E' }}>{stats.rappels.toLocaleString('fr-FR')}</b>
+            )}
             <span className="text-xs">A Relancer</span>
             <i className="si" style={{ color: '#23356E', background: 'rgba(35, 53, 110, 0.12)' }}>
               <svg className="i" viewBox="0 0 24 24">{IC.bell}</svg>
@@ -1190,14 +1265,19 @@ export default function CRMFormaticPage() {
         {/* Compteur et info filtres */}
         <div className="flex items-center justify-between text-xs text-[var(--ink3)] mb-3 px-1">
           <div>
-            {isFiltered ? (
+            {isLoading && (!leads || leads.length === 0) ? (
+              <span className="flex items-center gap-2 text-[var(--acc)] font-medium animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-[var(--acc)]" />
+                Chargement sécurisé de la base Formatic en cours…
+              </span>
+            ) : isFiltered ? (
               <span>
-                <strong className="text-[var(--ink)]">{filteredLeads.length.toLocaleString('fr-FR')}</strong> résultat{filteredLeads.length > 1 ? 's' : ''} sur {leads?.length || 0}
+                <strong className="text-[var(--ink)]">{filteredLeads.length.toLocaleString('fr-FR')}</strong> résultat{filteredLeads.length > 1 ? 's' : ''} sur {(leads?.length || 0).toLocaleString('fr-FR')}
                 {activeCard === 'rappels' && <span className="ml-2 font-semibold text-[#23356E]">(Mode Rappels)</span>}
                 {activeCard === 'to_elios' && <span className="ml-2 font-semibold text-[#F49E1F]">(Filtre TO ELIOS)</span>}
               </span>
             ) : (
-              <span>Affichage de <strong>{leads?.length || 0}</strong> prospects</span>
+              <span>Affichage de <strong>{(leads?.length || 0).toLocaleString('fr-FR')}</strong> prospects</span>
             )}
           </div>
           <span>Page {currentPage} sur {totalPages}</span>
@@ -1372,6 +1452,18 @@ export default function CRMFormaticPage() {
                   </div>
                 );
               })
+            ) : isLoading && (!leads || leads.length === 0) ? (
+              <div className="p-12 text-center space-y-3">
+                <div className="flex justify-center">
+                  <div className="w-8 h-8 rounded-full border-2 border-[var(--acc)] border-t-transparent animate-spin" />
+                </div>
+                <div className="text-xs font-semibold text-[var(--ink)]">
+                  Chargement de la base Formatic…
+                </div>
+                <div className="text-[11px] text-[var(--ink3)]">
+                  Synchronisation des prospects depuis le cluster sécurisé.
+                </div>
+              </div>
             ) : (
               <div className="empty p-12 text-center text-[var(--ink3)]">
                 <b className="block text-base text-[var(--ink)] mb-1">Aucun prospect ne correspond à ces critères.</b>
@@ -1522,6 +1614,15 @@ export default function CRMFormaticPage() {
                 </div>
               );
             })
+          ) : isLoading && (!leads || leads.length === 0) ? (
+            <div className="p-8 text-center bg-[var(--card)] rounded-2xl border border-[var(--line)] space-y-2">
+              <div className="flex justify-center">
+                <div className="w-6 h-6 rounded-full border-2 border-[var(--acc)] border-t-transparent animate-spin" />
+              </div>
+              <p className="text-xs text-[var(--ink2)] font-medium">
+                Chargement de la base Formatic…
+              </p>
+            </div>
           ) : (
             <div className="p-8 text-center text-xs text-[var(--ink3)] bg-[var(--card)] rounded-2xl border border-[var(--line)]">
               Aucun prospect Formatic trouvé.
@@ -2124,14 +2225,41 @@ export default function CRMFormaticPage() {
                       {selectedLead.notes && selectedLead.notes.length > 0 ? (
                         selectedLead.notes.map((n: any, idx: number) => {
                           const noteId = n.id || `n-${idx}`;
-                          const author = n.by || n.addedBy || 'Système';
+                          const author = (n.by || n.addedBy || 'Système').trim();
                           const authorTheme = getOperatorColors(author, safeOperators);
                           const isBeingEdited = editingNoteId === noteId;
-                          // Seul l'opérateur qui a écrit la note peut la modifier ou la supprimer
-                          const isAuthor = Boolean(
-                            activeUser && 
-                            author && 
-                            activeUser.trim().toLowerCase() === author.trim().toLowerCase()
+                          
+                          const isValidationNote = Boolean(
+                            (n.text && (
+                              n.text.includes('Inscription validée') ||
+                              n.text.includes('Inscription validée automatiquement')
+                            )) ||
+                            (n.id && typeof n.id === 'string' && n.id.startsWith('auto-'))
+                          );
+
+                          // Note système de validation après paiement : SEUL l'opérateur porteur de la note peut la supprimer
+                          const canDelete = isValidationNote
+                            ? Boolean(
+                                activeUser && (
+                                  (author && author.toLowerCase() !== 'système' && author.toLowerCase() !== 'systeme' && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
+                                  ((!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') && ['ghassen', 'admin', 'superadmin'].includes(activeUser.trim().toLowerCase()))
+                                )
+                              )
+                            : Boolean(
+                                activeUser && (
+                                  (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
+                                  (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
+                                  ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
+                                )
+                              );
+
+                          // Une note officielle générée par le système après paiement ne doit pas être altérée manuellement
+                          const canEdit = !isValidationNote && Boolean(
+                            activeUser && (
+                              (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
+                              (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
+                              ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
+                            )
                           );
 
                           return (
@@ -2152,28 +2280,28 @@ export default function CRMFormaticPage() {
                                   <small className="text-[10px] sm:text-xs text-[var(--ink3)]">
                                     {formatDateTimeFr(n.addedAt || n.date)}
                                   </small>
-                                  {isAuthor && (
-                                    <>
-                                      <button 
-                                        type="button" 
-                                        onClick={() => {
-                                          setEditingNoteId(noteId);
-                                          setEditingNoteText(n.text || '');
-                                        }}
-                                        className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5 transition"
-                                        title="Modifier votre note"
-                                      >
-                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
-                                      </button>
-                                      <button 
-                                        type="button" 
-                                        onClick={() => handleDeleteNote(noteId)}
-                                        className="text-[var(--ink3)] hover:text-red-500 p-0.5 transition"
-                                        title="Supprimer votre note"
-                                      >
-                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                                      </button>
-                                    </>
+                                  {canEdit && (
+                                    <button 
+                                      type="button" 
+                                      onClick={() => {
+                                        setEditingNoteId(noteId);
+                                        setEditingNoteText(n.text || '');
+                                      }}
+                                      className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5 transition"
+                                      title="Modifier votre note"
+                                    >
+                                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button 
+                                      type="button" 
+                                      onClick={() => handleDeleteNote(noteId)}
+                                      className="text-[var(--ink3)] hover:text-red-500 p-0.5 transition"
+                                      title={isValidationNote ? `Supprimer la validation (${author})` : "Supprimer votre note"}
+                                    >
+                                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
+                                    </button>
                                   )}
                                 </div>
                               </header>

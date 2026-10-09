@@ -33,7 +33,10 @@ export function EliosHeader({
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const userRef = useRef<HTMLDivElement>(null);
 
-  const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher);
+  const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // Initialisation du thème (light/dark)
   useEffect(() => {

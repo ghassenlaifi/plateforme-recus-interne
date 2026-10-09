@@ -7,6 +7,7 @@ import { uploadFileToDrive } from '@/lib/googleDrive';
 import { generateReceiptReference } from '@/lib/receiptReference';
 import { formatPhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
+import { invalidateLeadsCache } from '@/lib/leadsCache';
 
 export async function GET(req: NextRequest) {
   try {
@@ -55,7 +56,8 @@ async function triggerCrmApproval(
   telephone: string | undefined | null,
   amount: number | undefined,
   operatorName: string | undefined,
-  reference: string | undefined
+  reference: string | undefined,
+  paymentDate?: Date | string | null
 ) {
   try {
     if (!telephone || !String(telephone).trim() || telephone === '00000000') return;
@@ -77,29 +79,87 @@ async function triggerCrmApproval(
     }
 
     const matchingLeads = await Lead.find({ $or: phoneOrConditions });
+    if (!matchingLeads || matchingLeads.length === 0) return;
+
+    // Calculer le jour civil cible du reçu pour le contrôle d'unicité journalière
+    const targetDateObj = paymentDate ? new Date(paymentDate) : new Date();
+    const targetCalendarDay = !isNaN(targetDateObj.getTime())
+      ? `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}-${String(targetDateObj.getDate()).padStart(2, '0')}`
+      : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
 
     for (const lead of matchingLeads) {
-      const updatedNotes = Array.isArray(lead.notes) ? [...lead.notes] : [];
-      updatedNotes.unshift({
-        text: `Inscription validée automatiquement via Elios Workspace (Montant: ${amount || 0} DT, Réf: ${reference || ''})`,
-        by: operatorName || 'Système',
-        addedBy: operatorName || 'Système',
-        date: new Date().toISOString(),
-        addedAt: new Date()
+      const existingNotes = Array.isArray(lead.notes) ? [...lead.notes] : [];
+
+      // 1. Détection de doublon par référence identique
+      const hasSameRef = reference && existingNotes.some((n: any) => {
+        if (!n || !n.text) return false;
+        return n.text.includes(reference);
+      });
+
+      // 2. Détection de doublon par journée civile (les échéances au fil du temps créent des notes à des dates différentes, jamais le même jour)
+      const hasSameDayAutoNote = existingNotes.some((n: any) => {
+        if (!n || !n.text) return false;
+        const isAuto = n.text.includes('Inscription validée automatiquement via Elios Workspace');
+        if (!isAuto) return false;
+
+        const noteDateVal = n.date || n.addedAt;
+        if (!noteDateVal) return false;
+        const nd = new Date(noteDateVal);
+        if (isNaN(nd.getTime())) return false;
+        const noteDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
+        return noteDay === targetCalendarDay;
       });
 
       const setFields: any = {
         status: 'Approved',
-        notes: updatedNotes,
       };
 
       if (amount && (!lead.amount || Number(lead.amount) === 0)) {
         setFields.amount = String(amount);
       }
 
-      await Lead.updateOne({ _id: lead._id }, { $set: setFields });
-      console.log(`[CRM Auto-Approval] Lead ${lead.id || lead._id} (${lead.crmType}) automatically approved via receipt ${reference || ''}.`);
+      if (hasSameRef) {
+        console.log(`[CRM Auto-Approval Skipped] Note avec réf ${reference} déjà présente sur le prospect ${lead._id} (${lead.crmType}). Doublon ignoré.`);
+        await Lead.updateOne({ _id: lead._id }, { $set: setFields });
+        continue;
+      }
+
+      if (hasSameDayAutoNote) {
+        console.log(`[CRM Auto-Approval Skipped] Note automatique déjà présente pour le jour ${targetCalendarDay} sur le prospect ${lead._id} (${lead.crmType}). Doublon le même jour ignoré.`);
+        await Lead.updateOne({ _id: lead._id }, { $set: setFields });
+        continue;
+      }
+
+      // 3. Aucune note en doublon : création officielle de la note d'approbation / échéance
+      const now = new Date();
+      const newNote = {
+        id: `auto-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        text: `Inscription validée automatiquement via Elios Workspace (Montant: ${amount || 0} DT, Réf: ${reference || ''})`,
+        by: operatorName || 'Système',
+        addedBy: operatorName || 'Système',
+        date: now.toISOString(),
+        addedAt: now
+      };
+
+      setFields.notes = [newNote, ...existingNotes];
+      setFields.updatedAt = now;
+      setFields.lastModifiedBy = operatorName || 'Système';
+
+      const updateOp: any = { $set: setFields };
+      if (operatorName && operatorName.toLowerCase() !== 'système' && operatorName.toLowerCase() !== 'systeme') {
+        updateOp.$addToSet = { modifiers: operatorName };
+        updateOp.$push = {
+          modifierLogs: {
+            $each: [{ operator: operatorName, at: now, action: 'auto_approval_receipt' }],
+            $slice: -100
+          }
+        };
+      }
+
+      await Lead.updateOne({ _id: lead._id }, updateOp);
+      console.log(`[CRM Auto-Approval] Lead ${lead.id || lead._id} (${lead.crmType}) validé avec succès via reçu ${reference || ''} (${targetCalendarDay}).`);
     }
+    invalidateLeadsCache('all');
   } catch (crmErr) {
     console.error('[CRM Auto-Approval Error] Failed to update CRM lead automatically:', crmErr);
   }
@@ -161,7 +221,7 @@ export async function POST(req: NextRequest) {
       });
 
       // Synchronisation CRM automatique
-      await triggerCrmApproval(phoneVal, isNaN(amount) ? 0 : amount, operatorName, ref);
+      await triggerCrmApproval(phoneVal, isNaN(amount) ? 0 : amount, operatorName, ref, new Date());
 
       return NextResponse.json(newReceipt, { status: 201 });
     }
@@ -210,10 +270,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Les champs obligatoires (opérateur, téléphone, mode de paiement, détails et montant) sont manquants ou invalides' }, { status: 400 });
     }
 
-    // 2. Convertir le fichier en Buffer
+    // 2. Connexion MongoDB et vérification préventive de doublon
+    await connectToDatabase();
+
+    const effectiveDate = paymentDate ? resolveExactReceiptDate(paymentDate, new Date()) : new Date();
+
+    const startOfDay = new Date(effectiveDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(effectiveDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const duplicateReceipt = await Receipt.findOne({
+      $or: [
+        { 'clientDetails.telephone': telephone },
+        { 'clientDetails.telephone': rawTelephone }
+      ],
+      amount: amount,
+      paymentMode: paymentMode,
+      paymentDate: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (duplicateReceipt) {
+      return NextResponse.json(
+        {
+          error: `Reçu déjà existant : un reçu identique (${amount} DT via ${paymentMode}) a déjà été enregistré pour ce numéro (${telephone}) aujourd'hui (Réf: ${duplicateReceipt.reference || duplicateReceipt._id}).`
+        },
+        { status: 409 }
+      );
+    }
+
+    // 3. Convertir le fichier en Buffer
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // 3. Appel à Google Drive pour uploader
+    // 4. Appel à Google Drive pour uploader
     let fileId, webViewLink;
     try {
       const uploadRes = await uploadFileToDrive(buffer, file.type, file.name);
@@ -224,11 +313,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Erreur Google Drive: ${uploadError.message}` }, { status: 500 });
     }
 
-    // 4. Connexion MongoDB
-    await connectToDatabase();
-
     // 5. Création et sauvegarde du document
-    const effectiveDate = paymentDate ? resolveExactReceiptDate(paymentDate, new Date()) : new Date();
     const reference = generateReceiptReference(telephone, effectiveDate);
 
     const newReceipt = await Receipt.create({
@@ -263,8 +348,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Synchronisation CRM automatique
-    await triggerCrmApproval(telephone, amount, operatorName, newReceipt.reference || reference);
+    // Synchronisation CRM automatique avec traçabilité et contrôle anti-doublon journalier
+    await triggerCrmApproval(telephone, amount, operatorName, newReceipt.reference || reference, effectiveDate);
 
     // 6. Retour de la réponse JSON au client
     return NextResponse.json(newReceipt, { status: 201 });

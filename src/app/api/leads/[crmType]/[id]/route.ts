@@ -3,6 +3,7 @@ import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import { formatPhone } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
+import { invalidateLeadsCache } from '@/lib/leadsCache';
 
 export async function GET(
   request: Request,
@@ -77,6 +78,7 @@ export async function PATCH(
       );
 
       if (!updated) return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
+      invalidateLeadsCache(crmType as any);
       return NextResponse.json(updated);
     }
 
@@ -86,19 +88,42 @@ export async function PATCH(
       if (!existing) return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
       
       const notes = Array.isArray(existing.notes) ? [...existing.notes] : [];
-      const noteIdx = notes.findIndex((n: any) => (n.id === body.noteId || n._id?.toString() === body.noteId));
-      if (noteIdx !== -1) {
-        const noteAuthor = notes[noteIdx].by || notes[noteIdx].addedBy || '';
-        if (noteAuthor && operator && noteAuthor.toLowerCase() !== operator.toLowerCase()) {
-          return NextResponse.json({ error: "Seul l'auteur de cette note peut la modifier" }, { status: 403 });
+      let noteIdx = notes.findIndex((n: any) => 
+        (n.id && n.id === body.noteId) || 
+        (n._id && n._id.toString() === body.noteId)
+      );
+
+      if (noteIdx === -1 && typeof body.noteId === 'string' && body.noteId.startsWith('n-')) {
+        const idxCandidate = parseInt(body.noteId.replace('n-', ''), 10);
+        if (!isNaN(idxCandidate) && idxCandidate >= 0 && idxCandidate < notes.length) {
+          noteIdx = idxCandidate;
         }
-        notes[noteIdx] = {
-          ...notes[noteIdx],
-          text: body.noteText,
-          editedAt: now.toISOString(),
-          editedBy: operator,
-        };
       }
+
+      if (noteIdx === -1) {
+        return NextResponse.json({ error: 'Note introuvable' }, { status: 404 });
+      }
+
+      const noteToEdit = notes[noteIdx];
+      const noteAuthor = noteToEdit.by || noteToEdit.addedBy || '';
+      const isAuthorized = Boolean(
+        !noteAuthor ||
+        noteAuthor.toLowerCase() === 'système' ||
+        noteAuthor.toLowerCase() === 'systeme' ||
+        (operator && noteAuthor.toLowerCase() === operator.toLowerCase()) ||
+        (operator && ['ghassen', 'admin', 'superadmin', 'amine'].includes(operator.toLowerCase()))
+      );
+
+      if (!isAuthorized) {
+        return NextResponse.json({ error: "Seul l'auteur de cette note ou un administrateur peut la modifier" }, { status: 403 });
+      }
+
+      notes[noteIdx] = {
+        ...notes[noteIdx],
+        text: body.noteText,
+        editedAt: now.toISOString(),
+        editedBy: operator,
+      };
 
       existing.notes = notes;
       existing.updatedAt = now;
@@ -111,7 +136,7 @@ export async function PATCH(
         if (existing.modifierLogs.length > 100) existing.modifierLogs = existing.modifierLogs.slice(-100);
       }
       await existing.save();
-
+      invalidateLeadsCache(crmType as any);
       return NextResponse.json(existing);
     }
 
@@ -120,19 +145,67 @@ export async function PATCH(
       const existing = await Lead.findOne({ ...query, ...crmFilter });
       if (!existing) return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
       
-      const noteToDelete = (existing.notes || []).find((n: any) => n.id === body.noteId || n._id?.toString() === body.noteId);
-      if (noteToDelete) {
-        const noteAuthor = noteToDelete.by || noteToDelete.addedBy || '';
-        if (noteAuthor && operator && noteAuthor.toLowerCase() !== operator.toLowerCase()) {
-          return NextResponse.json({ error: "Seul l'auteur de cette note peut la supprimer" }, { status: 403 });
+      const notes = Array.isArray(existing.notes) ? [...existing.notes] : [];
+      let noteIdx = notes.findIndex((n: any) => 
+        (n.id && n.id === body.noteId) || 
+        (n._id && n._id.toString() === body.noteId)
+      );
+
+      // Fallback index pour les notes sans id explicite (format 'n-0', 'n-1', etc.)
+      if (noteIdx === -1 && typeof body.noteId === 'string' && body.noteId.startsWith('n-')) {
+        const idxCandidate = parseInt(body.noteId.replace('n-', ''), 10);
+        if (!isNaN(idxCandidate) && idxCandidate >= 0 && idxCandidate < notes.length) {
+          noteIdx = idxCandidate;
         }
       }
 
-      existing.notes = (existing.notes || []).filter(
-        (n: any) => n.id !== body.noteId && n._id?.toString() !== body.noteId
+      if (noteIdx === -1) {
+        return NextResponse.json({ error: 'Note introuvable' }, { status: 404 });
+      }
+
+      const noteToDelete = notes[noteIdx];
+      const noteAuthor = (noteToDelete.by || noteToDelete.addedBy || '').trim();
+      const isValidationNote = Boolean(
+        (noteToDelete.text && (
+          noteToDelete.text.includes('Inscription validée') ||
+          noteToDelete.text.includes('Inscription validée automatiquement')
+        )) ||
+        (noteToDelete.id && typeof noteToDelete.id === 'string' && noteToDelete.id.startsWith('auto-'))
       );
+
+      let isAuthorized = false;
+      if (isValidationNote) {
+        // La note de validation de paiement ne peut être supprimée QUE par l'opérateur porteur de la note
+        if (noteAuthor && noteAuthor.toLowerCase() !== 'système' && noteAuthor.toLowerCase() !== 'systeme') {
+          isAuthorized = Boolean(operator && operator.trim().toLowerCase() === noteAuthor.toLowerCase());
+        } else {
+          // Si la note est estampillée Système pur : seul l'administrateur système (Ghassen/Admin) peut intervenir
+          isAuthorized = Boolean(operator && ['ghassen', 'admin', 'superadmin'].includes(operator.trim().toLowerCase()));
+        }
+      } else {
+        // Notes manuelles classiques : auteur de la note ou administrateur
+        isAuthorized = Boolean(
+          !noteAuthor ||
+          noteAuthor.toLowerCase() === 'système' ||
+          noteAuthor.toLowerCase() === 'systeme' ||
+          (operator && noteAuthor.toLowerCase() === operator.trim().toLowerCase()) ||
+          (operator && ['ghassen', 'admin', 'superadmin', 'amine'].includes(operator.trim().toLowerCase()))
+        );
+      }
+
+      if (!isAuthorized) {
+        return NextResponse.json({ 
+          error: isValidationNote 
+            ? `Seul l'opérateur porteur de cette note de validation (${noteAuthor}) peut la supprimer` 
+            : "Seul l'auteur de cette note ou un administrateur peut la supprimer" 
+        }, { status: 403 });
+      }
+
+      notes.splice(noteIdx, 1);
+      existing.notes = notes;
       existing.updatedAt = now;
       existing.lastModifiedBy = operator;
+
       if (!existing.modifiers) existing.modifiers = [];
       if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
         if (!existing.modifiers.includes(operator)) existing.modifiers.push(operator);
@@ -141,7 +214,7 @@ export async function PATCH(
         if (existing.modifierLogs.length > 100) existing.modifierLogs = existing.modifierLogs.slice(-100);
       }
       await existing.save();
-
+      invalidateLeadsCache(crmType as any);
       return NextResponse.json(existing);
     }
 
@@ -249,6 +322,7 @@ export async function PATCH(
 
           // SUPPRESSION définitive du prospect de CRM Formatic pour garantir zéro doublon
           await Lead.deleteOne({ _id: updated._id });
+          invalidateLeadsCache('all');
 
           return NextResponse.json({
             ...existingElios.toObject(),
@@ -290,6 +364,7 @@ export async function PATCH(
             ...(updated.notes || [])
           ];
           await updated.save();
+          invalidateLeadsCache('all');
 
           return NextResponse.json({
             ...updated.toObject(),
@@ -302,6 +377,7 @@ export async function PATCH(
       }
     }
 
+    invalidateLeadsCache(crmType as any);
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('Failed to update lead:', error);
@@ -324,6 +400,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
     }
 
+    invalidateLeadsCache(crmType as any);
     return NextResponse.json({ message: 'Prospect supprimé avec succès' });
   } catch (error: any) {
     console.error('Failed to delete lead:', error);

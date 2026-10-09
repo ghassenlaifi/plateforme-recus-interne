@@ -19,19 +19,19 @@ export function SessionReminderAlert() {
   const { data: sessionData, mutate } = useSWR<{ sessions: Session[] }>(
     '/api/sessions',
     fetcher,
-    { refreshInterval: 30000, revalidateOnFocus: true }
+    { refreshInterval: 60000, revalidateOnFocus: false, dedupingInterval: 30000 }
   );
 
   const { data: groupsData } = useSWR<{ groups: CommunicationGroup[] }>(
     '/api/settings/groups',
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
 
   const { data: whatsappData } = useSWR<{ templates: WhatsAppTemplates }>(
     '/api/settings/whatsapp',
     fetcher,
-    { revalidateOnFocus: true, refreshInterval: 10000 }
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
 
   const [activeAlertSession, setActiveAlertSession] = useState<Session | null>(null);

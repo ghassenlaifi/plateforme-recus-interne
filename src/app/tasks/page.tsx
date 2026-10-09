@@ -123,11 +123,11 @@ export default function TasksPage() {
   const activeOperatorName = activeUser || (operators.length > 0 ? operators[0].name : 'Ghassen');
   const activeOperatorColors = getOperatorColors(activeOperatorName, operators);
 
-  // Tâches SWR
+  // Tâches SWR avec cadence équilibrée
   const { data: tasksData, mutate: mutateTasks } = useSWR<{ tasks: TaskItem[] }>(
     '/api/tasks',
     fetcher,
-    { refreshInterval: sheetTask ? 1500 : 4000, revalidateOnFocus: true }
+    { refreshInterval: sheetTask ? 5000 : 15000, revalidateOnFocus: true, dedupingInterval: 3000 }
   );
 
   const rawTasks: TaskItem[] = useMemo(() => tasksData?.tasks || [], [tasksData]);

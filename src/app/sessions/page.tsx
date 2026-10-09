@@ -71,12 +71,12 @@ export default function SessionsPage() {
   const { data: groupsData } = useSWR<{ groups: CommunicationGroup[] }>(
     '/api/settings/groups',
     fetcher,
-    { revalidateOnFocus: false, revalidateOnReconnect: false }
+    { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 60000 }
   );
   const { data: whatsappData } = useSWR<{ templates: WhatsAppTemplates }>(
     '/api/settings/whatsapp',
     fetcher,
-    { revalidateOnFocus: true, refreshInterval: 10000 }
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
 
   // Forçage de langue pour les rappels WhatsApp ('fr' | 'ar' | null = selon le modèle configuré)

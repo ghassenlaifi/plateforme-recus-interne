@@ -3,20 +3,53 @@ import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import { formatPhone } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
+import { getCachedLeads, setCachedLeads, invalidateLeadsCache } from '@/lib/leadsCache';
 
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
   try {
-    await connectMongo();
-    
     if (!['elios', 'formatic'].includes(crmType)) {
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 
+    const validCrm = crmType as 'elios' | 'formatic';
+    const { data: cached, isStale } = getCachedLeads(validCrm);
+
+    // Si nous avons des données fraîches en cache mémoire : réponse quasi instantanée (< 5ms)
+    if (cached && !isStale) {
+      return NextResponse.json(cached);
+    }
+
+    // Si les données sont en cache mais stale (périmées) : renvoyer immédiatement les données du cache et revalider en tâche de fond
+    if (cached && isStale) {
+      // Déclencher la revalidation asynchrone sans bloquer l'utilisateur
+      (async () => {
+        try {
+          await connectMongo();
+          if (validCrm === 'formatic') {
+            const [formaticLeads, migratedLeads] = await Promise.all([
+              Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
+              Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
+            ]);
+            const formattedMigrated = migratedLeads.map((l: any) => ({ ...l, isMigratedToElios: true, toElios: true }));
+            setCachedLeads('formatic', [...formaticLeads, ...formattedMigrated]);
+          } else {
+            const fresh = await Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
+            setCachedLeads('elios', fresh);
+          }
+        } catch {}
+      })();
+      return NextResponse.json(cached);
+    }
+
+    await connectMongo();
+
     if (crmType === 'formatic') {
-      // Pour Formatic : renvoyer les prospects Formatic actifs ainsi que les prospects migrés vers Elios
-      const formaticLeads = await Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).lean();
-      const migratedLeads = await Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).lean();
+      // Pour Formatic : requêtes parallèles optimisées avec batchSize
+      const [formaticLeads, migratedLeads] = await Promise.all([
+        Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
+        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
+      ]);
 
       const formattedMigrated = migratedLeads.map((l: any) => ({
         ...l,
@@ -24,11 +57,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
         toElios: true
       }));
 
-      return NextResponse.json([...formaticLeads, ...formattedMigrated]);
+      const result = [...formaticLeads, ...formattedMigrated];
+      setCachedLeads('formatic', result);
+      return NextResponse.json(result);
     }
 
     // Sort by creation date so modifications keep leads strictly in their place
-    const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 });
+    const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
+    setCachedLeads('elios', leads);
     return NextResponse.json(leads);
   } catch (error) {
     console.error('Failed to fetch leads:', error);
@@ -74,6 +110,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
           ...(existingElios.notes || [])
         ];
         await existingElios.save();
+        invalidateLeadsCache('all');
         return NextResponse.json({
           ...existingElios.toObject(),
           migrated: true,
@@ -177,6 +214,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       notes: body.notes || []
     });
 
+    invalidateLeadsCache(isToEliosActive ? 'all' : (crmType as any));
     return NextResponse.json(lead, { status: 201 });
   } catch (error: any) {
     console.error('Failed to create lead:', error);

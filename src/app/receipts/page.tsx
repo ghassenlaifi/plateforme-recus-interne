@@ -85,12 +85,16 @@ export default function ReceiptsPage() {
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [isDlgOpen, setIsDlgOpen] = useState(false);
 
-  // Données MongoDB
+  // Données MongoDB avec mise en cache optimisée
   const { data: rawReceipts, mutate } = useSWR<Receipt[]>('/api/receipts?status=all', fetcher, {
-    refreshInterval: isDlgOpen ? 2000 : 4000,
-    revalidateOnFocus: true
+    refreshInterval: isDlgOpen ? 0 : 30000,
+    revalidateOnFocus: true,
+    dedupingInterval: 10000
   });
-  const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher);
+  const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // Persistence utilisateur
   useEffect(() => {

@@ -15,8 +15,13 @@ export function GlobalWhipListener() {
     message: string;
   } | null>(null);
 
-  const { data: operatorsData } = useSWR<Operator[]>('/api/operators', fetcher);
+  const { data: operatorsData } = useSWR<Operator[]>('/api/operators', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
   const operators = Array.isArray(operatorsData) ? operatorsData : [];
+  const operatorsRef = useRef(operators);
+  operatorsRef.current = operators;
 
   const seenIdsRef = useRef<Set<string>>(new Set());
   const lastCheckRef = useRef<number>(Date.now() - 15000); // 15s dans le passé à l'initialisation
@@ -65,6 +70,9 @@ export function GlobalWhipListener() {
 
     const pollWhipEvents = async () => {
       try {
+        // Ne pas scruter si le document est masqué / onglet en arrière-plan
+        if (typeof document !== 'undefined' && document.hidden) return;
+
         // Si une animation de fouet est déjà active à l'écran, ne pas interférer
         if (activeWhip) return;
 
@@ -79,8 +87,9 @@ export function GlobalWhipListener() {
         } catch {}
 
         // Fallback si non encore défini explicitement
-        if (!activeUser && operators.length > 0) {
-          activeUser = operators[0].name;
+        const currentOps = operatorsRef.current;
+        if (!activeUser && currentOps.length > 0) {
+          activeUser = currentOps[0].name;
         }
 
         if (!activeUser) return;
@@ -126,14 +135,14 @@ export function GlobalWhipListener() {
     // Première vérification
     pollWhipEvents();
 
-    // Intervalle régulier de 2.5 secondes
-    const interval = setInterval(pollWhipEvents, 2500);
+    // Intervalle équilibré de 5 secondes (léger et réactif)
+    const interval = setInterval(pollWhipEvents, 5000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [activeWhip, operators]);
+  }, [activeWhip]);
 
   if (!activeWhip) return null;
 
