@@ -55,8 +55,15 @@ export async function PATCH(
         addedAt: now,
       };
 
+      const logEntry = (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné')
+        ? [{ operator, at: now, action: 'add_note' }]
+        : [];
+
       const updateNoteQuery: any = { 
-        $push: { notes: { $each: [newNote], $position: 0 } },
+        $push: { 
+          notes: { $each: [newNote], $position: 0 },
+          ...(logEntry.length > 0 ? { modifierLogs: { $each: logEntry, $slice: -100 } } : {})
+        },
         $set: { updatedAt: now, lastModifiedBy: operator }
       };
       if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
@@ -97,8 +104,11 @@ export async function PATCH(
       existing.updatedAt = now;
       existing.lastModifiedBy = operator;
       if (!existing.modifiers) existing.modifiers = [];
-      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !existing.modifiers.includes(operator)) {
-        existing.modifiers.push(operator);
+      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+        if (!existing.modifiers.includes(operator)) existing.modifiers.push(operator);
+        if (!existing.modifierLogs) existing.modifierLogs = [];
+        existing.modifierLogs.push({ operator, at: now, action: 'edit_note' });
+        if (existing.modifierLogs.length > 100) existing.modifierLogs = existing.modifierLogs.slice(-100);
       }
       await existing.save();
 
@@ -124,8 +134,11 @@ export async function PATCH(
       existing.updatedAt = now;
       existing.lastModifiedBy = operator;
       if (!existing.modifiers) existing.modifiers = [];
-      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !existing.modifiers.includes(operator)) {
-        existing.modifiers.push(operator);
+      if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+        if (!existing.modifiers.includes(operator)) existing.modifiers.push(operator);
+        if (!existing.modifierLogs) existing.modifierLogs = [];
+        existing.modifierLogs.push({ operator, at: now, action: 'delete_note' });
+        if (existing.modifierLogs.length > 100) existing.modifierLogs = existing.modifierLogs.slice(-100);
       }
       await existing.save();
 
@@ -157,9 +170,16 @@ export async function PATCH(
     body.updatedAt = now;
     body.lastModifiedBy = operator;
 
+    const logEntry = (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné')
+      ? [{ operator, at: now, action: 'update' }]
+      : [];
+
     const updateQuery: any = { $set: body };
     if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
       updateQuery.$addToSet = { modifiers: operator };
+    }
+    if (logEntry.length > 0) {
+      updateQuery.$push = { modifierLogs: { $each: logEntry, $slice: -100 } };
     }
 
     const updated = await Lead.findOneAndUpdate(
@@ -202,8 +222,11 @@ export async function PATCH(
           existingElios.updatedAt = now;
           existingElios.lastModifiedBy = operator;
           if (!existingElios.modifiers) existingElios.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !existingElios.modifiers.includes(operator)) {
-            existingElios.modifiers.push(operator);
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+            if (!existingElios.modifiers.includes(operator)) existingElios.modifiers.push(operator);
+            if (!existingElios.modifierLogs) existingElios.modifierLogs = [];
+            existingElios.modifierLogs.push({ operator, at: now, action: 'migrate' });
+            if (existingElios.modifierLogs.length > 100) existingElios.modifierLogs = existingElios.modifierLogs.slice(-100);
           }
 
           // Fusion des notes sans doublons

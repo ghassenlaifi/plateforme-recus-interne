@@ -19,7 +19,8 @@ import {
   getFormaticStatusColor,
   getLeadLastModifier,
   isLeadTouchedByStaff,
-  extractAllLeadStaff
+  extractAllLeadStaff,
+  isLeadMatchingStaffAndDate
 } from '@/types/crm';
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
@@ -526,41 +527,12 @@ export default function CRMFormaticPage() {
         if (!leadSec.includes(targetSec)) return false;
       }
 
-      // 6. Filtre STAFF (Tous les prospects créés, modifiés ou annotés par cet opérateur)
-      if (filterStaff && filterStaff !== 'ALL') {
-        if (!isLeadTouchedByStaff(l, filterStaff)) return false;
-      }
-
-      // 7. Filtre DATE
-      if (filterDate !== 'ALL') {
-        const leadDate = l.updatedAt ? new Date(l.updatedAt) : new Date(l.date);
-        const dateToEval = new Date(leadDate);
-        const now = new Date();
-
-        if (filterDate === 'today') {
-          if (dateToEval.toDateString() !== now.toDateString()) return false;
-        } else if (filterDate === 'week') {
-          const startOfWeek = new Date(now);
-          const day = startOfWeek.getDay() || 7;
-          startOfWeek.setDate(startOfWeek.getDate() - day + 1);
-          startOfWeek.setHours(0, 0, 0, 0);
-          if (dateToEval < startOfWeek) return false;
-        } else if (filterDate === 'month') {
-          if (dateToEval.getMonth() !== now.getMonth() || dateToEval.getFullYear() !== now.getFullYear()) {
-            return false;
-          }
-        } else if (filterDate === 'custom') {
-          if (customStartDate) {
-            const start = new Date(customStartDate);
-            start.setHours(0, 0, 0, 0);
-            if (dateToEval < start) return false;
-          }
-          if (customEndDate) {
-            const end = new Date(customEndDate);
-            end.setHours(23, 59, 59, 999);
-            if (dateToEval > end) return false;
-          }
-        }
+      // 6 & 7. Filtre STAFF et DATE unifiés et rigoureux
+      // - Si Staff seul : tous les clients auxquels cet opérateur a contribué à n'importe quelle date
+      // - Si Date seule : tous les clients ayant eu une activité durant cette période
+      // - Si Staff ET Date : STRICTEMENT les clients que cet opérateur a modifiés/créés/annotés durant cette période exacte
+      if (!isLeadMatchingStaffAndDate(l, filterStaff, filterDate, customStartDate, customEndDate)) {
+        return false;
       }
 
       return true;

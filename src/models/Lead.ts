@@ -17,6 +17,16 @@ const LeadSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
   lastModifiedBy: { type: String, default: 'Système' },
   modifiers: { type: [String], default: [] },
+  modifierLogs: {
+    type: [
+      {
+        operator: { type: String, required: true },
+        at: { type: Date, default: Date.now },
+        action: { type: String, default: 'update' }
+      }
+    ],
+    default: []
+  },
   notes: { type: Array, default: [] },
   familyGroup: { type: String, default: '' },
   toElios: { type: Boolean, default: false },
@@ -34,6 +44,7 @@ LeadSchema.index({ crmType: 1, date: -1 });
 LeadSchema.index({ id: 1, crmType: 1 });
 LeadSchema.index({ phone: 1 });
 LeadSchema.index({ modifiers: 1 });
+LeadSchema.index({ 'modifierLogs.operator': 1, 'modifierLogs.at': -1 });
 
 // Ensure in-memory cached model has new fields during dev reload
 if (mongoose.models.Lead) {
@@ -63,6 +74,20 @@ if (mongoose.models.Lead) {
   }
   if (!mongoose.models.Lead.schema.path('modifiers')) {
     mongoose.models.Lead.schema.add({ modifiers: { type: [String], default: [] } });
+  }
+  if (!mongoose.models.Lead.schema.path('modifierLogs')) {
+    mongoose.models.Lead.schema.add({
+      modifierLogs: {
+        type: [
+          {
+            operator: { type: String, required: true },
+            at: { type: Date, default: Date.now },
+            action: { type: String, default: 'update' }
+          }
+        ],
+        default: []
+      }
+    });
   }
 }
 

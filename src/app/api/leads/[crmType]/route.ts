@@ -115,6 +115,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
         updatedAt: now,
         lastModifiedBy: body.staff || 'Système',
         modifiers: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné') ? [body.staff] : [],
+        modifierLogs: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné')
+          ? [{ operator: body.staff, at: now, action: 'create' }]
+          : [],
         notes: [
           ...(body.notes || []),
           {
@@ -168,6 +171,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       updatedAt: now,
       lastModifiedBy: body.staff || 'Système',
       modifiers: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné') ? [body.staff] : [],
+      modifierLogs: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné')
+        ? [{ operator: body.staff, at: now, action: 'create' }]
+        : [],
       notes: body.notes || []
     });
 

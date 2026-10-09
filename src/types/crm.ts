@@ -7,6 +7,12 @@ export interface LeadNote {
   text: string;
 }
 
+export interface ModifierLog {
+  operator: string;
+  at: string | Date;
+  action?: string;
+}
+
 export interface LeadItem {
   _id?: string;
   id: string;
@@ -26,6 +32,7 @@ export interface LeadItem {
   updatedAt?: string | Date;
   lastModifiedBy?: string;
   modifiers?: string[];
+  modifierLogs?: ModifierLog[];
   notes?: LeadNote[];
   familyGroup?: string;
   toElios?: boolean;
@@ -214,9 +221,10 @@ export const CRM_SELECTABLE_STATUSES = ELIOS_STATUSES;
  * 
  * Priorité d'intégrité :
  * 1. lead.lastModifiedBy si renseigné et distinct de 'Système' / 'Non assigné'
- * 2. Auteur de la note la plus récente (si notes présentes)
- * 3. lead.staff initial (créateur / premier manipulateur) si valide
- * 4. Repli propre sur lastModifiedBy / staff ou 'Non assigné'
+ * 2. Dernier opérateur consigné dans lead.modifierLogs
+ * 3. Auteur de la note la plus récente (si notes présentes)
+ * 4. lead.staff initial (créateur / premier manipulateur) si valide
+ * 5. Repli propre sur lastModifiedBy / staff ou 'Non assigné'
  */
 export function getLeadLastModifier(lead?: Partial<LeadItem> | null): string {
   if (!lead) return 'Non assigné';
@@ -233,7 +241,23 @@ export function getLeadLastModifier(lead?: Partial<LeadItem> | null): string {
     return lastMod;
   }
 
-  // 2. Auteur de la note la plus récente
+  // 2. Dernier opérateur dans modifierLogs
+  if (Array.isArray(lead.modifierLogs) && lead.modifierLogs.length > 0) {
+    for (let i = lead.modifierLogs.length - 1; i >= 0; i--) {
+      const op = (lead.modifierLogs[i]?.operator || '').trim();
+      if (
+        op &&
+        op.toLowerCase() !== 'système' &&
+        op.toLowerCase() !== 'systeme' &&
+        op.toLowerCase() !== 'non assigné' &&
+        op.toLowerCase() !== 'non assigne'
+      ) {
+        return op;
+      }
+    }
+  }
+
+  // 3. Auteur de la note la plus récente
   if (Array.isArray(lead.notes) && lead.notes.length > 0) {
     for (const note of lead.notes) {
       if (!note) continue;
@@ -250,7 +274,7 @@ export function getLeadLastModifier(lead?: Partial<LeadItem> | null): string {
     }
   }
 
-  // 3. Créateur initial / staff assigné
+  // 4. Créateur initial / staff assigné
   const staff = (lead.staff || '').trim();
   if (
     staff &&
@@ -266,10 +290,11 @@ export function getLeadLastModifier(lead?: Partial<LeadItem> | null): string {
 }
 
 /**
- * Détermine si un prospect a été créé, modifié ou annoté par un opérateur donné.
+ * Détermine si un prospect a été créé, modifié ou annoté par un opérateur donné à un moment quelconque.
  * Règle d'or : Retourne vrai si l'opérateur :
  * - A créé ou est assigné à la fiche (lead.staff),
  * - A effectué la dernière modification (lead.lastModifiedBy),
+ * - Figure dans l'historique des modifications structurées (lead.modifierLogs),
  * - Figure dans l'historique des modificateurs (lead.modifiers),
  * - A rédigé, ajouté ou modifié une note dans l'historique (lead.notes).
  */
@@ -288,14 +313,21 @@ export function isLeadTouchedByStaff(lead?: Partial<LeadItem> | null, targetStaf
   const lastMod = (lead.lastModifiedBy || '').trim().toLowerCase();
   if (lastMod === target) return true;
 
-  // 3. Modificateurs historiques enregistrés
+  // 3. Historique précis modifierLogs
+  if (Array.isArray(lead.modifierLogs)) {
+    for (const log of lead.modifierLogs) {
+      if (log?.operator && log.operator.trim().toLowerCase() === target) return true;
+    }
+  }
+
+  // 4. Modificateurs historiques enregistrés
   if (Array.isArray(lead.modifiers)) {
     for (const m of lead.modifiers) {
       if (m && m.trim().toLowerCase() === target) return true;
     }
   }
 
-  // 4. Auteur ou éditeur d'une note dans l'historique
+  // 5. Auteur ou éditeur d'une note dans l'historique
   if (Array.isArray(lead.notes)) {
     for (const n of lead.notes) {
       if (!n) continue;
@@ -334,6 +366,10 @@ export function extractAllLeadStaff(lead?: Partial<LeadItem> | null): string[] {
     lead.modifiers.forEach(addIfValid);
   }
 
+  if (Array.isArray(lead.modifierLogs)) {
+    lead.modifierLogs.forEach((m: any) => addIfValid(m?.operator));
+  }
+
   if (Array.isArray(lead.notes)) {
     lead.notes.forEach((n: any) => {
       addIfValid(n?.by);
@@ -343,4 +379,242 @@ export function extractAllLeadStaff(lead?: Partial<LeadItem> | null): string[] {
   }
 
   return Array.from(set);
+}
+
+// -----------------------------------------------------------------------------
+// ARCHITECTURE DES FILTRES COMBINÉS TEMPORELS ET OPÉRATEURS (DATA INTEGRITY)
+// -----------------------------------------------------------------------------
+
+export interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+/**
+ * Calcule l'intervalle temporel [start, end] selon le filtre sélectionné.
+ * - 'today': Aujourd'hui 00:00:00.000 à 23:59:59.999
+ * - 'week': 7 derniers jours glissants (jusqu'à aujourd'hui 23:59:59.999)
+ * - 'month': Du 1er jour du mois courant à 00:00:00.000 jusqu'au dernier jour à 23:59:59.999
+ * - 'custom': Plage personnalisée définie par customStartDate et customEndDate
+ */
+export function getDateFilterRange(
+  filterDate?: string | null,
+  customStartDate?: string | null,
+  customEndDate?: string | null,
+  refDate: Date = new Date()
+): DateRange | null {
+  if (!filterDate || filterDate === 'ALL') return null;
+
+  if (filterDate === 'today') {
+    const start = new Date(refDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(refDate);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+
+  if (filterDate === 'week') {
+    const start = new Date(refDate);
+    start.setDate(start.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(refDate);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+
+  if (filterDate === 'month') {
+    const start = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
+    const end = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { start, end };
+  }
+
+  if (filterDate === 'custom') {
+    if (!customStartDate && !customEndDate) return null;
+    const start = customStartDate 
+      ? new Date(new Date(customStartDate).setHours(0, 0, 0, 0)) 
+      : new Date(0);
+    const end = customEndDate 
+      ? new Date(new Date(customEndDate).setHours(23, 59, 59, 999)) 
+      : new Date(8640000000000000);
+    return { start, end };
+  }
+
+  return null;
+}
+
+/**
+ * Détermine si un horodatage se trouve dans l'intervalle donné.
+ */
+export function isTimestampInRange(
+  time: Date | string | number | undefined | null,
+  range: DateRange
+): boolean {
+  if (!time) return false;
+  const t = new Date(time).getTime();
+  if (isNaN(t)) return false;
+  return t >= range.start.getTime() && t <= range.end.getTime();
+}
+
+/**
+ * Extrait l'ensemble des horodatages réels où un opérateur cible a créé, modifié
+ * ou annoté un prospect donné.
+ */
+export function getStaffContributionTimestamps(
+  lead?: Partial<LeadItem> | null,
+  targetStaff?: string | null
+): Date[] {
+  if (!lead || !targetStaff || targetStaff === 'ALL') return [];
+  const target = targetStaff.trim().toLowerCase();
+  if (!target || target === 'all') return [];
+
+  const timestamps: Date[] = [];
+  const pushIfValid = (val: Date | string | undefined | null) => {
+    if (!val) return;
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) timestamps.push(d);
+  };
+
+  // 1. Staff initial / créateur
+  const staff = (lead.staff || '').trim().toLowerCase();
+  if (staff === target) {
+    pushIfValid(lead.date);
+    pushIfValid(lead.createdAt);
+  }
+
+  // 2. Dernier modificateur
+  const lastMod = (lead.lastModifiedBy || '').trim().toLowerCase();
+  if (lastMod === target) {
+    pushIfValid(lead.updatedAt);
+  }
+
+  // 3. ModifierLogs (historique précis)
+  if (Array.isArray(lead.modifierLogs)) {
+    for (const log of lead.modifierLogs) {
+      if (log?.operator && log.operator.trim().toLowerCase() === target) {
+        pushIfValid(log.at);
+      }
+    }
+  }
+
+  // 4. Notes ajoutées ou modifiées
+  if (Array.isArray(lead.notes)) {
+    for (const n of lead.notes) {
+      if (!n) continue;
+      const author = (n.by || n.addedBy || '').trim().toLowerCase();
+      const editor = ((n as any).editedBy || '').trim().toLowerCase();
+      const noteText = (n.text || '').toLowerCase();
+      const isParTarget = noteText.includes(`par ${target}`);
+
+      if (author === target || isParTarget) {
+        pushIfValid(n.addedAt);
+        pushIfValid(n.date);
+      }
+      if (editor === target) {
+        pushIfValid((n as any).editedAt);
+      }
+    }
+  }
+
+  return timestamps;
+}
+
+/**
+ * Détermine si un prospect a eu une activité quelconque (création, modification, note, log)
+ * dans l'intervalle temporel spécifié.
+ */
+export function isLeadActiveInDateRange(
+  lead?: Partial<LeadItem> | null,
+  range?: DateRange | null
+): boolean {
+  if (!lead || !range) return true;
+
+  // 1. Date de modification
+  if (isTimestampInRange(lead.updatedAt, range)) return true;
+
+  // 2. Date de création
+  if (isTimestampInRange(lead.date, range)) return true;
+  if (isTimestampInRange(lead.createdAt, range)) return true;
+
+  // 3. ModifierLogs
+  if (Array.isArray(lead.modifierLogs)) {
+    for (const log of lead.modifierLogs) {
+      if (isTimestampInRange(log?.at, range)) return true;
+    }
+  }
+
+  // 4. Notes
+  if (Array.isArray(lead.notes)) {
+    for (const n of lead.notes) {
+      if (isTimestampInRange(n?.addedAt, range)) return true;
+      if (isTimestampInRange(n?.date, range)) return true;
+      if (isTimestampInRange((n as any)?.editedAt, range)) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Détermine avec une rigueur absolue si un prospect a été modifié/créé/annoté
+ * par un opérateur cible durant un intervalle temporel donné.
+ */
+export function isLeadTouchedByStaffInDateRange(
+  lead?: Partial<LeadItem> | null,
+  targetStaff?: string | null,
+  range?: DateRange | null
+): boolean {
+  if (!lead) return false;
+  if (!range) return isLeadTouchedByStaff(lead, targetStaff);
+  if (!targetStaff || targetStaff === 'ALL') return isLeadActiveInDateRange(lead, range);
+
+  const timestamps = getStaffContributionTimestamps(lead, targetStaff);
+  if (timestamps.length === 0) return false;
+
+  return timestamps.some(t => isTimestampInRange(t, range));
+}
+
+/**
+ * RÈGLE D'OR MÉTIER DU FILTRE COMBINÉ (STAFF & DATE) :
+ * 
+ * 1. Aucun filtre -> true
+ * 2. Staff seul (Date = 'ALL') :
+ *    "Si je choisit que l'operateur sans date, je doit avoir tout les clients que cet operateur a contribué, de n'importe quel facon et a n'importe quel date."
+ *    -> Tous les clients touchés par cet opérateur à n'importe quel moment.
+ * 3. Date seule (Staff = 'ALL') :
+ *    -> Tous les clients ayant eu une activité durant cette période.
+ * 4. Staff ET Date choisis :
+ *    "si je fait Ghassen et Aujourd'hui je dois avoir les clients que Ghassen a fait des modification aujourd'hui, si Cette semaine ou n'importe quel date ou intervalle, ca doit etre rigouresemnt concut et implementé."
+ *    -> STRICTEMENT les clients que cet opérateur précis a modifiés/créés/annotés durant cet intervalle précis.
+ */
+export function isLeadMatchingStaffAndDate(
+  lead?: Partial<LeadItem> | null,
+  filterStaff?: string | null,
+  filterDate?: string | null,
+  customStartDate?: string | null,
+  customEndDate?: string | null,
+  refDate: Date = new Date()
+): boolean {
+  if (!lead) return false;
+
+  const hasStaffFilter = Boolean(filterStaff && filterStaff !== 'ALL');
+  const dateRange = getDateFilterRange(filterDate, customStartDate, customEndDate, refDate);
+  const hasDateFilter = Boolean(dateRange !== null);
+
+  // 1. Aucun filtre
+  if (!hasStaffFilter && !hasDateFilter) {
+    return true;
+  }
+
+  // 2. Staff seul sans date
+  if (hasStaffFilter && !hasDateFilter) {
+    return isLeadTouchedByStaff(lead, filterStaff);
+  }
+
+  // 3. Date seule sans staff
+  if (!hasStaffFilter && hasDateFilter) {
+    return isLeadActiveInDateRange(lead, dateRange!);
+  }
+
+  // 4. Staff ET Date combinés
+  return isLeadTouchedByStaffInDateRange(lead, filterStaff, dateRange);
 }
