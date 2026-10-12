@@ -85,14 +85,24 @@ export function updateCachedLeadInPlace(crmType: 'elios' | 'formatic', updatedLe
 /**
  * Suppression atomique dans le cache mémoire
  */
-export function removeCachedLeadInPlace(crmType: 'elios' | 'formatic', targetId: string) {
+export function removeCachedLeadInPlace(crmType: 'elios' | 'formatic', targetId: string, customId?: string) {
   const entry = cache[crmType];
   if (!entry || !Array.isArray(entry.data)) return;
 
   entry.data = entry.data.filter((l: any) => 
     (l._id && l._id.toString() !== targetId) && 
-    (l.id && l.id !== targetId)
+    (l.id && l.id !== targetId) &&
+    (!customId || l.id !== customId)
   );
   entry.timestamp = Date.now();
 }
+
+/**
+ * Suppression universelle dans tous les caches CRM
+ */
+export function removeCachedLeadEverywhere(targetId: string, customId?: string) {
+  removeCachedLeadInPlace('elios', targetId, customId);
+  removeCachedLeadInPlace('formatic', targetId, customId);
+}
+
 

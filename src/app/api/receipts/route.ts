@@ -8,6 +8,7 @@ import { generateReceiptReference } from '@/lib/receiptReference';
 import { formatPhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
+import { checkMonthlyReceiptConflict } from '@/lib/receiptConflict';
 
 export async function GET(req: NextRequest) {
   try {
@@ -96,8 +97,8 @@ async function triggerCrmApproval(
         return n.text.includes(reference);
       });
 
-      // 2. Détection de doublon par journée civile (les échéances au fil du temps créent des notes à des dates différentes, jamais le même jour)
-      const hasSameDayAutoNote = existingNotes.some((n: any) => {
+      // 2. Détection de doublon par mois civil ou intervalle inférieur à 25 jours
+      const hasSameMonthAutoNote = existingNotes.some((n: any) => {
         if (!n || !n.text) return false;
         const isAuto = n.text.includes('Inscription validée automatiquement via Elios Workspace');
         if (!isAuto) return false;
@@ -106,8 +107,12 @@ async function triggerCrmApproval(
         if (!noteDateVal) return false;
         const nd = new Date(noteDateVal);
         if (isNaN(nd.getTime())) return false;
-        const noteDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
-        return noteDay === targetCalendarDay;
+        const noteMonthKey = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}`;
+        const targetMonthKey = `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}`;
+        if (noteMonthKey === targetMonthKey) return true;
+        const diffMs = Math.abs(targetDateObj.getTime() - nd.getTime());
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        return diffDays < 25;
       });
 
       const setFields: any = {
@@ -124,8 +129,8 @@ async function triggerCrmApproval(
         continue;
       }
 
-      if (hasSameDayAutoNote) {
-        console.log(`[CRM Auto-Approval Skipped] Note automatique déjà présente pour le jour ${targetCalendarDay} sur le prospect ${lead._id} (${lead.crmType}). Doublon le même jour ignoré.`);
+      if (hasSameMonthAutoNote) {
+        console.log(`[CRM Auto-Approval Skipped] Note automatique déjà présente pour ce mois sur le prospect ${lead._id} (${lead.crmType}). Doublon mensuel ignoré.`);
         await Lead.updateOne({ _id: lead._id }, { $set: setFields });
         continue;
       }
@@ -197,6 +202,12 @@ export async function POST(req: NextRequest) {
       const classVal = body.clientDetails?.classe || body.clientDetails?.offer || body.classe || 'N/A';
 
       const ref = body.reference || ('DED-' + Date.now());
+
+      // Règle d'intégrité mensuelle (sauf retraits 00000000)
+      const conflict = await checkMonthlyReceiptConflict(rawPhone, new Date());
+      if (conflict.hasConflict) {
+        return NextResponse.json({ error: conflict.error }, { status: 409 });
+      }
 
       const newReceipt = await Receipt.create({
         operatorName,
@@ -270,30 +281,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Les champs obligatoires (opérateur, téléphone, mode de paiement, détails et montant) sont manquants ou invalides' }, { status: 400 });
     }
 
-    // 2. Connexion MongoDB et vérification préventive de doublon
+    // 2. Connexion MongoDB et vérification préventive de la règle militaire d'intégrité mensuelle
     await connectToDatabase();
 
     const effectiveDate = paymentDate ? resolveExactReceiptDate(paymentDate, new Date()) : new Date();
 
-    const startOfDay = new Date(effectiveDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(effectiveDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const duplicateReceipt = await Receipt.findOne({
-      $or: [
-        { 'clientDetails.telephone': telephone },
-        { 'clientDetails.telephone': rawTelephone }
-      ],
-      amount: amount,
-      paymentMode: paymentMode,
-      paymentDate: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    if (duplicateReceipt) {
+    const conflict = await checkMonthlyReceiptConflict(rawTelephone || telephone, effectiveDate);
+    if (conflict.hasConflict) {
       return NextResponse.json(
         {
-          error: `Reçu déjà existant : un reçu identique (${amount} DT via ${paymentMode}) a déjà été enregistré pour ce numéro (${telephone}) aujourd'hui (Réf: ${duplicateReceipt.reference || duplicateReceipt._id}).`
+          error: conflict.error
         },
         { status: 409 }
       );

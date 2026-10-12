@@ -3,7 +3,7 @@ import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import { formatPhone, buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
-import { invalidateLeadsCache } from '@/lib/leadsCache';
+import { invalidateLeadsCache, removeCachedLeadEverywhere } from '@/lib/leadsCache';
 
 export async function GET(
   request: Request,
@@ -253,6 +253,21 @@ export async function PATCH(
       body.section = '';
     }
 
+    // Contrôle magistral Cross-CRM : Interdire d'attribuer à un prospect Formatic un numéro déjà présent dans CRM Elios
+    if (crmType === 'formatic' && body.phone && !body.toElios) {
+      const cleanPhone = formatPhone(body.phone) || String(body.phone).trim();
+      const phoneRegex = buildPhoneMongoRegex(cleanPhone);
+      const eliosConflict = await Lead.findOne({ crmType: 'elios', phone: phoneRegex }).lean();
+      if (eliosConflict) {
+        const doc = eliosConflict as any;
+        return NextResponse.json({
+          error: `Ce numéro de téléphone est déjà présent dans le CRM Elios pour le prospect "${doc.name || doc.phone}". Modification interdite dans Formatic.`,
+          conflictType: 'EXISTS_IN_ELIOS',
+          eliosLead: doc
+        }, { status: 409 });
+      }
+    }
+
     // Toute modification met à jour updatedAt et lastModifiedBy (ce qui réinitialise le cycle de Rappels)
     body.updatedAt = now;
     body.lastModifiedBy = operator;
@@ -407,17 +422,38 @@ export async function DELETE(
   try {
     await connectMongo();
 
-    const query = id.match(/^[0-9a-fA-F]{24}$/) ? { _id: id } : { id };
-    const deleted = await Lead.findOneAndDelete({ ...query, crmType });
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+    const deleteQuery = isMongoId ? { $or: [{ _id: id }, { id }] } : { id };
+
+    // Suppression universelle sans restriction sur crmType (garantit la suppression même si prospect migré/cross-CRM)
+    const deleted = await Lead.findOneAndDelete(deleteQuery);
 
     if (!deleted) {
-      return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
+      // Idempotence : si le prospect a déjà été supprimé (double-clic ou requête concurrente), renvoyer 200 succès
+      removeCachedLeadEverywhere(id);
+      invalidateLeadsCache('all');
+      return NextResponse.json({ 
+        message: 'Prospect déjà supprimé ou introuvable',
+        alreadyDeleted: true 
+      });
     }
 
-    invalidateLeadsCache(crmType as any);
-    return NextResponse.json({ message: 'Prospect supprimé avec succès' });
+    // Éviction immédiate de tous les caches en mémoire (serveur)
+    const mongoIdStr = deleted._id ? deleted._id.toString() : '';
+    const customIdStr = deleted.id || '';
+    removeCachedLeadEverywhere(mongoIdStr || id, customIdStr);
+    if (customIdStr && customIdStr !== id) {
+      removeCachedLeadEverywhere(customIdStr);
+    }
+    invalidateLeadsCache('all');
+
+    return NextResponse.json({ 
+      message: 'Prospect supprimé avec succès',
+      deletedId: mongoIdStr || customIdStr
+    });
   } catch (error: any) {
     console.error('Failed to delete lead:', error);
     return NextResponse.json({ error: error.message || 'Erreur suppression prospect' }, { status: 500 });
   }
 }
+

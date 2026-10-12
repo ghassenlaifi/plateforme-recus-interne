@@ -6,6 +6,7 @@ import { deleteFileFromDrive } from '@/lib/googleDrive';
 import { formatPhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
+import { checkMonthlyReceiptConflict } from '@/lib/receiptConflict';
 
 type Params = { id: string };
 
@@ -78,6 +79,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
       );
     }
     if (body.amount !== undefined) setFields.amount = Number(body.amount);
+
+    // Contrôle d'intégrité mensuel si le numéro ou la date est modifié
+    const newPhone = body.clientDetails ? (body.clientDetails.telephone || body.clientDetails.phone) : undefined;
+    const newDate = body.paymentDate !== undefined ? setFields.paymentDate : undefined;
+
+    if (newPhone || newDate !== undefined) {
+      const targetPhone = newPhone || existingReceipt.clientDetails?.telephone;
+      const targetDate = newDate !== undefined ? newDate : (existingReceipt.paymentDate || existingReceipt.createdAt);
+
+      if (targetPhone) {
+        const conflict = await checkMonthlyReceiptConflict(targetPhone, targetDate, id);
+        if (conflict.hasConflict) {
+          return NextResponse.json({ error: conflict.error }, { status: 409 });
+        }
+      }
+    }
 
     // 3. Statut Traité / En attente
     if (body.status === 'PROCESSED' || body.status === 'ARCHIVED') {

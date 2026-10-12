@@ -18,6 +18,7 @@ import {
   isClassWithoutSection,
   getFormaticStatusColor,
   getLeadLastModifier,
+  getLeadLastModifiedDate,
   isLeadTouchedByStaff,
   extractAllLeadStaff,
   isLeadMatchingStaffAndDate
@@ -26,7 +27,7 @@ import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
-import { getClientCachedLeads, setClientCachedLeads } from '@/lib/clientCache';
+import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Formatic');
@@ -191,6 +192,50 @@ export default function CRMFormaticPage() {
     return leads.find(l => isSamePhone(l.phone, newPhone)) || null;
   }, [newPhone, leads]);
 
+  // Conflit Cross-CRM magistral : Détection d'un prospect déjà présent dans CRM Elios
+  const [eliosConflictLead, setEliosConflictLead] = useState<any | null>(null);
+  const [isCheckingElios, setIsCheckingElios] = useState(false);
+
+  useEffect(() => {
+    if (!isNewLeadOpen) {
+      setEliosConflictLead(null);
+      setIsCheckingElios(false);
+      return;
+    }
+
+    const digits = extractPhoneDigits(newPhone);
+    if (digits.length !== 8) {
+      setEliosConflictLead(null);
+      setIsCheckingElios(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setIsCheckingElios(true);
+        const res = await fetch(`/api/leads/check-cross-crm?phone=${encodeURIComponent(digits)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isCancelled) return;
+        if (data.existsInElios) {
+          setEliosConflictLead(data.lead);
+        } else {
+          setEliosConflictLead(null);
+        }
+      } catch (err) {
+        console.warn('Cross-CRM check failed:', err);
+      } finally {
+        if (!isCancelled) setIsCheckingElios(false);
+      }
+    }, 120);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [newPhone, isNewLeadOpen]);
+
   // Formulaire Fiche Prospect
   const [editFirst, setEditFirst] = useState('');
   const [editLast, setEditLast] = useState('');
@@ -206,6 +251,7 @@ export default function CRMFormaticPage() {
   const [editToElios, setEditToElios] = useState(false);
   const [editErr, setEditErr] = useState('');
   const [isDeleteArmed, setIsDeleteArmed] = useState(false);
+  const [isDeletingLead, setIsDeletingLead] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Instantané pour dirty checking
@@ -565,10 +611,13 @@ export default function CRMFormaticPage() {
 
       return true;
     }).sort((a, b) => {
-      // Tri stable par date de création : les modifications/consultations ne changent jamais l'ordre de la liste
+      // Tri stable par date de création : les nouveaux prospects sont TOUJOURS tout en haut
       const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
       const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
       if (timeB !== timeA) return timeB - timeA;
+      const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      if (idNumB !== idNumA) return idNumB - idNumA;
       return String(b.id || b._id).localeCompare(String(a.id || a._id));
     });
   }, [leads, filterQuery, activeCard, filterStatus, filterClasse, filterSection, filterStaff, filterDate, customStartDate, customEndDate]);
@@ -616,6 +665,11 @@ export default function CRMFormaticPage() {
       return;
     }
 
+    if (eliosConflictLead) {
+      setNewErr(`Ce numéro est déjà présent dans le CRM Elios pour "${eliosConflictLead.name}". Création strictement interdite dans Formatic.`);
+      return;
+    }
+
     if (duplicateLeadInFormatic) {
       setNewErr(`Ce numéro de téléphone est déjà enregistré pour "${duplicateLeadInFormatic.name || duplicateLeadInFormatic.phone}". Les doublons sont strictement interdits.`);
       return;
@@ -644,6 +698,11 @@ export default function CRMFormaticPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (data.conflictType === 'EXISTS_IN_ELIOS' && data.eliosLead) {
+          setEliosConflictLead(data.eliosLead);
+          setNewErr(data.error || 'Ce prospect existe déjà dans le CRM Elios.');
+          return;
+        }
         throw new Error(data.error || 'Erreur lors de la création');
       }
 
@@ -653,9 +712,35 @@ export default function CRMFormaticPage() {
       setNewGrade('');
       setNewSection('');
       setNewErr('');
-      mutate();
-      showToast('Prospect Formatic créé avec succès !');
+
+      // 1. Pré-pendre immédiatement dans le cache local sessionStorage (T=0ms)
+      prependClientCachedLead('formatic_cached_leads', created);
+
+      // 2. Mise à jour optimiste instantanée du state SWR avec le nouveau prospect STRICTEMENT EN TÊTE
+      mutate(
+        (currentLeads: any) => {
+          const list = Array.isArray(currentLeads) ? currentLeads : [];
+          const filtered = list.filter((l: any) => 
+            (l._id && l._id !== created._id) && 
+            (l.id && l.id !== created.id)
+          );
+          return [created, ...filtered];
+        },
+        false
+      );
+
+      // 3. Réinitialiser la recherche et forcer la page 1 pour affichage direct tout en haut
+      setFilterQuery('');
+      if (filterStatus !== 'ALL' && filterStatus !== 'Lead') setFilterStatus('ALL');
+      if (activeCard !== null) setActiveCard(null);
+      setCurrentPage(1);
+
+      // 4. Mettre en valeur visuelle le prospect créé et ouvrir sa fiche
+      setLastInteractedLeadId(created._id || created.id);
       setSelectedLead(created);
+
+      showToast('Prospect Formatic créé avec succès !');
+      setTimeout(() => mutate(), 400);
     } catch (err: any) {
       setNewErr(err.message || 'Une erreur est survenue.');
     } finally {
@@ -682,6 +767,20 @@ export default function CRMFormaticPage() {
     if (duplicateOther) {
       setEditErr(`Ce numéro de téléphone est déjà attribué au prospect "${duplicateOther.name || duplicateOther.phone}". Les doublons sont strictement interdits.`);
       return;
+    }
+
+    // Contrôle magistral Cross-CRM : Interdire d'attribuer un numéro présent dans CRM Elios
+    if (!editToElios) {
+      try {
+        const crossCheckRes = await fetch(`/api/leads/check-cross-crm?phone=${encodeURIComponent(digits)}`);
+        if (crossCheckRes.ok) {
+          const crossData = await crossCheckRes.json();
+          if (crossData.existsInElios) {
+            setEditErr(`Ce numéro appartient déjà au prospect "${crossData.lead.name}" dans le CRM Elios. Modification interdite dans Formatic.`);
+            return;
+          }
+        }
+      } catch {}
     }
 
     try {
@@ -876,27 +975,54 @@ export default function CRMFormaticPage() {
     }
   };
 
-  // Suppression d'un prospect
+  // Suppression définitive d'un prospect (fluide, optimiste et ultra-résiliente)
   const handleDeleteLead = async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || isDeletingLead) return;
     if (!isDeleteArmed) {
       setIsDeleteArmed(true);
+      setTimeout(() => setIsDeleteArmed(false), 5000);
       return;
     }
 
+    const targetId = selectedLead._id || selectedLead.id;
+    const customId = selectedLead.id;
+    setIsDeletingLead(true);
+    setIsDeleteArmed(false);
+
+    // 1. Mise à jour optimiste instantanée (T=0ms) : ferme la fiche, purge les caches locaux
+    setSelectedLead(null);
+    setShowUnsavedConfirm(false);
+    removeClientCachedLead(targetId, customId);
+    
+    // Éviction optimiste instantanée du state SWR
+    mutate(
+      (currentLeads: any) => {
+        if (!Array.isArray(currentLeads)) return currentLeads;
+        return currentLeads.filter((l: any) => 
+          l._id !== targetId && 
+          l.id !== targetId && 
+          (!customId || l.id !== customId)
+        );
+      },
+      false
+    );
+    showToast('Prospect supprimé avec succès');
+
+    // 2. Requête réseau résiliente en arrière-plan
     try {
-      const targetId = selectedLead._id || selectedLead.id;
       const res = await fetch(`/api/leads/formatic/${targetId}`, {
         method: 'DELETE'
       });
-
-      if (!res.ok) throw new Error('Erreur lors de la suppression');
-      setSelectedLead(null);
-      setShowUnsavedConfirm(false);
+      if (!res.ok && res.status !== 404) {
+        throw new Error('Erreur lors de la suppression');
+      }
+      // Revalidation silencieuse en arrière-plan
       mutate();
-      showToast('Prospect supprimé');
-    } catch {
-      showToast('Erreur suppression prospect');
+    } catch (err: any) {
+      showToast(err.message || 'Erreur suppression');
+      mutate(); // Restaure l'état en cas d'échec réseau réel
+    } finally {
+      setIsDeletingLead(false);
     }
   };
 
@@ -1326,7 +1452,7 @@ export default function CRMFormaticPage() {
               paginatedLeads.map((l, n) => {
                 const modifierName = getLeadLastModifier(l);
                 const opTheme = getOperatorColors(modifierName, safeOperators);
-                const lastUpdatedDateStr = formatDateTimeFr(l.updatedAt || l.date);
+                const lastUpdatedDateStr = formatDateTimeFr(getLeadLastModifiedDate(l) || l.updatedAt || l.date);
                 const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
                 const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
                 const isOverdueRappel = isLeadInRappels(l);
@@ -1506,7 +1632,7 @@ export default function CRMFormaticPage() {
             paginatedLeads.map((l) => {
               const modifierName = getLeadLastModifier(l);
               const opTheme = getOperatorColors(modifierName, safeOperators);
-              const lastUpdatedDateStr = formatDateTimeFr(l.updatedAt || l.date);
+              const lastUpdatedDateStr = formatDateTimeFr(getLeadLastModifiedDate(l) || l.updatedAt || l.date);
               const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
               const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
               const isOverdueRappel = isLeadInRappels(l);
@@ -1787,31 +1913,88 @@ export default function CRMFormaticPage() {
                     setNewPhone(formatPhone(e.target.value));
                     if (newErr) setNewErr('');
                   }}
-                  className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${duplicateLeadInFormatic || newErr ? 'border-red-500 ring-1 ring-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
+                  className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${eliosConflictLead || duplicateLeadInFormatic || newErr ? 'border-red-500 ring-1 ring-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
                 />
                 <div className="flex items-center justify-between mt-1 text-[11px]">
                   <div>
-                    {duplicateLeadInFormatic && (
+                    {isCheckingElios && (
+                      <span className="text-amber-500 font-medium animate-pulse flex items-center gap-1">
+                        <span>Vérification CRM Elios...</span>
+                      </span>
+                    )}
+                    {!isCheckingElios && eliosConflictLead && (
                       <span className="text-red-500 font-bold flex items-center gap-1">
-                        <span>⚠️ Numéro déjà existant</span>
+                        <span>⛔ Déjà présent dans CRM Elios</span>
+                      </span>
+                    )}
+                    {!isCheckingElios && !eliosConflictLead && duplicateLeadInFormatic && (
+                      <span className="text-red-500 font-bold flex items-center gap-1">
+                        <span>⚠️ Numéro déjà existant dans Formatic</span>
                       </span>
                     )}
                   </div>
                   {newPhone.length > 0 && (
-                    <span className={duplicateLeadInFormatic ? "text-red-500 font-bold" : extractPhoneDigits(newPhone).length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                      {duplicateLeadInFormatic ? "Doublon interdit" : extractPhoneDigits(newPhone).length === 8 ? "✓ Valide (8 chiffres)" : `${extractPhoneDigits(newPhone).length} / 8`}
+                    <span className={eliosConflictLead || duplicateLeadInFormatic ? "text-red-500 font-bold" : extractPhoneDigits(newPhone).length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                      {eliosConflictLead ? "Présent dans Elios (Interdit)" : duplicateLeadInFormatic ? "Doublon Formatic interdit" : extractPhoneDigits(newPhone).length === 8 ? "✓ Valide (8 chiffres)" : `${extractPhoneDigits(newPhone).length} / 8`}
                     </span>
                   )}
                 </div>
 
-                {duplicateLeadInFormatic && (
+                {/* ALERTE MAGISTRALE CROSS-CRM : PROSPECT DÉJÀ PRÉSENT DANS CRM ELIOS */}
+                {eliosConflictLead && (
+                  <div className="mt-2.5 p-3.5 rounded-xl bg-red-500/10 border-2 border-red-500 text-red-600 dark:text-red-400 text-xs flex flex-col gap-2.5 animate-pop shadow-md">
+                    <div className="flex items-center gap-2 font-bold text-sm text-red-600 dark:text-red-400">
+                      <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        {IC.warning}
+                      </svg>
+                      <span>PROSPECT DÉJÀ PRÉSENT DANS LE CRM ELIOS</span>
+                    </div>
+                    <div className="text-[12px] leading-relaxed text-[var(--ink)]">
+                      Ce numéro de téléphone (<strong className="font-mono text-red-600 dark:text-red-400">{formatPhone(eliosConflictLead.phone)}</strong>) est déjà enregistré dans la base de données du <strong>CRM Elios</strong> :
+                      <div className="mt-2 p-2.5 rounded-lg bg-[var(--card)] border border-red-500/30 text-[11px] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[var(--ink3)]">Élève :</span>
+                          <strong className="text-[var(--ink)]">{eliosConflictLead.name}</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[var(--ink3)]">Statut Elios :</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{eliosConflictLead.status}</span>
+                        </div>
+                        {eliosConflictLead.grade && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-[var(--ink3)]">Classe :</span>
+                            <span className="font-medium text-[var(--ink)]">{eliosConflictLead.grade} {eliosConflictLead.section || ''}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[var(--ink3)]">Opérateur :</span>
+                          <span className="font-medium text-[var(--ink)]">{eliosConflictLead.staff || eliosConflictLead.lastModifiedBy || 'Système'}</span>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-red-600 dark:text-red-400 font-bold text-[11px] flex items-center gap-1.5">
+                        <span>⛔ Règle d'intégrité : Il est strictement interdit d'entrer ce prospect dans le CRM Formatic.</span>
+                      </p>
+                    </div>
+                    <div className="pt-1">
+                      <a 
+                        href={`/crm-elios?search=${encodeURIComponent(extractPhoneDigits(eliosConflictLead.phone))}&openLead=${encodeURIComponent(eliosConflictLead.id || eliosConflictLead._id)}`}
+                        className="w-full py-2.5 px-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 text-xs text-center"
+                      >
+                        <span>Accéder directement à la fiche dans CRM Elios ↗</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Alerte doublon intra-Formatic */}
+                {!eliosConflictLead && duplicateLeadInFormatic && (
                   <div className="mt-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-start gap-2.5 animate-pop">
                     <svg className="w-4 h-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       {IC.warning}
                     </svg>
                     <div className="flex-1 min-w-0">
                       <div className="font-bold flex items-center gap-1.5">
-                        <span>Prospect existant (Doublon interdit)</span>
+                        <span>Prospect existant (Doublon Formatic interdit)</span>
                       </div>
                       <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink)]">
                         Ce numéro est déjà attribué à <strong>{duplicateLeadInFormatic.name || duplicateLeadInFormatic.phone}</strong> (Statut : <span className="font-semibold text-amber-600 dark:text-amber-400">{duplicateLeadInFormatic.status}</span>).
@@ -1881,9 +2064,16 @@ export default function CRMFormaticPage() {
                 <button 
                   className="btn text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" 
                   type="submit" 
-                  disabled={isCreating || Boolean(duplicateLeadInFormatic)}
+                  disabled={isCreating || Boolean(duplicateLeadInFormatic) || Boolean(eliosConflictLead) || isCheckingElios}
+                  style={eliosConflictLead ? { backgroundColor: '#dc2626', borderColor: '#dc2626' } : {}}
                 >
-                  {isCreating ? 'Enregistrement...' : 'Enregistrer le prospect'}
+                  {isCreating 
+                    ? 'Enregistrement...' 
+                    : isCheckingElios 
+                    ? 'Vérification...' 
+                    : eliosConflictLead 
+                    ? 'Création interdite : Déjà dans Elios' 
+                    : 'Enregistrer le prospect'}
                 </button>
               </div>
             </form>
@@ -2438,12 +2628,13 @@ export default function CRMFormaticPage() {
             {/* PIED DE MODALE PANORAMIQUE RESPONSIVE TOUT EN FRANÇAIS */}
             <div className="px-5 py-3 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
               <button 
-                className={`btn del text-xs py-2 px-3.5 rounded-xl ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''}`} 
+                className={`btn del text-xs py-2 px-3.5 rounded-xl transition ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''} disabled:opacity-50`} 
                 type="button" 
                 onClick={handleDeleteLead}
+                disabled={isDeletingLead}
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                <span>{isDeleteArmed ? 'Confirmer ?' : 'Supprimer'}</span>
+                <span>{isDeletingLead ? 'Suppression...' : (isDeleteArmed ? 'Confirmer la suppression ?' : 'Supprimer')}</span>
               </button>
 
               <div className="flex items-center gap-2.5 ml-auto">

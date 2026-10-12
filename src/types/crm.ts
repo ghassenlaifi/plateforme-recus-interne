@@ -216,77 +216,146 @@ export const CRM_STATUS_COLORS = ELIOS_STATUS_COLORS;
 export const CRM_SELECTABLE_STATUSES = ELIOS_STATUSES;
 
 /**
- * Résout de façon déterministe et robuste le nom de l'opérateur ayant effectué
- * la dernière modification sur la fiche du prospect.
+ * Vérifie si une chaîne représente un opérateur humain valide
+ * (exclut 'Système', 'Non assigné', les chaînes vides et tirets).
+ */
+export function isValidOperatorName(name?: string | null): boolean {
+  if (!name || typeof name !== 'string') return false;
+  const clean = name.trim().toLowerCase();
+  if (!clean || clean === '-' || clean === '—') return false;
+  if (clean === 'système' || clean === 'systeme' || clean === 'system' || clean === 'bot') return false;
+  if (clean === 'non assigné' || clean === 'non assigne' || clean === 'unassigned') return false;
+  return true;
+}
+
+/**
+ * Résout de façon déterministe, chronologique et robuste le nom de l'opérateur
+ * ayant effectué la TOUTE DERNIÈRE modification ou interaction sur la fiche du prospect.
  * 
- * Priorité d'intégrité :
- * 1. lead.lastModifiedBy si renseigné et distinct de 'Système' / 'Non assigné'
- * 2. Dernier opérateur consigné dans lead.modifierLogs
- * 3. Auteur de la note la plus récente (si notes présentes)
- * 4. lead.staff initial (créateur / premier manipulateur) si valide
- * 5. Repli propre sur lastModifiedBy / staff ou 'Non assigné'
+ * Règle d'or de haute intégrité :
+ * 1. Collecte l'ensemble des interactions datées de chaque opérateur humain (modifierLogs & notes).
+ * 2. Détermine l'opérateur associé au timestamp le plus récent (Maximal Time Event).
+ * 3. En l'absence d'interactions horodatées, repli déterministe sur modifierLogs récents,
+ *    notes récentes, lastModifiedBy explicite, staff initial, ou 'Non assigné'.
  */
 export function getLeadLastModifier(lead?: Partial<LeadItem> | null): string {
   if (!lead) return 'Non assigné';
 
-  // 1. lastModifiedBy explicite
-  const lastMod = (lead.lastModifiedBy || '').trim();
-  if (
-    lastMod &&
-    lastMod.toLowerCase() !== 'système' &&
-    lastMod.toLowerCase() !== 'systeme' &&
-    lastMod.toLowerCase() !== 'non assigné' &&
-    lastMod.toLowerCase() !== 'non assigne'
-  ) {
-    return lastMod;
+  interface InteractionCandidate {
+    operator: string;
+    time: number;
   }
 
-  // 2. Dernier opérateur dans modifierLogs
+  const candidates: InteractionCandidate[] = [];
+
+  // 1. Scanner les logs de modifications structurés
+  if (Array.isArray(lead.modifierLogs)) {
+    for (const log of lead.modifierLogs) {
+      if (!log || !isValidOperatorName(log.operator)) continue;
+      const t = log.at ? new Date(log.at).getTime() : NaN;
+      if (!isNaN(t)) {
+        candidates.push({
+          operator: log.operator.trim(),
+          time: t,
+        });
+      }
+    }
+  }
+
+  // 2. Scanner toutes les notes
+  if (Array.isArray(lead.notes)) {
+    for (const n of lead.notes) {
+      if (!n) continue;
+      const author = (n as any).editedBy || n.addedBy || n.by;
+      if (!isValidOperatorName(author)) continue;
+      const t = ((n as any).editedAt || n.addedAt || n.date) 
+        ? new Date((n as any).editedAt || n.addedAt || n.date).getTime() 
+        : NaN;
+      if (!isNaN(t)) {
+        candidates.push({
+          operator: author.trim(),
+          time: t,
+        });
+      }
+    }
+  }
+
+  // Si des interactions dynamiques existent avec timestamps valides :
+  // l'opérateur avec le timestamp le plus élevé (le plus récent) l'emporte STRICTEMENT.
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.time - a.time);
+    return candidates[0].operator;
+  }
+
+  // 3. Fallbacks sans timestamp ou sans interactions dynamiques
+  // a) Dernier log de modification
   if (Array.isArray(lead.modifierLogs) && lead.modifierLogs.length > 0) {
     for (let i = lead.modifierLogs.length - 1; i >= 0; i--) {
-      const op = (lead.modifierLogs[i]?.operator || '').trim();
-      if (
-        op &&
-        op.toLowerCase() !== 'système' &&
-        op.toLowerCase() !== 'systeme' &&
-        op.toLowerCase() !== 'non assigné' &&
-        op.toLowerCase() !== 'non assigne'
-      ) {
-        return op;
-      }
+      const op = lead.modifierLogs[i]?.operator;
+      if (isValidOperatorName(op)) return op.trim();
     }
   }
 
-  // 3. Auteur de la note la plus récente
+  // b) Note la plus récente
   if (Array.isArray(lead.notes) && lead.notes.length > 0) {
-    for (const note of lead.notes) {
-      if (!note) continue;
-      const noteAuthor = (note.by || note.addedBy || (note as any).editedBy || '').trim();
-      if (
-        noteAuthor &&
-        noteAuthor.toLowerCase() !== 'système' &&
-        noteAuthor.toLowerCase() !== 'systeme' &&
-        noteAuthor.toLowerCase() !== 'non assigné' &&
-        noteAuthor.toLowerCase() !== 'non assigne'
-      ) {
-        return noteAuthor;
-      }
+    for (const n of lead.notes) {
+      const op = (n as any)?.editedBy || n?.addedBy || n?.by;
+      if (isValidOperatorName(op)) return op.trim();
     }
   }
 
-  // 4. Créateur initial / staff assigné
-  const staff = (lead.staff || '').trim();
-  if (
-    staff &&
-    staff.toLowerCase() !== 'système' &&
-    staff.toLowerCase() !== 'systeme' &&
-    staff.toLowerCase() !== 'non assigné' &&
-    staff.toLowerCase() !== 'non assigne'
-  ) {
-    return staff;
+  // c) lastModifiedBy explicite
+  if (isValidOperatorName(lead.lastModifiedBy)) {
+    return lead.lastModifiedBy!.trim();
   }
 
-  return lastMod || staff || 'Non assigné';
+  // d) staff créateur / premier manipulateur
+  if (isValidOperatorName(lead.staff)) {
+    return lead.staff!.trim();
+  }
+
+  return (lead.lastModifiedBy || lead.staff || 'Non assigné').trim();
+}
+
+/**
+ * Récupère le timestamp précis correspondant à la dernière modification ou interaction
+ * effectuée par un opérateur sur la fiche prospect.
+ */
+export function getLeadLastModifiedDate(lead?: Partial<LeadItem> | null): Date | null {
+  if (!lead) return null;
+
+  let maxTime = -1;
+
+  if (Array.isArray(lead.modifierLogs)) {
+    for (const log of lead.modifierLogs) {
+      if (!log || !isValidOperatorName(log.operator)) continue;
+      const t = log.at ? new Date(log.at).getTime() : NaN;
+      if (!isNaN(t) && t > maxTime) maxTime = t;
+    }
+  }
+
+  if (Array.isArray(lead.notes)) {
+    for (const n of lead.notes) {
+      if (!n) continue;
+      const author = (n as any).editedBy || n.addedBy || n.by;
+      if (!isValidOperatorName(author)) continue;
+      const t = ((n as any).editedAt || n.addedAt || n.date) 
+        ? new Date((n as any).editedAt || n.addedAt || n.date).getTime() 
+        : NaN;
+      if (!isNaN(t) && t > maxTime) maxTime = t;
+    }
+  }
+
+  if (maxTime > 0) return new Date(maxTime);
+  if (lead.updatedAt) {
+    const d = new Date(lead.updatedAt);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (lead.date) {
+    const d = new Date(lead.date);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 /**

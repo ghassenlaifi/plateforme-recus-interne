@@ -7,7 +7,7 @@ import { EliosHeader } from '@/components/EliosHeader';
 import { PaymentReceiptModal } from '@/components/PaymentReceiptModal';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { useToast } from '@/components/Toast';
-import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
+import { formatPhone, extractPhoneDigits, isSamePhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
@@ -386,10 +386,92 @@ export default function ReceiptsPage() {
     setFileErr('');
   };
 
+  // Contrôle préventif en temps réel : 1 seul reçu par numéro et par mois
+  const uploadConflictReceipt = useMemo(() => {
+    const rawP = formData.phone;
+    const digits = extractPhoneDigits(rawP);
+    if (!digits || digits.length < 8 || digits === '00000000' || /^0+$/.test(digits)) {
+      return null;
+    }
+    if (!rawReceipts || rawReceipts.length === 0) return null;
+
+    let targetDate = new Date();
+    if (formData.date && formData.date.trim()) {
+      const iso = toISO(formData.date);
+      if (iso) {
+        const parsed = new Date(iso);
+        if (!isNaN(parsed.getTime())) targetDate = parsed;
+      }
+    }
+
+    const targetYear = targetDate.getFullYear();
+    const targetMonth = targetDate.getMonth();
+    const targetMs = targetDate.getTime();
+
+    return rawReceipts.find(r => {
+      if (r.status === 'ARCHIVED') return false;
+      const rPhone = r.clientDetails?.telephone;
+      if (!isSamePhone(rPhone, rawP)) return false;
+
+      const rDateObj = r.paymentDate ? new Date(r.paymentDate) : new Date(r.createdAt);
+      if (isNaN(rDateObj.getTime())) return false;
+
+      // 1. Même mois civil
+      if (rDateObj.getFullYear() === targetYear && rDateObj.getMonth() === targetMonth) {
+        return true;
+      }
+
+      // 2. Intervalle < 25 jours
+      const diffMs = Math.abs(targetMs - rDateObj.getTime());
+      return (diffMs / (1000 * 60 * 60 * 24)) < 25;
+    }) || null;
+  }, [formData.phone, formData.date, rawReceipts]);
+
+  // Contrôle préventif en temps réel pour l'édition de reçu
+  const editConflictReceipt = useMemo(() => {
+    if (!isDlgOpen || !selectedReceipt) return null;
+    const digits = extractPhoneDigits(editPhone);
+    if (!digits || digits.length < 8 || digits === '00000000' || /^0+$/.test(digits)) return null;
+    if (!rawReceipts) return null;
+
+    let targetDate = selectedReceipt.paymentDate ? new Date(selectedReceipt.paymentDate) : new Date(selectedReceipt.createdAt);
+    if (editDate) {
+      const parsed = new Date(editDate);
+      if (!isNaN(parsed.getTime())) targetDate = parsed;
+    }
+    if (isNaN(targetDate.getTime())) return null;
+
+    const targetYear = targetDate.getFullYear();
+    const targetMonth = targetDate.getMonth();
+    const targetMs = targetDate.getTime();
+
+    return rawReceipts.find(r => {
+      if (r._id === selectedReceipt._id) return false;
+      if (r.status === 'ARCHIVED') return false;
+      const rPhone = r.clientDetails?.telephone;
+      if (!isSamePhone(rPhone, editPhone)) return false;
+
+      const rDateObj = r.paymentDate ? new Date(r.paymentDate) : new Date(r.createdAt);
+      if (isNaN(rDateObj.getTime())) return false;
+
+      if (rDateObj.getFullYear() === targetYear && rDateObj.getMonth() === targetMonth) return true;
+      const diffMs = Math.abs(targetMs - rDateObj.getTime());
+      return (diffMs / (1000 * 60 * 60 * 24)) < 25;
+    }) || null;
+  }, [isDlgOpen, selectedReceipt, editPhone, editDate, rawReceipts]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeUser) {
       toast({ message: 'Veuillez sélectionner un opérateur dans la barre du haut.', tone: 'warn' });
+      return;
+    }
+
+    if (uploadConflictReceipt) {
+      toast({ 
+        message: `Règle d'intégrité : Un reçu (${uploadConflictReceipt.amount} DT - ${uploadConflictReceipt.reference || uploadConflictReceipt._id}) existe déjà pour ce numéro ce mois-ci.`, 
+        tone: 'warn' 
+      });
       return;
     }
 
@@ -476,6 +558,13 @@ export default function ReceiptsPage() {
   // Sauvegarder les modifications du reçu (accessible pour tous les reçus avec traçabilité)
   const handleSaveChanges = async () => {
     if (!selectedReceipt) return;
+    if (editConflictReceipt) {
+      toast({
+        message: `Modification impossible : Ce numéro possède déjà un autre reçu actif ce mois-ci (${editConflictReceipt.reference || editConflictReceipt._id}).`,
+        tone: 'warn'
+      });
+      return;
+    }
     try {
       setIsSavingChanges(true);
       const parsedAmount = parseFloat(String(editAmount));
@@ -897,6 +986,7 @@ export default function ReceiptsPage() {
                   maxLength={16}
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
+                  style={uploadConflictReceipt ? { borderColor: '#e11d48', backgroundColor: '#fff1f2' } : {}}
                 />
               </label>
 
@@ -1049,14 +1139,71 @@ export default function ReceiptsPage() {
                 />
               </label>
 
+              {uploadConflictReceipt && (
+                <div 
+                  className="full"
+                  style={{
+                    backgroundColor: '#fff1f2',
+                    border: '1.5px solid #fecdd3',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    color: '#9f1239',
+                    fontSize: '13px',
+                    lineHeight: 1.45
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+                    <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, fill: 'none', stroke: '#e11d48', strokeWidth: 2, flexShrink: 0 }}>
+                      <path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+                    </svg>
+                    <span>Règle d'intégrité : 1 seul reçu par mois autorisé</span>
+                  </div>
+                  <div style={{ color: '#be123c' }}>
+                    Un reçu a déjà été importé pour ce numéro ce mois-ci :
+                    <div style={{ marginTop: '5px', paddingLeft: '8px', borderLeft: '3px solid #fda4af', fontWeight: 500, fontSize: '12.5px' }}>
+                      • Réf : <b>{uploadConflictReceipt.reference || uploadConflictReceipt._id}</b><br />
+                      • Date : <b>{uploadConflictReceipt.paymentDate ? new Date(uploadConflictReceipt.paymentDate).toLocaleDateString('fr-FR') : (uploadConflictReceipt.createdAt ? new Date(uploadConflictReceipt.createdAt).toLocaleDateString('fr-FR') : 'N/A')}</b><br />
+                      • Montant : <b>{uploadConflictReceipt.amount || 0} DT</b> ({uploadConflictReceipt.paymentMode || 'N/A'})<br />
+                      • Opérateur : <b>{uploadConflictReceipt.operatorName || 'Système'}</b>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openReceiptModal(uploadConflictReceipt)}
+                    style={{
+                      alignSelf: 'flex-start',
+                      marginTop: '6px',
+                      padding: '5px 12px',
+                      background: '#e11d48',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Consulter ce reçu existant
+                  </button>
+                </div>
+              )}
+
               {formErr && <p className="err full" id="err" role="alert">{formErr}</p>}
 
               <button 
                 className="btn pri full" 
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !!uploadConflictReceipt}
+                style={uploadConflictReceipt ? { backgroundColor: '#cbd5e1', borderColor: '#cbd5e1', cursor: 'not-allowed', color: '#64748b' } : {}}
               >
-                {isSubmitting ? 'Envoi en cours...' : 'Envoyer le reçu'}
+                {isSubmitting 
+                  ? 'Envoi en cours...' 
+                  : uploadConflictReceipt 
+                    ? 'Bloqué : Reçu déjà existant ce mois-ci' 
+                    : 'Envoyer le reçu'}
               </button>
             </form>
           </section>
@@ -1586,6 +1733,7 @@ export default function ReceiptsPage() {
                     maxLength={16}
                     value={editPhone}
                     onChange={(e) => setEditPhone(formatPhone(e.target.value))}
+                    style={editConflictReceipt ? { borderColor: '#e11d48', backgroundColor: '#fff1f2' } : {}}
                   />
                 </label>
 
@@ -1689,6 +1837,33 @@ export default function ReceiptsPage() {
                   </div>
                 </label>
               </div>
+
+              {editConflictReceipt && (
+                <div style={{
+                  background: '#FEF2F2',
+                  border: '1.5px solid #FCA5A5',
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  color: '#991B1B',
+                  fontSize: '13px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+                    <svg viewBox="0 0 24 24" style={{ width: 17, height: 17, fill: 'none', stroke: '#DC2626', strokeWidth: 2, flexShrink: 0 }}>
+                      <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span>Conflit d'intégrité mensuel : Un reçu existe déjà pour ce numéro ce mois-ci</span>
+                  </div>
+                  <div style={{ fontSize: '12.5px', color: '#7F1D1D', lineHeight: 1.45 }}>
+                    Un autre reçu actif est déjà enregistré pour ce numéro au cours du même mois :<br/>
+                    • Réf : <b>{editConflictReceipt.reference || editConflictReceipt._id}</b><br/>
+                    • Date : <b>{editConflictReceipt.paymentDate ? new Date(editConflictReceipt.paymentDate).toLocaleDateString('fr-FR') : (editConflictReceipt.createdAt ? new Date(editConflictReceipt.createdAt).toLocaleDateString('fr-FR') : 'N/A')}</b><br/>
+                    • Montant : <b>{editConflictReceipt.amount || 0} DT</b> ({editConflictReceipt.paymentMode || 'N/A'}, Opérateur : {editConflictReceipt.operatorName || 'Système'})
+                  </div>
+                </div>
+              )}
 
               {/* Section Notes Collaborative & Traçable */}
               <div style={{
@@ -1875,10 +2050,10 @@ export default function ReceiptsPage() {
                 <button 
                   className="btn" 
                   type="button" 
-                  disabled={isSavingChanges || isDeletingReceipt}
+                  disabled={isSavingChanges || isDeletingReceipt || !!editConflictReceipt}
                   onClick={handleSaveChanges}
-                  style={{ fontWeight: 600 }}
-                  title="Enregistrer les modifications avec traçabilité complète de l'auteur et de l'heure"
+                  style={{ fontWeight: 600, ...(editConflictReceipt ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                  title={editConflictReceipt ? "Modification impossible : Un reçu existe déjà pour ce numéro ce mois-ci" : "Enregistrer les modifications avec traçabilité complète de l'auteur et de l'heure"}
                 >
                   {isSavingChanges ? 'Enregistrement...' : 'Enregistrer'}
                 </button>

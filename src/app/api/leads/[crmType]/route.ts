@@ -3,7 +3,7 @@ import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import { formatPhone, buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
-import { getCachedLeads, setCachedLeads, invalidateLeadsCache } from '@/lib/leadsCache';
+import { getCachedLeads, setCachedLeads, invalidateLeadsCache, updateCachedLeadInPlace } from '@/lib/leadsCache';
 
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
@@ -38,7 +38,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
               Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
             ]);
             const formattedMigrated = migratedLeads.map((l: any) => ({ ...l, isMigratedToElios: true, toElios: true }));
-            setCachedLeads('formatic', [...formaticLeads, ...formattedMigrated]);
+            const result = [...formaticLeads, ...formattedMigrated];
+            result.sort((a, b) => {
+              const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+              const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+              if (timeB !== timeA) return timeB - timeA;
+              const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+              const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+              if (idNumB !== idNumA) return idNumB - idNumA;
+              return String(b.id || b._id).localeCompare(String(a.id || a._id));
+            });
+            setCachedLeads('formatic', result);
           } else {
             const fresh = await Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
             setCachedLeads('elios', fresh);
@@ -51,7 +61,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
     await connectMongo();
 
     if (crmType === 'formatic') {
-      // Pour Formatic : requêtes parallèles optimisées avec batchSize
+      // Pour Formatic : requêtes parallèles optimisées avec batchSize et tri chronologique unifié
       const [formaticLeads, migratedLeads] = await Promise.all([
         Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
         Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
@@ -64,11 +74,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       }));
 
       const result = [...formaticLeads, ...formattedMigrated];
+      result.sort((a, b) => {
+        const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        if (timeB !== timeA) return timeB - timeA;
+        const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+        const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+        if (idNumB !== idNumA) return idNumB - idNumA;
+        return String(b.id || b._id).localeCompare(String(a.id || a._id));
+      });
       setCachedLeads('formatic', result);
       return NextResponse.json(result);
     }
 
-    // Sort by creation date so modifications keep leads strictly in their place
+    // Sort by creation date so new leads are strictly on top
     const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
     setCachedLeads('elios', leads);
     return NextResponse.json(leads);
@@ -101,6 +120,38 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
 
     // Règle d'intégrité absolue : INTERDICTION DES DOUBLONS DE NUMÉRO DE TÉLÉPHONE
     const phoneRegex = buildPhoneMongoRegex(cleanPhone);
+
+    // 1. Règle magistrale Cross-CRM : Interdiction stricte si le numéro est déjà dans CRM Elios
+    if (crmType === 'formatic') {
+      const eliosConflict = await Lead.findOne({ crmType: 'elios', phone: phoneRegex }).lean();
+      if (eliosConflict) {
+        const doc = eliosConflict as any;
+        const dupName = doc.name || doc.phone;
+        const dupStatus = doc.status || 'Lead';
+        const cleanDigits = cleanPhone.replace(/\D/g, '').slice(-8);
+        return NextResponse.json(
+          {
+            error: `Ce numéro de téléphone est déjà présent dans le CRM Elios pour le prospect "${dupName}" (${dupStatus}). Il est strictement interdit de le créer dans le CRM Formatic.`,
+            conflictType: 'EXISTS_IN_ELIOS',
+            eliosLead: {
+              id: doc.id,
+              _id: String(doc._id),
+              name: dupName,
+              status: dupStatus,
+              phone: formatPhone(doc.phone) || doc.phone,
+              offer: doc.offer || '',
+              grade: doc.grade || '',
+              section: doc.section || '',
+              staff: doc.staff || doc.lastModifiedBy || 'Système'
+            },
+            eliosUrl: `/crm-elios?search=${encodeURIComponent(cleanDigits)}&openLead=${encodeURIComponent(doc.id || doc._id)}`
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // 2. Règle intra-CRM : Interdiction des doublons dans le CRM cible
     const existingDuplicate = await Lead.findOne({ crmType: targetCrm, phone: phoneRegex }).lean();
     if (existingDuplicate) {
       const dupName = (existingDuplicate as any).name || (existingDuplicate as any).phone;
@@ -109,6 +160,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       return NextResponse.json(
         { 
           error: `Ce numéro de téléphone est déjà enregistré pour le prospect "${dupName}" (${dupStatus}). Les doublons sont strictement interdits dans ${crmLabel}.`,
+          conflictType: 'EXISTS_IN_SAME_CRM',
           existingLead: {
             id: (existingDuplicate as any).id,
             name: dupName,
@@ -173,6 +225,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
         ]
       });
 
+      updateCachedLeadInPlace('elios', eliosLead.toObject());
+      invalidateLeadsCache('all');
+
       return NextResponse.json({
         ...eliosLead.toObject(),
         migrated: true,
@@ -219,6 +274,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       notes: body.notes || []
     });
 
+    updateCachedLeadInPlace(crmType as any, lead.toObject());
     invalidateLeadsCache(isToEliosActive ? 'all' : (crmType as any));
     return NextResponse.json(lead, { status: 201 });
   } catch (error: any) {

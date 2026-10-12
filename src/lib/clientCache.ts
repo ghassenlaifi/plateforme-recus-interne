@@ -17,6 +17,26 @@ export function getClientCachedLeads(key: string): any[] | undefined {
   return undefined;
 }
 
+export function removeClientCachedLead(targetId: string, customId?: string) {
+  if (typeof window === 'undefined' || !targetId) return;
+  const keys = ['elios_cached_leads', 'formatic_cached_leads'];
+  for (const key of keys) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter((l: any) => 
+          l._id !== targetId && 
+          l.id !== targetId && 
+          (!customId || l.id !== customId)
+        );
+        sessionStorage.setItem(key, JSON.stringify(filtered));
+      }
+    } catch {}
+  }
+}
+
 export function setClientCachedLeads(key: string, data: any[]) {
   if (typeof window === 'undefined' || !Array.isArray(data) || data.length === 0) return;
   try {
@@ -26,4 +46,20 @@ export function setClientCachedLeads(key: string, data: any[]) {
     console.warn(`[ClientCache] sessionStorage write notice:`, err);
   }
 }
+
+export function prependClientCachedLead(key: string, newLead: any) {
+  if (typeof window === 'undefined' || !newLead) return;
+  try {
+    const raw = sessionStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) {
+      const filtered = parsed.filter((l: any) => 
+        (l._id && l._id !== newLead._id) && 
+        (l.id && l.id !== newLead.id)
+      );
+      sessionStorage.setItem(key, JSON.stringify([newLead, ...filtered]));
+    }
+  } catch {}
+}
+
 

@@ -18,6 +18,7 @@ import {
   isClassWithoutSection,
   getEliosStatusColor,
   getLeadLastModifier,
+  getLeadLastModifiedDate,
   isLeadTouchedByStaff,
   extractAllLeadStaff,
   isLeadMatchingStaffAndDate
@@ -26,7 +27,7 @@ import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
-import { getClientCachedLeads, setClientCachedLeads } from '@/lib/clientCache';
+import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Elios');
@@ -153,6 +154,43 @@ export default function CRMEliosPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
+  // Détection des paramètres d'URL pour ouverture directe de fiche prospect (Navigation Cross-CRM depuis Formatic)
+  useEffect(() => {
+    if (!Array.isArray(leads) || leads.length === 0) return;
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const openLeadId = urlParams.get('openLead') || urlParams.get('highlight');
+      const searchPhone = urlParams.get('search') || urlParams.get('phone');
+
+      if (openLeadId || searchPhone) {
+        let targetLead: LeadItem | null = null;
+
+        if (openLeadId) {
+          targetLead = leads.find(l => l.id === openLeadId || (l as any)._id === openLeadId) || null;
+        }
+
+        if (!targetLead && searchPhone) {
+          targetLead = leads.find(l => isSamePhone(l.phone, searchPhone)) || null;
+        }
+
+        if (targetLead) {
+          setSelectedLead(targetLead);
+          setLastInteractedLeadId(targetLead._id || targetLead.id);
+          if (searchPhone) {
+            setFilterQuery(formatPhone(searchPhone) || searchPhone);
+          }
+          showToast(`Fiche du prospect ${targetLead.name || targetLead.phone} ouverte avec succès.`);
+          window.history.replaceState({}, '', window.location.pathname);
+        } else if (searchPhone) {
+          setFilterQuery(formatPhone(searchPhone) || searchPhone);
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      }
+    } catch (e) {
+      console.warn('Cross-CRM auto-open error:', e);
+    }
+  }, [leads]);
+
   // Déterminer le dernier prospect modifié / consulté (conserve sa position dans la liste)
   const effectiveLastModifiedId = useMemo(() => {
     if (lastInteractedLeadId) return lastInteractedLeadId;
@@ -206,6 +244,7 @@ export default function CRMEliosPage() {
   const [editFamilyGroup, setEditFamilyGroup] = useState('');
   const [editErr, setEditErr] = useState('');
   const [isDeleteArmed, setIsDeleteArmed] = useState(false);
+  const [isDeletingLead, setIsDeletingLead] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Instantané des valeurs initiales pour dirty checking
@@ -556,10 +595,13 @@ export default function CRMEliosPage() {
 
       return true;
     }).sort((a, b) => {
-      // Tri stable par date de création : les modifications/consultations ne changent jamais l'ordre de la liste
+      // Tri stable par date de création : les nouveaux prospects sont TOUJOURS tout en haut
       const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
       const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
       if (timeB !== timeA) return timeB - timeA;
+      const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      if (idNumB !== idNumA) return idNumB - idNumA;
       return String(b.id || b._id).localeCompare(String(a.id || a._id));
     });
   }, [leads, filterQuery, activeCard, filterStatus, filterClasse, filterSection, filterStaff, filterDate, customStartDate, customEndDate]);
@@ -637,13 +679,41 @@ export default function CRMEliosPage() {
         throw new Error(errData.error || 'Erreur lors de la création du prospect');
       }
 
+      const created = await res.json();
       setIsNewLeadOpen(false);
       setNewPhone('');
       setNewGrade('');
       setNewSection('');
       setNewErr('');
-      mutate();
-      showToast('Nouveau prospect créé avec succès');
+
+      // 1. Pré-pendre immédiatement dans le cache local sessionStorage (T=0ms)
+      prependClientCachedLead('elios_cached_leads', created);
+
+      // 2. Mise à jour optimiste instantanée du state SWR avec le nouveau prospect STRICTEMENT EN TÊTE
+      mutate(
+        (currentLeads: any) => {
+          const list = Array.isArray(currentLeads) ? currentLeads : [];
+          const filtered = list.filter((l: any) => 
+            (l._id && l._id !== created._id) && 
+            (l.id && l.id !== created.id)
+          );
+          return [created, ...filtered];
+        },
+        false
+      );
+
+      // 3. Réinitialiser la recherche et forcer la page 1 pour affichage direct tout en haut
+      setFilterQuery('');
+      if (filterStatus !== 'ALL' && filterStatus !== 'Lead') setFilterStatus('ALL');
+      if (activeCard !== null) setActiveCard(null);
+      setCurrentPage(1);
+
+      // 4. Mettre en valeur visuelle le prospect créé et ouvrir sa fiche
+      setLastInteractedLeadId(created._id || created.id);
+      setSelectedLead(created);
+
+      showToast('Nouveau prospect créé avec succès !');
+      setTimeout(() => mutate(), 400);
     } catch (err: any) {
       setNewErr(err.message || 'Une erreur est survenue.');
     } finally {
@@ -863,28 +933,54 @@ export default function CRMEliosPage() {
     }
   };
 
-  // Suppression définitive d'un prospect
+  // Suppression définitive d'un prospect (fluide, optimiste et ultra-résiliente)
   const handleDeleteLead = async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || isDeletingLead) return;
     if (!isDeleteArmed) {
       setIsDeleteArmed(true);
       setTimeout(() => setIsDeleteArmed(false), 5000);
       return;
     }
 
+    const targetId = selectedLead._id || selectedLead.id;
+    const customId = selectedLead.id;
+    setIsDeletingLead(true);
+    setIsDeleteArmed(false);
+
+    // 1. Mise à jour optimiste instantanée (T=0ms) : ferme la fiche, purge les caches locaux
+    setSelectedLead(null);
+    setShowUnsavedConfirm(false);
+    removeClientCachedLead(targetId, customId);
+    
+    // Éviction optimiste instantanée du state SWR
+    mutate(
+      (currentLeads: any) => {
+        if (!Array.isArray(currentLeads)) return currentLeads;
+        return currentLeads.filter((l: any) => 
+          l._id !== targetId && 
+          l.id !== targetId && 
+          (!customId || l.id !== customId)
+        );
+      },
+      false
+    );
+    showToast('Prospect supprimé avec succès');
+
+    // 2. Requête réseau résiliente en arrière-plan
     try {
-      const targetId = selectedLead._id || selectedLead.id;
       const res = await fetch(`/api/leads/elios/${targetId}`, {
         method: 'DELETE'
       });
-      if (!res.ok) throw new Error('Erreur lors de la suppression');
-
-      setSelectedLead(null);
-      setShowUnsavedConfirm(false);
+      if (!res.ok && res.status !== 404) {
+        throw new Error('Erreur lors de la suppression');
+      }
+      // Revalidation silencieuse en arrière-plan
       mutate();
-      showToast('Prospect supprimé avec succès');
     } catch (err: any) {
       showToast(err.message || 'Erreur suppression');
+      mutate(); // Restaure l'état en cas d'échec réseau réel
+    } finally {
+      setIsDeletingLead(false);
     }
   };
 
@@ -1293,7 +1389,7 @@ export default function CRMEliosPage() {
               paginatedLeads.map((l, n) => {
                 const modifierName = getLeadLastModifier(l);
                 const opTheme = getOperatorColors(modifierName, safeOperators);
-                const lastUpdatedDateStr = formatDateTimeFr(l.updatedAt || l.date);
+                const lastUpdatedDateStr = formatDateTimeFr(getLeadLastModifiedDate(l) || l.updatedAt || l.date);
                 const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
                 const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
                 const isOverdueRappel = isLeadInRappels(l);
@@ -1471,7 +1567,7 @@ export default function CRMEliosPage() {
             paginatedLeads.map((l) => {
               const modifierName = getLeadLastModifier(l);
               const opTheme = getOperatorColors(modifierName, safeOperators);
-              const lastUpdatedDateStr = formatDateTimeFr(l.updatedAt || l.date);
+              const lastUpdatedDateStr = formatDateTimeFr(getLeadLastModifiedDate(l) || l.updatedAt || l.date);
               const classSec = [l.grade, l.section].filter(Boolean).join(" · ") || "—";
               const hasFullName = Boolean(l.name && l.name.trim() && l.name !== 'Prospect sans nom');
               const isOverdueRappel = isLeadInRappels(l);
@@ -2365,12 +2461,13 @@ export default function CRMEliosPage() {
             {/* PIED DE MODALE PANORAMIQUE RESPONSIVE TOUT EN FRANÇAIS */}
             <div className="px-5 py-3 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
               <button 
-                className={`btn del text-xs py-2 px-3.5 rounded-xl ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''}`} 
+                className={`btn del text-xs py-2 px-3.5 rounded-xl transition ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''} disabled:opacity-50`} 
                 type="button" 
                 onClick={handleDeleteLead}
+                disabled={isDeletingLead}
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                <span>{isDeleteArmed ? 'Confirmer ?' : 'Supprimer'}</span>
+                <span>{isDeletingLead ? 'Suppression...' : (isDeleteArmed ? 'Confirmer la suppression ?' : 'Supprimer')}</span>
               </button>
 
               <div className="flex items-center gap-2.5 ml-auto">
