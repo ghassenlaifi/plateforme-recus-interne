@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
 import { WelcomeModal } from "@/components/WelcomeModal";
+import { MotivationalModal } from "@/components/MotivationalModal";
 import { GlobalInputGuard } from "@/components/GlobalInputGuard";
 import { GlobalWhipListener } from "@/components/GlobalWhipListener";
 import { LeadsCacheWarmer } from "@/components/LeadsCacheWarmer";
@@ -26,6 +27,7 @@ export default function RootLayout({
         <ToastProvider>
           <GlobalInputGuard />
           <WelcomeModal />
+          <MotivationalModal />
           <GlobalWhipListener />
           <LeadsCacheWarmer />
           {children}

@@ -28,6 +28,7 @@ import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHAT
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
 import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
+import { recordCrmActivity } from '@/lib/motivationTracker';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Elios');
@@ -100,12 +101,19 @@ export default function CRMEliosPage() {
 
   // Récupération des données depuis MongoDB avec mise en cache optimisée et fallback client instantané
   const { data: leads, mutate, isLoading } = useSWR<LeadItem[]>('/api/leads/elios', fetcher, {
-    fallbackData: getClientCachedLeads('elios_cached_leads'),
     refreshInterval: selectedLead ? 0 : 30000, // Inutile de re-télécharger 4000 prospects si une fiche est déjà ouverte
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
     dedupingInterval: 10000
   });
+
+  // Hydratation sécurisée du cache client (Zéro mismatch SSR / Zéro flash)
+  useEffect(() => {
+    const cached = getClientCachedLeads('elios_cached_leads');
+    if (cached && cached.length > 0) {
+      mutate((current: any) => current && current.length > 0 ? current : cached, false);
+    }
+  }, [mutate]);
 
   // Sauvegarde instantanée dans le cache client pour le prochain affichage à T=0ms
   useEffect(() => {
@@ -289,6 +297,7 @@ export default function CRMEliosPage() {
   const whatsappTemplates = useMemo(() => whatsappConfig?.templates || DEFAULT_WHATSAPP_TEMPLATES, [whatsappConfig]);
 
   const triggerWhatsAppPopup = (studentName: string, phone: string, status: string) => {
+    recordCrmActivity('operation', activeUser);
     let msgFr = '';
     let msgAr = '';
     const st = (status || '').trim().toLowerCase();
@@ -712,6 +721,7 @@ export default function CRMEliosPage() {
       setLastInteractedLeadId(created._id || created.id);
       setSelectedLead(created);
 
+      recordCrmActivity('operation', activeUser);
       showToast('Nouveau prospect créé avec succès !');
       setTimeout(() => mutate(), 400);
     } catch (err: any) {
@@ -780,6 +790,11 @@ export default function CRMEliosPage() {
       if (selectedLead) {
         setLastInteractedLeadId(selectedLead._id || selectedLead.id);
       }
+      const oldStatus = (selectedLead.status === 'Converti' ? 'Approved' : (selectedLead.status || 'Lead')).trim().toLowerCase();
+      const newStatus = (editStatus || '').trim().toLowerCase();
+      const isStatusChanged = oldStatus !== newStatus;
+      recordCrmActivity(isStatusChanged ? 'status_change' : 'operation', activeUser);
+
       setSelectedLead(null);
       setShowUnsavedConfirm(false);
       mutate();
@@ -823,6 +838,7 @@ export default function CRMEliosPage() {
       setSelectedLead(updatedLead);
       setLastInteractedLeadId(targetId);
       setNewNoteText('');
+      recordCrmActivity('operation', activeUser);
       mutate();
       showToast('Note ajoutée à l\'historique');
     } catch (err: any) {
@@ -867,6 +883,7 @@ export default function CRMEliosPage() {
       setLastInteractedLeadId(targetId);
       setEditingNoteId(null);
       setEditingNoteText('');
+      recordCrmActivity('operation', activeUser);
       mutate();
       showToast('Note modifiée');
     } catch (err: any) {

@@ -28,6 +28,7 @@ import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHAT
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
 import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
+import { recordCrmActivity } from '@/lib/motivationTracker';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Formatic');
@@ -101,12 +102,19 @@ export default function CRMFormaticPage() {
 
   // Récupération des données Formatic depuis MongoDB Atlas avec mise en cache optimisée et fallback client instantané
   const { data: leads, mutate, isLoading } = useSWR<LeadItem[]>('/api/leads/formatic', fetcher, {
-    fallbackData: getClientCachedLeads('formatic_cached_leads'),
     refreshInterval: selectedLead ? 0 : 30000,
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
     dedupingInterval: 10000
   });
+
+  // Hydratation sécurisée du cache client (Zéro mismatch SSR / Zéro flash)
+  useEffect(() => {
+    const cached = getClientCachedLeads('formatic_cached_leads');
+    if (cached && cached.length > 0) {
+      mutate((current: any) => current && current.length > 0 ? current : cached, false);
+    }
+  }, [mutate]);
 
   // Sauvegarde instantanée dans le cache client pour le prochain affichage à T=0ms
   useEffect(() => {
@@ -296,6 +304,7 @@ export default function CRMFormaticPage() {
   const whatsappTemplates = useMemo(() => whatsappConfig?.templates || DEFAULT_WHATSAPP_TEMPLATES, [whatsappConfig]);
 
   const triggerWhatsAppPopup = (studentName: string, phone: string, status: string) => {
+    recordCrmActivity('operation', activeUser);
     let msgFr = '';
     let msgAr = '';
     const st = (status || '').trim().toLowerCase();
@@ -739,6 +748,7 @@ export default function CRMFormaticPage() {
       setLastInteractedLeadId(created._id || created.id);
       setSelectedLead(created);
 
+      recordCrmActivity('operation', activeUser);
       showToast('Prospect Formatic créé avec succès !');
       setTimeout(() => mutate(), 400);
     } catch (err: any) {
@@ -822,6 +832,11 @@ export default function CRMFormaticPage() {
       if (selectedLead) {
         setLastInteractedLeadId(selectedLead._id || selectedLead.id);
       }
+      const oldStatus = (selectedLead.status || 'Lead').trim().toLowerCase();
+      const newStatus = (editStatus || '').trim().toLowerCase();
+      const isStatusChanged = oldStatus !== newStatus;
+      recordCrmActivity(isStatusChanged ? 'status_change' : 'operation', activeUser);
+
       if (editToElios) {
         mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
       }
@@ -865,6 +880,7 @@ export default function CRMFormaticPage() {
       setSelectedLead(updated);
       setLastInteractedLeadId(targetId);
       setNewNoteText('');
+      recordCrmActivity('operation', activeUser);
       mutate();
       showToast('Note ajoutée');
     } catch {
@@ -909,6 +925,7 @@ export default function CRMFormaticPage() {
       setLastInteractedLeadId(targetId);
       setEditingNoteId(null);
       setEditingNoteText('');
+      recordCrmActivity('operation', activeUser);
       mutate();
       showToast('Note mise à jour');
     } catch {
@@ -1978,9 +1995,9 @@ export default function CRMFormaticPage() {
                     <div className="pt-1">
                       <a 
                         href={`/crm-elios?search=${encodeURIComponent(extractPhoneDigits(eliosConflictLead.phone))}&openLead=${encodeURIComponent(eliosConflictLead.id || eliosConflictLead._id)}`}
-                        className="w-full py-2.5 px-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 text-xs text-center"
+                        className="w-full py-2.5 px-3 bg-red-600 hover:bg-red-700 !text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 text-xs text-center border border-red-700"
                       >
-                        <span>Accéder directement à la fiche dans CRM Elios ↗</span>
+                        <span className="text-white font-bold">Accéder directement à la fiche dans CRM Elios ↗</span>
                       </a>
                     </div>
                   </div>
@@ -2062,10 +2079,14 @@ export default function CRMFormaticPage() {
                   Annuler
                 </button>
                 <button 
-                  className="btn text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" 
+                  className={`btn text-xs py-2 px-4 rounded-xl font-bold shadow-sm transition ${
+                    eliosConflictLead 
+                      ? '!bg-red-600 !border-red-600 !text-white !opacity-100 cursor-not-allowed' 
+                      : 'bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  }`} 
                   type="submit" 
                   disabled={isCreating || Boolean(duplicateLeadInFormatic) || Boolean(eliosConflictLead) || isCheckingElios}
-                  style={eliosConflictLead ? { backgroundColor: '#dc2626', borderColor: '#dc2626' } : {}}
+                  style={eliosConflictLead ? { backgroundColor: '#dc2626', borderColor: '#dc2626', color: '#ffffff', opacity: 1 } : {}}
                 >
                   {isCreating 
                     ? 'Enregistrement...' 
