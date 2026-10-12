@@ -7,7 +7,7 @@ import { EliosHeader } from '@/components/EliosHeader';
 import { PaymentReceiptTicket } from '@/components/PaymentReceiptTicket';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { generateReceiptReference } from '@/lib/receiptReference';
-import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
+import { formatPhone, extractPhoneDigits, matchesPhoneQuery } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 
 const fetcher = (url: string) => fetch(url).then(res => {
@@ -115,22 +115,31 @@ export default function PaymentReceiptsPage() {
     }
   }, [receipts, selectedReceipt, isDlgOpen]);
 
-  // Filtrage
+  // Filtrage robuste multi-critères et universel de téléphone
   const filtered = useMemo(() => {
     let list = receipts;
     if (selectedOp !== '') {
       list = list.filter(r => (r.operatorName || '').toLowerCase() === selectedOp.toLowerCase());
     }
-    if (!searchQuery.trim()) return list;
+    const q = searchQuery.trim();
+    if (!q) return list;
 
-    const s = searchQuery.trim().toLowerCase().replace(/[\s-]/g, '');
-    const queryDigits = searchQuery.replace(/\D/g, '');
+    const s = q.toLowerCase().replace(/[\s-]/g, '');
     return list.filter(r => {
+      // 1. Recherche par numéro de téléphone universelle (+216 92330331, 92 330 331, 92330331, etc.)
+      const tel = r.clientDetails?.telephone || (r as any).telephone || '';
+      if (matchesPhoneQuery(tel, q)) return true;
+
+      // 2. Recherche par nom de famille, prénom éventuel, nom complet, référence et classe
       const nom = (r.clientDetails?.nom || '').toLowerCase();
-      const tel = (r.clientDetails?.telephone || '').replace(/\D/g, '');
-      const ref = (r.computedRef || '').toLowerCase().replace(/-/g, '');
-      if (queryDigits && queryDigits.length >= 2 && tel.includes(queryDigits)) return true;
-      return (nom + tel + ref).includes(s);
+      const anyDetails = (r.clientDetails || {}) as any;
+      const prenom = (anyDetails.prenom || '').toLowerCase();
+      const fullName = `${prenom} ${nom}`.toLowerCase().replace(/[\s-]/g, '');
+      const ref = (r.computedRef || r.reference || '').toLowerCase().replace(/[\s-]/g, '');
+      const cin = (anyDetails.cin || '').toLowerCase().replace(/[\s-]/g, '');
+      const classe = (r.clientDetails?.classe || '').toLowerCase();
+
+      return nom.includes(s) || prenom.includes(s) || fullName.includes(s) || ref.includes(s) || cin.includes(s) || classe.includes(s);
     });
   }, [receipts, selectedOp, searchQuery]);
 

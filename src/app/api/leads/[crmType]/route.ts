@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
-import { formatPhone } from '@/lib/phoneUtils';
+import { formatPhone, buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
 import { getCachedLeads, setCachedLeads, invalidateLeadsCache } from '@/lib/leadsCache';
 
@@ -13,10 +13,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
     }
 
     const validCrm = crmType as 'elios' | 'formatic';
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.get('refresh') === '1' || url.searchParams.get('force') === '1';
+    if (forceRefresh) {
+      invalidateLeadsCache('all');
+    }
+
     const { data: cached, isStale } = getCachedLeads(validCrm);
 
-    // Si nous avons des données fraîches en cache mémoire : réponse quasi instantanée (< 5ms)
-    if (cached && !isStale) {
+    // Si nous avons des données fraîches en cache mémoire (sans forçage) : réponse quasi instantanée (< 5ms)
+    if (cached && !isStale && !forceRefresh) {
       return NextResponse.json(cached);
     }
 
@@ -90,33 +96,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     let leadStatus = body.status || 'Lead';
     if (leadStatus === 'Converti') leadStatus = 'Approved';
 
-    // Si nouveau prospect créé avec To Elios activé : création directe dans Elios (MIGRATION, zéro copie dans Formatic)
     const isToEliosActive = Boolean(body.toElios);
+    const targetCrm = (crmType === 'formatic' && isToEliosActive) ? 'elios' : crmType;
+
+    // Règle d'intégrité absolue : INTERDICTION DES DOUBLONS DE NUMÉRO DE TÉLÉPHONE
+    const phoneRegex = buildPhoneMongoRegex(cleanPhone);
+    const existingDuplicate = await Lead.findOne({ crmType: targetCrm, phone: phoneRegex }).lean();
+    if (existingDuplicate) {
+      const dupName = (existingDuplicate as any).name || (existingDuplicate as any).phone;
+      const dupStatus = (existingDuplicate as any).status || 'Lead';
+      const crmLabel = targetCrm === 'elios' ? 'CRM Elios' : 'CRM Formatic';
+      return NextResponse.json(
+        { 
+          error: `Ce numéro de téléphone est déjà enregistré pour le prospect "${dupName}" (${dupStatus}). Les doublons sont strictement interdits dans ${crmLabel}.`,
+          existingLead: {
+            id: (existingDuplicate as any).id,
+            name: dupName,
+            status: dupStatus,
+            phone: (existingDuplicate as any).phone
+          }
+        }, 
+        { status: 409 }
+      );
+    }
+
+    // Si nouveau prospect créé avec To Elios activé : création directe dans Elios (MIGRATION, zéro copie dans Formatic)
     if (crmType === 'formatic' && isToEliosActive) {
-      const existingElios = await Lead.findOne({ crmType: 'elios', phone: cleanPhone });
-      if (existingElios) {
-        existingElios.fromFormatic = true;
-        existingElios.updatedAt = now;
-        existingElios.lastModifiedBy = body.staff || 'Système';
-        existingElios.notes = [
-          {
-            id: `note-from-formatic-${Date.now()}`,
-            text: `Nouveau prospect Formatic créé et migré vers Elios par ${body.staff || 'Système'}`,
-            by: body.staff || 'Système',
-            addedBy: body.staff || 'Système',
-            date: now.toISOString(),
-            addedAt: now
-          },
-          ...(existingElios.notes || [])
-        ];
-        await existingElios.save();
-        invalidateLeadsCache('all');
-        return NextResponse.json({
-          ...existingElios.toObject(),
-          migrated: true,
-          targetCrm: 'elios'
-        }, { status: 201 });
-      }
 
       // Attribution d'un ID PRO pour Elios
       let nextIdNumber = 1;

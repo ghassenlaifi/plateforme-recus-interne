@@ -25,7 +25,7 @@ import {
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
-import { formatPhone, extractPhoneDigits, normalizePhoneForUrl } from '@/lib/phoneUtils';
+import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
 import { getClientCachedLeads, setClientCachedLeads } from '@/lib/clientCache';
 
 const fetcher = (url: string) => fetch(url).then(res => {
@@ -182,6 +182,14 @@ export default function CRMFormaticPage() {
   const [newSection, setNewSection] = useState('');
   const [newErr, setNewErr] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Détection instantanée de doublon de numéro dans CRM Formatic
+  const duplicateLeadInFormatic = useMemo(() => {
+    if (!newPhone || !Array.isArray(leads)) return null;
+    const digits = extractPhoneDigits(newPhone);
+    if (digits.length !== 8) return null;
+    return leads.find(l => isSamePhone(l.phone, newPhone)) || null;
+  }, [newPhone, leads]);
 
   // Formulaire Fiche Prospect
   const [editFirst, setEditFirst] = useState('');
@@ -604,9 +612,15 @@ export default function CRMFormaticPage() {
     e.preventDefault();
     const digits = extractPhoneDigits(newPhone);
     if (digits.length !== 8) {
-      setNewErr('Veuillez saisir un numéro de téléphone valide à 8 chiffres.');
+      setNewErr('Veuillez saisir un numéro de téléphone valide à 8 chiffres (ex : 92 330 331).');
       return;
     }
+
+    if (duplicateLeadInFormatic) {
+      setNewErr(`Ce numéro de téléphone est déjà enregistré pour "${duplicateLeadInFormatic.name || duplicateLeadInFormatic.phone}". Les doublons sont strictement interdits.`);
+      return;
+    }
+
     const cleanPhone = formatPhone(digits);
 
     try {
@@ -658,6 +672,17 @@ export default function CRMFormaticPage() {
       return;
     }
     const cleanPhone = formatPhone(digits);
+
+    // Contrôle d'intégrité : vérifier qu'aucun autre prospect n'a ce numéro
+    const duplicateOther = Array.isArray(leads) ? leads.find(l => 
+      l.id !== selectedLead.id && 
+      (l as any)._id !== (selectedLead as any)._id && 
+      isSamePhone(l.phone, cleanPhone)
+    ) : null;
+    if (duplicateOther) {
+      setEditErr(`Ce numéro de téléphone est déjà attribué au prospect "${duplicateOther.name || duplicateOther.phone}". Les doublons sont strictement interdits.`);
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -1762,13 +1787,47 @@ export default function CRMFormaticPage() {
                     setNewPhone(formatPhone(e.target.value));
                     if (newErr) setNewErr('');
                   }}
-                  className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${newErr ? 'border-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
+                  className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${duplicateLeadInFormatic || newErr ? 'border-red-500 ring-1 ring-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
                 />
-                {newPhone.length > 0 && (
-                  <div className="flex justify-end mt-1 text-[11px]">
-                    <span className={extractPhoneDigits(newPhone).length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                      {extractPhoneDigits(newPhone).length === 8 ? "✓ Valide (8 chiffres)" : `${extractPhoneDigits(newPhone).length} / 8`}
+                <div className="flex items-center justify-between mt-1 text-[11px]">
+                  <div>
+                    {duplicateLeadInFormatic && (
+                      <span className="text-red-500 font-bold flex items-center gap-1">
+                        <span>⚠️ Numéro déjà existant</span>
+                      </span>
+                    )}
+                  </div>
+                  {newPhone.length > 0 && (
+                    <span className={duplicateLeadInFormatic ? "text-red-500 font-bold" : extractPhoneDigits(newPhone).length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                      {duplicateLeadInFormatic ? "Doublon interdit" : extractPhoneDigits(newPhone).length === 8 ? "✓ Valide (8 chiffres)" : `${extractPhoneDigits(newPhone).length} / 8`}
                     </span>
+                  )}
+                </div>
+
+                {duplicateLeadInFormatic && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-start gap-2.5 animate-pop">
+                    <svg className="w-4 h-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      {IC.warning}
+                    </svg>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span>Prospect existant (Doublon interdit)</span>
+                      </div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink)]">
+                        Ce numéro est déjà attribué à <strong>{duplicateLeadInFormatic.name || duplicateLeadInFormatic.phone}</strong> (Statut : <span className="font-semibold text-amber-600 dark:text-amber-400">{duplicateLeadInFormatic.status}</span>).
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setIsNewLeadOpen(false);
+                          setSelectedLead(duplicateLeadInFormatic);
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 underline"
+                      >
+                        <span>Ouvrir la fiche de ce prospect</span>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.open}</svg>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1817,10 +1876,14 @@ export default function CRMFormaticPage() {
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--line)]">
                 <button type="button" className="btn text-xs py-2 px-3.5 rounded-xl font-medium" onClick={() => setIsNewLeadOpen(false)}>
-                  Cancel
+                  Annuler
                 </button>
-                <button className="btn text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50" type="submit" disabled={isCreating}>
-                  {isCreating ? 'Saving...' : 'Save lead'}
+                <button 
+                  className="btn text-xs py-2 px-4 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed" 
+                  type="submit" 
+                  disabled={isCreating || Boolean(duplicateLeadInFormatic)}
+                >
+                  {isCreating ? 'Enregistrement...' : 'Enregistrer le prospect'}
                 </button>
               </div>
             </form>

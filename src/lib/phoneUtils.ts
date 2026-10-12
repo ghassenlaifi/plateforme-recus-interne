@@ -311,3 +311,115 @@ export function isValidOmaniPhone(raw?: string | null): boolean {
   const data = extractPhoneData(raw);
   return data.country === 'OM' && data.isValid;
 }
+
+/**
+ * Vérifie de manière universelle si un numéro de téléphone correspond
+ * à une requête de recherche (complète ou partielle), peu importe le formatage :
+ * ex: "+216 92330331", "+216 92 330 331", "92330331", "92 330 331", "21692330331", "00216...".
+ */
+export function matchesPhoneQuery(storedPhone?: string | null, query?: string | null): boolean {
+  if (!storedPhone || !query) return false;
+  
+  const rawQuery = String(query).trim();
+  const rawStored = String(storedPhone).trim();
+  if (!rawQuery || !rawStored) return false;
+
+  // 1. Nettoyage textuel sans séparateurs ni espaces
+  const queryClean = rawQuery.toLowerCase().replace(/[\s\.\-\/\(\)]/g, '');
+  const storedClean = rawStored.toLowerCase().replace(/[\s\.\-\/\(\)]/g, '');
+  if (queryClean.length >= 2 && storedClean.includes(queryClean)) {
+    return true;
+  }
+
+  // 2. Chiffres purs
+  const queryDigits = rawQuery.replace(/\D/g, '');
+  const storedDigits = rawStored.replace(/\D/g, '');
+
+  if (!queryDigits || !storedDigits) {
+    return false;
+  }
+
+  // Inclusion directe des chiffres bruts (ex: "92330331" dans "21692330331")
+  if (queryDigits.length >= 2 && storedDigits.includes(queryDigits)) {
+    return true;
+  }
+
+  // 3. Dépréfixage des indicatifs internationaux (+216, 00216, 216, +968, 00968, 968)
+  const stripPrefix = (digits: string, raw: string): string => {
+    if (digits.startsWith('00216')) return digits.slice(5);
+    if (digits.startsWith('00968')) return digits.slice(5);
+    if (raw.startsWith('+216') && digits.startsWith('216')) return digits.slice(3);
+    if (raw.startsWith('+968') && digits.startsWith('968')) return digits.slice(3);
+    if (digits.startsWith('216') && digits.length >= 9) return digits.slice(3);
+    if (digits.startsWith('968') && digits.length >= 10) return digits.slice(3);
+    return digits;
+  };
+
+  const queryStripped = stripPrefix(queryDigits, rawQuery);
+  const storedStripped = stripPrefix(storedDigits, rawStored);
+
+  if (queryStripped.length >= 2) {
+    if (storedStripped.includes(queryStripped) || storedDigits.includes(queryStripped)) {
+      return true;
+    }
+  }
+
+  // 4. Comparaison via extractPhoneDigits (chiffres nationaux normalisés)
+  const queryNational = extractPhoneDigits(rawQuery);
+  const storedNational = extractPhoneDigits(rawStored);
+
+  if (queryNational && storedNational) {
+    if (storedNational.includes(queryNational) || queryNational.includes(storedNational)) {
+      return true;
+    }
+  }
+
+  // 5. Comparaison via normalizePhoneForUrl (ex: "21692330331")
+  const queryIntl = normalizePhoneForUrl(rawQuery);
+  const storedIntl = normalizePhoneForUrl(rawStored);
+
+  if (queryIntl && storedIntl) {
+    if (storedIntl.includes(queryIntl) || queryIntl.includes(storedIntl)) {
+      return true;
+    }
+  }
+  if (storedIntl && queryDigits.length >= 3 && storedIntl.includes(queryDigits)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Détermine avec certitude si deux numéros de téléphone désignent le même numéro,
+ * en ignorant les différences d'indicatif (+216, 00216, 216) et d'espaces/tirets.
+ */
+export function isSamePhone(phoneA?: string | null, phoneB?: string | null): boolean {
+  if (!phoneA || !phoneB) return false;
+  const digitsA = extractPhoneDigits(phoneA);
+  const digitsB = extractPhoneDigits(phoneB);
+  if (digitsA && digitsB && digitsA.length === 8 && digitsB.length === 8) {
+    return digitsA === digitsB;
+  }
+  // Comparaison sur les 8 derniers chiffres si disponibles
+  const rawDigitsA = String(phoneA).replace(/\D/g, '');
+  const rawDigitsB = String(phoneB).replace(/\D/g, '');
+  if (rawDigitsA.length >= 8 && rawDigitsB.length >= 8) {
+    return rawDigitsA.slice(-8) === rawDigitsB.slice(-8);
+  }
+  return rawDigitsA.length > 0 && rawDigitsA === rawDigitsB;
+}
+
+/**
+ * Génère une expression régulière MongoDB permettant de retrouver
+ * un numéro sous toutes ses formes (+216, 00216, sans indicatif, avec ou sans espaces/tirets).
+ */
+export function buildPhoneMongoRegex(rawPhone: string): RegExp {
+  const digits = extractPhoneDigits(rawPhone) || rawPhone.replace(/\D/g, '').slice(-8);
+  if (!digits || digits.length < 8) {
+    const escaped = rawPhone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`^${escaped}$`, 'i');
+  }
+  const digitPattern = digits.split('').join('[\\s.-]*');
+  return new RegExp(`^(?:\\+?(?:216|968)|00(?:216|968))?[\\s.-]*${digitPattern}$`, 'i');
+}

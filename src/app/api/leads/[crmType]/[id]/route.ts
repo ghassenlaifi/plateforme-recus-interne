@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
-import { formatPhone } from '@/lib/phoneUtils';
+import { formatPhone, buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
 
@@ -221,6 +221,20 @@ export async function PATCH(
     // Cas 4 : Mise à jour globale des informations prospect
     if (body.phone !== undefined) {
       body.phone = formatPhone(body.phone) || body.phone;
+      const phoneRegex = buildPhoneMongoRegex(body.phone);
+      const conflictFilter: any = {
+        ...crmFilter,
+        phone: phoneRegex,
+        ...(query._id ? { _id: { $ne: query._id } } : { id: { $ne: query.id } })
+      };
+      const existingConflict = await Lead.findOne(conflictFilter).lean();
+      if (existingConflict) {
+        const conflictName = (existingConflict as any).name || (existingConflict as any).phone;
+        const conflictStatus = (existingConflict as any).status || 'Lead';
+        return NextResponse.json({
+          error: `Ce numéro de téléphone est déjà attribué à un autre prospect ("${conflictName}", statut : ${conflictStatus}). Les doublons sont strictement interdits.`
+        }, { status: 409 });
+      }
     }
 
     if (body.status === 'Converti') {
