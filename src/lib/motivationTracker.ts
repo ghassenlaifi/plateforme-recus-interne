@@ -19,6 +19,8 @@
 export type MotivationalPopupType = 
   | 'RETURN_AFTER_ABSENCE'
   | 'MILESTONE_7_OPS'
+  | 'STATUS_21'
+  | 'STATUS_30'
   | 'STATUS_10'
   | 'STATUS_15';
 
@@ -164,10 +166,10 @@ export function recordCrmActivity(
   // Mettre à jour l'horodatage de dernière activité
   setStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, now);
 
-  // 1. Détection Prioritaire : 15 modifications de statut
-  if (type === 'status_change' && statusCount === 15) {
+  // 1. Détection Prioritaire : 30 modifications de statut
+  if (type === 'status_change' && statusCount === 30) {
     dispatchMotivationalPopup({
-      type: 'STATUS_15',
+      type: 'STATUS_30',
       operatorName,
       opsCount,
       statusCount,
@@ -175,10 +177,10 @@ export function recordCrmActivity(
     return;
   }
 
-  // 2. Détection : 10 modifications de statut
-  if (type === 'status_change' && statusCount === 10) {
+  // 2. Détection : 21 modifications de statut
+  if (type === 'status_change' && statusCount === 21) {
     dispatchMotivationalPopup({
-      type: 'STATUS_10',
+      type: 'STATUS_21',
       operatorName,
       opsCount,
       statusCount,

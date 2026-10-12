@@ -353,9 +353,10 @@ export function MotivationalModal() {
       buttonText = "Nkammlou hakka !";
       break;
 
+    case 'STATUS_21':
     case 'STATUS_10':
       badgeIcon = <HeartHandshake size={14} />;
-      badgeText = "10 Prospects suivis";
+      badgeText = "21 Prospects suivis";
       badgeColor = "#EA580C";
       mainTitle = "Aadi tesma3 klem mouch houwa ama was3alna belk myselch.";
       arabicDuaa = "";
@@ -363,9 +364,10 @@ export function MotivationalModal() {
       buttonText = "Mwas3in belna w mkamlin !";
       break;
 
+    case 'STATUS_30':
     case 'STATUS_15':
       badgeIcon = <Compass size={14} />;
-      badgeText = "15 Prospects suivis";
+      badgeText = "30 Prospects suivis";
       badgeColor = "#9333EA";
       mainTitle = "Nverifiw besoin maa Soumaya chkoun lezem nkallmou jem3a hedhi";
       arabicDuaa = "";
