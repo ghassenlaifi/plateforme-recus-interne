@@ -328,6 +328,7 @@ export function MotivationalModal() {
   let badgeColor = "#2563EB";
   let mainTitle = "";
   let subTitle = "";
+  let subTitleExtra = "";
   let arabicDuaa = "";
   let duaaSubtext = "";
   let buttonText = "Yallah, bismillah !";
@@ -373,7 +374,8 @@ export function MotivationalModal() {
       badgeText = `⚡ ${modalData.opsCount || 30} OPÉRATIONS • GHOUL EL WORKSPACE`;
       badgeColor = "#D97706";
       mainTitle = `Bravo ${operatorName} ! Hak l ghoul mta3 el workspace!`;
-      subTitle = `${modalData.opsCount || 30} opérations ! تحب نطلبولك قهوة ولا تاكسي للدار؟ ☕️🚕`;
+      subTitle = `${modalData.opsCount || 30} opérations !`;
+      subTitleExtra = "تحب نطلبولك قهوة ولا تاكسي للدار؟ ☕️🚕";
       arabicDuaa = "بَارَكَ اللهُ فِي جُهُودِكَ وَزَادَكَ مِنْ فَضْلِهِ.";
       duaaSubtext = "";
       buttonText = "Yatik essaha ! Mkamlin !";
@@ -521,6 +523,21 @@ export function MotivationalModal() {
               <p
                 style={{
                   margin: '8px 0 0 0',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: 'var(--ink, #1e293b)',
+                  lineHeight: 1.4,
+                  userSelect: 'none'
+                }}
+              >
+                {subTitle}
+              </p>
+            )}
+            {subTitleExtra && (
+              <p
+                dir="rtl"
+                style={{
+                  margin: '6px 0 0 0',
                   fontSize: '14.5px',
                   fontWeight: 600,
                   color: 'var(--ink, #334155)',
@@ -528,7 +545,7 @@ export function MotivationalModal() {
                   userSelect: 'none'
                 }}
               >
-                {subTitle}
+                {subTitleExtra}
               </p>
             )}
           </div>
