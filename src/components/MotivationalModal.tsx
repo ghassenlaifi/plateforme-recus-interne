@@ -323,11 +323,11 @@ export function MotivationalModal() {
 
   const operatorName = modalData.operatorName || getActiveOperatorName();
 
-  // Configuration du contenu en fonction du type de popup
   let badgeIcon = <Sparkles size={14} />;
   let badgeText = "ELIOS MOTIVATION";
   let badgeColor = "#2563EB";
   let mainTitle = "";
+  let subTitle = "";
   let arabicDuaa = "";
   let duaaSubtext = "";
   let buttonText = "Yallah, bismillah !";
@@ -343,6 +343,19 @@ export function MotivationalModal() {
       buttonText = "Yallah, bismillah !";
       break;
 
+    case 'STRATEGIC_COORDINATION':
+    case 'STATUS_30':
+    case 'STATUS_15':
+      badgeIcon = <Compass size={14} />;
+      badgeText = "Coordination Stratégique";
+      badgeColor = "#9333EA";
+      mainTitle = "Nverifiw besoin maa Soumaya chkoun lezem nkallmou jem3a hedhi";
+      arabicDuaa = "";
+      duaaSubtext = "";
+      buttonText = "Fhamtek, nverifiw !";
+      break;
+
+    case 'MILESTONE_21_OPS':
     case 'MILESTONE_7_OPS':
       badgeIcon = <Zap size={14} />;
       badgeText = `🔥 ${modalData.opsCount} OPÉRATIONS EFFECTUÉES`;
@@ -353,26 +366,17 @@ export function MotivationalModal() {
       buttonText = "Nkammlou hakka !";
       break;
 
+    case 'MILESTONE_30_GHOUL':
     case 'STATUS_21':
     case 'STATUS_10':
-      badgeIcon = <HeartHandshake size={14} />;
-      badgeText = "21 Prospects suivis";
-      badgeColor = "#EA580C";
-      mainTitle = "Aadi tesma3 klem mouch houwa ama was3alna belk myselch.";
-      arabicDuaa = "";
+      badgeIcon = <Sparkles size={14} />;
+      badgeText = `⚡ ${modalData.opsCount || 30} OPÉRATIONS • GHOUL EL WORKSPACE`;
+      badgeColor = "#D97706";
+      mainTitle = `Bravo ${operatorName} ! Hak l ghoul mta3 el workspace!`;
+      subTitle = `${modalData.opsCount || 30} opérations ! تحب نطلبولك قهوة ولا تاكسي للدار؟ ☕️🚕`;
+      arabicDuaa = "بَارَكَ اللهُ فِي جُهُودِكَ وَزَادَكَ مِنْ فَضْلِهِ.";
       duaaSubtext = "";
-      buttonText = "Mwas3in belna w mkamlin !";
-      break;
-
-    case 'STATUS_30':
-    case 'STATUS_15':
-      badgeIcon = <Compass size={14} />;
-      badgeText = "30 Prospects suivis";
-      badgeColor = "#9333EA";
-      mainTitle = "Nverifiw besoin maa Soumaya chkoun lezem nkallmou jem3a hedhi";
-      arabicDuaa = "";
-      duaaSubtext = "";
-      buttonText = "Fhamtek, nverifiw !";
+      buttonText = "Yatik essaha ! Mkamlin !";
       break;
   }
 
@@ -513,6 +517,20 @@ export function MotivationalModal() {
             >
               {mainTitle}
             </h2>
+            {subTitle && (
+              <p
+                style={{
+                  margin: '8px 0 0 0',
+                  fontSize: '14.5px',
+                  fontWeight: 600,
+                  color: 'var(--ink, #334155)',
+                  lineHeight: 1.5,
+                  userSelect: 'none'
+                }}
+              >
+                {subTitle}
+              </p>
+            )}
           </div>
 
           {/* Carte Spirituelle / دعاء بالتوفيق باللغة العربية */}

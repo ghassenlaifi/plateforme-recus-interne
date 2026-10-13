@@ -18,6 +18,9 @@
 
 export type MotivationalPopupType = 
   | 'RETURN_AFTER_ABSENCE'
+  | 'STRATEGIC_COORDINATION'
+  | 'MILESTONE_21_OPS'
+  | 'MILESTONE_30_GHOUL'
   | 'MILESTONE_7_OPS'
   | 'STATUS_21'
   | 'STATUS_30'
@@ -166,10 +169,10 @@ export function recordCrmActivity(
   // Mettre à jour l'horodatage de dernière activité
   setStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, now);
 
-  // 1. Détection Prioritaire : 30 modifications de statut
-  if (type === 'status_change' && statusCount === 30) {
+  // 1. Palier 30 Opérations successives : L'Ghoul mta3 el workspace (30, 60, 90, 120...)
+  if (opsCount > 0 && opsCount % 30 === 0) {
     dispatchMotivationalPopup({
-      type: 'STATUS_30',
+      type: 'MILESTONE_30_GHOUL',
       operatorName,
       opsCount,
       statusCount,
@@ -177,10 +180,10 @@ export function recordCrmActivity(
     return;
   }
 
-  // 2. Détection : 21 modifications de statut
-  if (type === 'status_change' && statusCount === 21) {
+  // 2. Palier 21 Opérations successives : Célébration d'Effort (21, 42, 63, 84...)
+  if (opsCount > 0 && opsCount % 21 === 0) {
     dispatchMotivationalPopup({
-      type: 'STATUS_21',
+      type: 'MILESTONE_21_OPS',
       operatorName,
       opsCount,
       statusCount,
@@ -188,10 +191,10 @@ export function recordCrmActivity(
     return;
   }
 
-  // 3. Détection : Chaque palier de 7 opérations successives (7, 14, 21, 28, 35...)
-  if (opsCount > 0 && opsCount % 7 === 0) {
+  // 3. Coordination Stratégique Soumaya : Les 7 premières opérations, puis toutes les 40 opérations
+  if (opsCount === 7 || (opsCount > 7 && opsCount % 40 === 0)) {
     dispatchMotivationalPopup({
-      type: 'MILESTONE_7_OPS',
+      type: 'STRATEGIC_COORDINATION',
       operatorName,
       opsCount,
       statusCount,
