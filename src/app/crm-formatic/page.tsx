@@ -29,6 +29,7 @@ import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelp
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
 import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
 import { recordCrmActivity } from '@/lib/motivationTracker';
+import { broadcastCrmChange, subscribeToCrmSync } from '@/lib/crmSync';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Formatic');
@@ -37,6 +38,7 @@ const fetcher = (url: string) => fetch(url).then(res => {
 
 const IC = {
   users: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></>,
+  lead: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
   up: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></>,
   ok: <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></>,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></>,
@@ -102,11 +104,18 @@ export default function CRMFormaticPage() {
 
   // Récupération des données Formatic depuis MongoDB Atlas avec mise en cache optimisée et fallback client instantané
   const { data: leads, mutate, isLoading } = useSWR<LeadItem[]>('/api/leads/formatic', fetcher, {
-    refreshInterval: selectedLead ? 0 : 30000,
+    refreshInterval: selectedLead ? 0 : 15000, // Synchronisation temps réel automatique
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
-    dedupingInterval: 10000
+    dedupingInterval: 8000
   });
+
+  // Abonnement temps réel instantané (Cross-Tabs, Cross-Windows via BroadcastChannel)
+  useEffect(() => {
+    return subscribeToCrmSync('formatic', () => {
+      mutate();
+    });
+  }, [mutate]);
 
   // Hydratation sécurisée du cache client (Zéro mismatch SSR / Zéro flash)
   useEffect(() => {
@@ -146,8 +155,8 @@ export default function CRMFormaticPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
   }, [safeOperators, leads]);
 
-  // État de sélection de carte KPI ('all', 'approved', 'potential', 'to_elios', 'rappels')
-  const [activeCard, setActiveCard] = useState<'all' | 'approved' | 'potential' | 'to_elios' | 'rappels' | null>('all');
+  // État de sélection de carte KPI ('all', 'leads', 'approved', 'potential', 'to_elios', 'rappels')
+  const [activeCard, setActiveCard] = useState<'all' | 'leads' | 'approved' | 'potential' | 'to_elios' | 'rappels' | null>('all');
 
   // Filtres Formatic
   const [filterQuery, setFilterQuery] = useState('');
@@ -510,7 +519,7 @@ export default function CRMFormaticPage() {
     }
   }, [liveLead, selectedLead, mutate]);
 
-  // KPI Stats avec TO ELIOS et Règle Métier des Rappels
+  // KPI Stats avec TO ELIOS, Règle Métier des Rappels et Comptage Temps Réel des Leads
   const stats = useMemo(() => {
     const list = Array.isArray(leads) ? leads : [];
     const activeList = list.filter((l: any) => !l.isMigratedToElios);
@@ -524,6 +533,10 @@ export default function CRMFormaticPage() {
 
     return {
       total: activeList.length,
+      leads: activeList.filter(l => {
+        const s = (l.status || '').trim().toLowerCase();
+        return s === 'lead' || s === 'nouveau';
+      }).length,
       approved: activeList.filter(l => {
         const s = (l.status || '').trim().toLowerCase();
         return s === 'approved' || s === 'converti';
@@ -535,11 +548,25 @@ export default function CRMFormaticPage() {
   }, [leads]);
 
   // Gestion des clics sur les cartes KPI
-  const handleCardClick = (card: 'all' | 'approved' | 'potential' | 'to_elios' | 'rappels') => {
+  const handleCardClick = (card: 'all' | 'leads' | 'approved' | 'potential' | 'to_elios' | 'rappels') => {
     if (activeCard === card && card !== 'all') {
       setActiveCard('all');
+      setFilterStatus('ALL');
     } else {
       setActiveCard(card);
+      if (card === 'all') {
+        setFilterStatus('ALL');
+      } else if (card === 'leads') {
+        setFilterStatus('Lead');
+      } else if (card === 'approved') {
+        setFilterStatus('Approved');
+      } else if (card === 'potential') {
+        setFilterStatus('Potential Prospect');
+      } else if (card === 'to_elios') {
+        setFilterStatus('ALL');
+      } else if (card === 'rappels') {
+        setFilterStatus('ALL');
+      }
     }
     setCurrentPage(1);
   };
@@ -572,7 +599,10 @@ export default function CRMFormaticPage() {
         if ((l as any).isMigratedToElios) return false;
       }
 
-      if (activeCard === 'approved') {
+      if (activeCard === 'leads') {
+        const st = (l.status || '').trim().toLowerCase();
+        if (st !== 'lead' && st !== 'nouveau') return false;
+      } else if (activeCard === 'approved') {
         const st = (l.status || '').trim().toLowerCase();
         if (st !== 'approved' && st !== 'converti') return false;
       } else if (activeCard === 'potential') {
@@ -587,6 +617,8 @@ export default function CRMFormaticPage() {
         const target = filterStatus.trim().toLowerCase();
         if (target === 'approved') {
           if (leadStatus !== 'approved' && leadStatus !== 'converti') return false;
+        } else if (target === 'lead') {
+          if (leadStatus !== 'lead' && leadStatus !== 'nouveau') return false;
         } else if (leadStatus !== target) {
           return false;
         }
@@ -750,6 +782,7 @@ export default function CRMFormaticPage() {
 
       recordCrmActivity('operation', activeUser);
       showToast('Prospect Formatic créé avec succès !');
+      broadcastCrmChange('formatic');
       setTimeout(() => mutate(), 400);
     } catch (err: any) {
       setNewErr(err.message || 'Une erreur est survenue.');
@@ -843,6 +876,7 @@ export default function CRMFormaticPage() {
       setSelectedLead(null);
       setShowUnsavedConfirm(false);
       mutate();
+      broadcastCrmChange(editToElios ? 'all' : 'formatic');
       showToast(editToElios ? 'Prospect migré vers le CRM Elios avec succès !' : 'Prospect mis à jour avec succès');
 
       if (shouldTrigger) {
@@ -1023,6 +1057,7 @@ export default function CRMFormaticPage() {
       },
       false
     );
+    broadcastCrmChange('formatic');
     showToast('Prospect supprimé avec succès');
 
     // 2. Requête réseau résiliente en arrière-plan
@@ -1035,6 +1070,7 @@ export default function CRMFormaticPage() {
       }
       // Revalidation silencieuse en arrière-plan
       mutate();
+      broadcastCrmChange('formatic');
     } catch (err: any) {
       showToast(err.message || 'Erreur suppression');
       mutate(); // Restaure l'état en cas d'échec réseau réel
@@ -1159,9 +1195,9 @@ export default function CRMFormaticPage() {
         )}
 
         {/* ========================================================= */}
-        {/* 5 CARTES KPI FORMATIC (RAPPELS STRICTEMENT LA DERNIÈRE À DROITE) */}
+        {/* 6 CARTES KPI FORMATIC (RAPPELS STRICTEMENT LA DERNIÈRE À DROITE) */}
         {/* ========================================================= */}
-        <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4 mb-6" aria-label="Indicateurs KPI">
+        <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-4 mb-6" aria-label="Indicateurs KPI">
           {/* CARTE 1 : TOTAL PROSPECTS */}
           <button 
             className={`stat clickable ${activeCard === 'all' ? 'active-card' : ''}`}
@@ -1180,7 +1216,27 @@ export default function CRMFormaticPage() {
             <i className="si"><svg className="i" viewBox="0 0 24 24">{IC.users}</svg></i>
           </button>
 
-          {/* CARTE 2 : APPROVED */}
+          {/* CARTE 2 : LEADS (SYNCHRONISÉE TEMPS RÉEL) */}
+          <button 
+            className={`stat clickable ${activeCard === 'leads' ? 'active-card' : ''}`}
+            style={{ '--c': '#0284C7' } as React.CSSProperties}
+            aria-pressed={activeCard === 'leads'}
+            onClick={() => handleCardClick('leads')}
+            type="button"
+          >
+            <small>Leads</small>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-16 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl" style={{ color: '#0284C7' }}>{stats.leads.toLocaleString('fr-FR')}</b>
+            )}
+            <span className="text-xs">Nouveaux entrants</span>
+            <i className="si" style={{ color: '#0284C7', background: 'rgba(2, 132, 199, 0.12)' }}>
+              <svg className="i" viewBox="0 0 24 24">{IC.lead}</svg>
+            </i>
+          </button>
+
+          {/* CARTE 3 : APPROVED */}
           <button 
             className={`stat clickable ${activeCard === 'approved' ? 'active-card' : ''}`}
             style={{ '--c': '#7BA25B' } as React.CSSProperties}
@@ -1200,7 +1256,7 @@ export default function CRMFormaticPage() {
             </i>
           </button>
 
-          {/* CARTE 3 : POTENTIAL PROSPECT */}
+          {/* CARTE 4 : POTENTIAL PROSPECT */}
           <button 
             className={`stat clickable ${activeCard === 'potential' ? 'active-card' : ''}`}
             style={{ '--c': '#F49E1F' } as React.CSSProperties}
@@ -1220,7 +1276,7 @@ export default function CRMFormaticPage() {
             </i>
           </button>
 
-          {/* CARTE 4 : TO ELIOS (SPÉCIFIQUE FORMATIC) */}
+          {/* CARTE 5 : TO ELIOS (SPÉCIFIQUE FORMATIC) */}
           <button 
             className={`stat clickable ${activeCard === 'to_elios' ? 'active-card' : ''}`}
             style={{ '--c': '#F49E1F' } as React.CSSProperties}
@@ -1240,7 +1296,7 @@ export default function CRMFormaticPage() {
             </i>
           </button>
 
-          {/* CARTE 5 : RAPPELS (DERNIÈRE CARTE À DROITE, BLEU MARINE OFFICIEL) */}
+          {/* CARTE 6 : RAPPELS (DERNIÈRE CARTE À DROITE, BLEU MARINE OFFICIEL) */}
           <button 
             className={`stat clickable ${activeCard === 'rappels' ? 'active-card' : ''}`}
             style={{ 
@@ -1294,8 +1350,19 @@ export default function CRMFormaticPage() {
                 aria-label="Statut"
                 value={filterStatus}
                 onChange={(e) => {
-                  setFilterStatus(e.target.value);
-                  if (activeCard === 'rappels' || activeCard === 'to_elios') setActiveCard(null);
+                  const val = e.target.value;
+                  setFilterStatus(val);
+                  if (val === 'ALL') {
+                    setActiveCard('all');
+                  } else if (val === 'Lead') {
+                    setActiveCard('leads');
+                  } else if (val === 'Approved') {
+                    setActiveCard('approved');
+                  } else if (val === 'Potential Prospect') {
+                    setActiveCard('potential');
+                  } else {
+                    setActiveCard(null);
+                  }
                   setCurrentPage(1);
                 }}
                 className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)]"
@@ -1441,6 +1508,7 @@ export default function CRMFormaticPage() {
             ) : isFiltered ? (
               <span>
                 <strong className="text-[var(--ink)]">{filteredLeads.length.toLocaleString('fr-FR')}</strong> résultat{filteredLeads.length > 1 ? 's' : ''} sur {(leads?.length || 0).toLocaleString('fr-FR')}
+                {activeCard === 'leads' && <span className="ml-2 font-semibold text-[#0284C7]">(Filtre Leads)</span>}
                 {activeCard === 'rappels' && <span className="ml-2 font-semibold text-[#23356E]">(Mode Rappels)</span>}
                 {activeCard === 'to_elios' && <span className="ml-2 font-semibold text-[#F49E1F]">(Filtre TO ELIOS)</span>}
               </span>

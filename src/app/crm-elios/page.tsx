@@ -29,6 +29,7 @@ import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelp
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
 import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
 import { recordCrmActivity } from '@/lib/motivationTracker';
+import { broadcastCrmChange, subscribeToCrmSync } from '@/lib/crmSync';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données Elios');
@@ -37,6 +38,7 @@ const fetcher = (url: string) => fetch(url).then(res => {
 
 const IC = {
   users: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></>,
+  lead: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
   up: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></>,
   ok: <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></>,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></>,
@@ -101,11 +103,18 @@ export default function CRMEliosPage() {
 
   // Récupération des données depuis MongoDB avec mise en cache optimisée et fallback client instantané
   const { data: leads, mutate, isLoading } = useSWR<LeadItem[]>('/api/leads/elios', fetcher, {
-    refreshInterval: selectedLead ? 0 : 30000, // Inutile de re-télécharger 4000 prospects si une fiche est déjà ouverte
+    refreshInterval: selectedLead ? 0 : 15000, // Synchronisation temps réel automatique
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
-    dedupingInterval: 10000
+    dedupingInterval: 8000
   });
+
+  // Abonnement temps réel instantané (Cross-Tabs, Cross-Windows via BroadcastChannel)
+  useEffect(() => {
+    return subscribeToCrmSync('elios', () => {
+      mutate();
+    });
+  }, [mutate]);
 
   // Hydratation sécurisée du cache client (Zéro mismatch SSR / Zéro flash)
   useEffect(() => {
@@ -145,8 +154,8 @@ export default function CRMEliosPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
   }, [safeOperators, leads]);
 
-  // État de sélection de carte KPI ('all', 'approved', 'potential', 'rappels')
-  const [activeCard, setActiveCard] = useState<'all' | 'approved' | 'potential' | 'rappels' | null>('all');
+  // État de sélection de carte KPI ('all', 'leads', 'approved', 'potential', 'rappels')
+  const [activeCard, setActiveCard] = useState<'all' | 'leads' | 'approved' | 'potential' | 'rappels' | null>('all');
 
   // Filtres
   const [filterQuery, setFilterQuery] = useState('');
@@ -500,7 +509,7 @@ export default function CRMEliosPage() {
     }
   }, [liveLead, selectedLead, mutate]);
 
-  // KPI Stats avec Règle Métier Stricte des Rappels
+  // KPI Stats avec Règle Métier Stricte des Rappels et Comptage Temps Réel des Leads
   const stats = useMemo(() => {
     const list = Array.isArray(leads) ? leads : [];
     const countStatus = (st: string) => list.filter(l => (l.status || '').trim().toLowerCase() === st.toLowerCase()).length;
@@ -510,6 +519,10 @@ export default function CRMEliosPage() {
     
     return {
       total: list.length,
+      leads: list.filter(l => {
+        const s = (l.status || '').trim().toLowerCase();
+        return s === 'lead' || s === 'nouveau';
+      }).length,
       approved: list.filter(l => {
         const s = (l.status || '').trim().toLowerCase();
         return s === 'approved' || s === 'converti';
@@ -520,7 +533,7 @@ export default function CRMEliosPage() {
   }, [leads]);
 
   // Gestion des clics sur les cartes KPI
-  const handleCardClick = (card: 'all' | 'approved' | 'potential' | 'rappels') => {
+  const handleCardClick = (card: 'all' | 'leads' | 'approved' | 'potential' | 'rappels') => {
     if (activeCard === card && card !== 'all') {
       setActiveCard('all');
       setFilterStatus('ALL');
@@ -528,6 +541,8 @@ export default function CRMEliosPage() {
       setActiveCard(card);
       if (card === 'all') {
         setFilterStatus('ALL');
+      } else if (card === 'leads') {
+        setFilterStatus('Lead');
       } else if (card === 'approved') {
         setFilterStatus('Approved');
       } else if (card === 'potential') {
@@ -560,9 +575,12 @@ export default function CRMEliosPage() {
         }
       }
 
-      // 2. Filtre Carte KPI Rappels
+      // 2. Filtre Cartes KPI spécifiques
       if (activeCard === 'rappels') {
         if (!isLeadInRappels(l)) return false;
+      } else if (activeCard === 'leads') {
+        const s = (l.status || '').trim().toLowerCase();
+        if (s !== 'lead' && s !== 'nouveau') return false;
       }
 
       // 3. Filtre STATUS
@@ -571,6 +589,8 @@ export default function CRMEliosPage() {
         const target = filterStatus.trim().toLowerCase();
         if (target === 'approved') {
           if (leadStatus !== 'approved' && leadStatus !== 'converti') return false;
+        } else if (target === 'lead') {
+          if (leadStatus !== 'lead' && leadStatus !== 'nouveau') return false;
         } else if (leadStatus !== target) {
           return false;
         }
@@ -723,6 +743,7 @@ export default function CRMEliosPage() {
 
       recordCrmActivity('operation', activeUser);
       showToast('Nouveau prospect créé avec succès !');
+      broadcastCrmChange('elios');
       setTimeout(() => mutate(), 400);
     } catch (err: any) {
       setNewErr(err.message || 'Une erreur est survenue.');
@@ -798,6 +819,7 @@ export default function CRMEliosPage() {
       setSelectedLead(null);
       setShowUnsavedConfirm(false);
       mutate();
+      broadcastCrmChange('elios');
       showToast('Prospect mis à jour avec succès');
 
       if (shouldTrigger) {
@@ -981,6 +1003,7 @@ export default function CRMEliosPage() {
       },
       false
     );
+    broadcastCrmChange('elios');
     showToast('Prospect supprimé avec succès');
 
     // 2. Requête réseau résiliente en arrière-plan
@@ -993,6 +1016,7 @@ export default function CRMEliosPage() {
       }
       // Revalidation silencieuse en arrière-plan
       mutate();
+      broadcastCrmChange('elios');
     } catch (err: any) {
       showToast(err.message || 'Erreur suppression');
       mutate(); // Restaure l'état en cas d'échec réseau réel
@@ -1105,9 +1129,9 @@ export default function CRMEliosPage() {
         )}
 
         {/* ========================================================= */}
-        {/* SECTION 4 CARTES KPI (RAPPELS EN DERNIÈRE POSITION À DROITE) */}
+        {/* SECTION 5 CARTES KPI (RAPPELS EN DERNIÈRE POSITION À DROITE) */}
         {/* ========================================================= */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 mb-6" aria-label="Indicateurs KPI">
+        <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4 mb-6" aria-label="Indicateurs KPI">
           {/* CARTE 1 : TOTAL PROSPECTS */}
           <button 
             className={`stat clickable ${activeCard === 'all' ? 'active-card' : ''}`}
@@ -1126,7 +1150,27 @@ export default function CRMEliosPage() {
             <i className="si"><svg className="i" viewBox="0 0 24 24">{IC.users}</svg></i>
           </button>
 
-          {/* CARTE 2 : APPROVED */}
+          {/* CARTE 2 : LEADS (SYNCHRONISÉE TEMPS RÉEL) */}
+          <button 
+            className={`stat clickable ${activeCard === 'leads' ? 'active-card' : ''}`}
+            style={{ '--c': '#0284C7' } as React.CSSProperties}
+            aria-pressed={activeCard === 'leads'}
+            onClick={() => handleCardClick('leads')}
+            type="button"
+          >
+            <small>Leads</small>
+            {isLoading && (!leads || leads.length === 0) ? (
+              <div className="h-7 w-16 bg-[var(--hover)] rounded-md animate-pulse my-0.5" />
+            ) : (
+              <b className="text-xl sm:text-2xl" style={{ color: '#0284C7' }}>{stats.leads.toLocaleString('fr-FR')}</b>
+            )}
+            <span className="text-xs">Nouveaux entrants</span>
+            <i className="si" style={{ color: '#0284C7', background: 'rgba(2, 132, 199, 0.12)' }}>
+              <svg className="i" viewBox="0 0 24 24">{IC.lead}</svg>
+            </i>
+          </button>
+
+          {/* CARTE 3 : APPROVED */}
           <button 
             className={`stat clickable ${activeCard === 'approved' ? 'active-card' : ''}`}
             style={{ '--c': '#7BA25B' } as React.CSSProperties}
@@ -1146,7 +1190,7 @@ export default function CRMEliosPage() {
             </i>
           </button>
 
-          {/* CARTE 3 : POTENTIAL PROSPECT */}
+          {/* CARTE 4 : POTENTIAL PROSPECT */}
           <button 
             className={`stat clickable ${activeCard === 'potential' ? 'active-card' : ''}`}
             style={{ '--c': '#F49E1F' } as React.CSSProperties}
@@ -1166,7 +1210,7 @@ export default function CRMEliosPage() {
             </i>
           </button>
 
-          {/* CARTE 4 : RAPPELS (DERNIÈRE CARTE À DROITE SELON EXIGENCE) */}
+          {/* CARTE 5 : RAPPELS (DERNIÈRE CARTE À DROITE SELON EXIGENCE) */}
           <button 
             className={`stat clickable hot ${activeCard === 'rappels' ? 'active-card' : ''}`}
             style={{ '--c': '#F49E1F' } as React.CSSProperties}
@@ -1216,8 +1260,19 @@ export default function CRMEliosPage() {
                 aria-label="Statut"
                 value={filterStatus}
                 onChange={(e) => {
-                  setFilterStatus(e.target.value);
-                  if (activeCard === 'rappels') setActiveCard(null);
+                  const val = e.target.value;
+                  setFilterStatus(val);
+                  if (val === 'ALL') {
+                    setActiveCard('all');
+                  } else if (val === 'Lead') {
+                    setActiveCard('leads');
+                  } else if (val === 'Approved') {
+                    setActiveCard('approved');
+                  } else if (val === 'Potential Prospect') {
+                    setActiveCard('potential');
+                  } else {
+                    setActiveCard(null);
+                  }
                   setCurrentPage(1);
                 }}
                 className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)]"
@@ -1364,6 +1419,7 @@ export default function CRMEliosPage() {
               <span>
                 <strong className="text-[var(--ink)]">{filteredLeads.length.toLocaleString('fr-FR')}</strong> résultat{filteredLeads.length > 1 ? 's' : ''} sur {(leads?.length || 0).toLocaleString('fr-FR')}
                 {activeCard === 'rappels' && <span className="ml-2 font-semibold text-amber-600">(Mode Rappels)</span>}
+                {activeCard === 'leads' && <span className="ml-2 font-semibold text-[#0284C7]">(Filtre Leads)</span>}
               </span>
             ) : (
               <span>Affichage de <strong>{(leads?.length || 0).toLocaleString('fr-FR')}</strong> prospects</span>
