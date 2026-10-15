@@ -9,6 +9,7 @@ import { formatPhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
 import { checkMonthlyReceiptConflict } from '@/lib/receiptConflict';
+import { triggerCrmApproval } from '@/lib/receiptSync';
 
 export async function GET(req: NextRequest) {
   try {
@@ -50,123 +51,6 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error('Error in GET /api/receipts:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
-
-async function triggerCrmApproval(
-  telephone: string | undefined | null,
-  amount: number | undefined,
-  operatorName: string | undefined,
-  reference: string | undefined,
-  paymentDate?: Date | string | null
-) {
-  try {
-    if (!telephone || !String(telephone).trim() || telephone === '00000000') return;
-    const rawPhone = String(telephone).trim();
-    const digitsOnly = rawPhone.replace(/\D/g, '');
-    const norm8 = digitsOnly.length > 8 && digitsOnly.startsWith('216') 
-      ? digitsOnly.slice(-8) 
-      : (digitsOnly.length === 8 ? digitsOnly : digitsOnly);
-
-    const phoneOrConditions: any[] = [
-      { phone: rawPhone },
-      { phone: digitsOnly },
-      { phone: norm8 }
-    ];
-
-    if (norm8.length === 8) {
-      const spacedPattern = norm8.split('').join('[\\s.-]*');
-      phoneOrConditions.push({ phone: { $regex: new RegExp(`${spacedPattern}$`) } });
-    }
-
-    const matchingLeads = await Lead.find({ $or: phoneOrConditions });
-    if (!matchingLeads || matchingLeads.length === 0) return;
-
-    // Calculer le jour civil cible du reçu pour le contrôle d'unicité journalière
-    const targetDateObj = paymentDate ? new Date(paymentDate) : new Date();
-    const targetCalendarDay = !isNaN(targetDateObj.getTime())
-      ? `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}-${String(targetDateObj.getDate()).padStart(2, '0')}`
-      : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
-
-    for (const lead of matchingLeads) {
-      const existingNotes = Array.isArray(lead.notes) ? [...lead.notes] : [];
-
-      // 1. Détection de doublon par référence identique
-      const hasSameRef = reference && existingNotes.some((n: any) => {
-        if (!n || !n.text) return false;
-        return n.text.includes(reference);
-      });
-
-      // 2. Détection de doublon par mois civil ou intervalle inférieur à 25 jours
-      const hasSameMonthAutoNote = existingNotes.some((n: any) => {
-        if (!n || !n.text) return false;
-        const isAuto = n.text.includes('Inscription validée automatiquement via Elios Workspace');
-        if (!isAuto) return false;
-
-        const noteDateVal = n.date || n.addedAt;
-        if (!noteDateVal) return false;
-        const nd = new Date(noteDateVal);
-        if (isNaN(nd.getTime())) return false;
-        const noteMonthKey = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}`;
-        const targetMonthKey = `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}`;
-        if (noteMonthKey === targetMonthKey) return true;
-        const diffMs = Math.abs(targetDateObj.getTime() - nd.getTime());
-        const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        return diffDays < 25;
-      });
-
-      const setFields: any = {
-        status: 'Approved',
-      };
-
-      if (amount && (!lead.amount || Number(lead.amount) === 0)) {
-        setFields.amount = String(amount);
-      }
-
-      if (hasSameRef) {
-        console.log(`[CRM Auto-Approval Skipped] Note avec réf ${reference} déjà présente sur le prospect ${lead._id} (${lead.crmType}). Doublon ignoré.`);
-        await Lead.updateOne({ _id: lead._id }, { $set: setFields });
-        continue;
-      }
-
-      if (hasSameMonthAutoNote) {
-        console.log(`[CRM Auto-Approval Skipped] Note automatique déjà présente pour ce mois sur le prospect ${lead._id} (${lead.crmType}). Doublon mensuel ignoré.`);
-        await Lead.updateOne({ _id: lead._id }, { $set: setFields });
-        continue;
-      }
-
-      // 3. Aucune note en doublon : création officielle de la note d'approbation / échéance
-      const now = new Date();
-      const newNote = {
-        id: `auto-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        text: `Inscription validée automatiquement via Elios Workspace (Montant: ${amount || 0} DT, Réf: ${reference || ''})`,
-        by: operatorName || 'Système',
-        addedBy: operatorName || 'Système',
-        date: now.toISOString(),
-        addedAt: now
-      };
-
-      setFields.notes = [newNote, ...existingNotes];
-      setFields.updatedAt = now;
-      setFields.lastModifiedBy = operatorName || 'Système';
-
-      const updateOp: any = { $set: setFields };
-      if (operatorName && operatorName.toLowerCase() !== 'système' && operatorName.toLowerCase() !== 'systeme') {
-        updateOp.$addToSet = { modifiers: operatorName };
-        updateOp.$push = {
-          modifierLogs: {
-            $each: [{ operator: operatorName, at: now, action: 'auto_approval_receipt' }],
-            $slice: -100
-          }
-        };
-      }
-
-      await Lead.updateOne({ _id: lead._id }, updateOp);
-      console.log(`[CRM Auto-Approval] Lead ${lead.id || lead._id} (${lead.crmType}) validé avec succès via reçu ${reference || ''} (${targetCalendarDay}).`);
-    }
-    invalidateLeadsCache('all');
-  } catch (crmErr) {
-    console.error('[CRM Auto-Approval Error] Failed to update CRM lead automatically:', crmErr);
   }
 }
 
@@ -232,7 +116,13 @@ export async function POST(req: NextRequest) {
       });
 
       // Synchronisation CRM automatique
-      await triggerCrmApproval(phoneVal, isNaN(amount) ? 0 : amount, operatorName, ref, new Date());
+      await triggerCrmApproval({
+        telephone: phoneVal,
+        amount: isNaN(amount) ? 0 : amount,
+        operatorName,
+        reference: ref,
+        paymentDate: new Date()
+      });
 
       return NextResponse.json(newReceipt, { status: 201 });
     }
@@ -346,7 +236,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Synchronisation CRM automatique avec traçabilité et contrôle anti-doublon journalier
-    await triggerCrmApproval(telephone, amount, operatorName, newReceipt.reference || reference, effectiveDate);
+    await triggerCrmApproval({
+      telephone,
+      amount,
+      operatorName,
+      reference: newReceipt.reference || reference,
+      paymentDate: effectiveDate
+    });
 
     // 6. Retour de la réponse JSON au client
     return NextResponse.json(newReceipt, { status: 201 });

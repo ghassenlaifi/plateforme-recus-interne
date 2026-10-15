@@ -9,6 +9,7 @@ import { Receipt, Operator, getThemeColors } from '@/types';
 import { generateReceiptReference } from '@/lib/receiptReference';
 import { formatPhone, extractPhoneDigits, matchesPhoneQuery } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
+import { subscribeToFinancialSync } from '@/lib/financialSync';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données');
@@ -73,9 +74,16 @@ export default function PaymentReceiptsPage() {
   };
 
   // Récupération des données depuis MongoDB
-  const { data: rawReceipts } = useSWR<Receipt[]>('/api/receipts?status=all', fetcher);
+  const { data: rawReceipts, mutate } = useSWR<Receipt[]>('/api/receipts?status=all', fetcher);
   const { data: operators } = useSWR<Operator[]>('/api/operators', fetcher);
   const safeOperators = useMemo(() => Array.isArray(operators) ? operators : [], [operators]);
+
+  // Synchronisation temps réel multi-onglets (Encaissements, Reçus, Portefeuilles)
+  useEffect(() => {
+    return subscribeToFinancialSync(() => {
+      mutate();
+    });
+  }, [mutate]);
 
   // Normalisation des reçus
   const receipts = useMemo(() => {

@@ -22,8 +22,7 @@ if (!globalStore.__leadsMemoryCache) {
 }
 
 const cache = globalStore.__leadsMemoryCache;
-const TTL_MS = 60 * 1000; // 60 secondes de fraîcheur absolue
-const STALE_TTL_MS = 10 * 60 * 1000; // Jusqu'à 10 minutes pour Stale-While-Revalidate
+const TTL_MS = 15 * 1000; // 15 secondes de fraîcheur en mémoire vive
 
 export function getCachedLeads(crmType: 'elios' | 'formatic'): { data: any[] | null; isStale: boolean } {
   const entry = cache[crmType];
@@ -36,10 +35,7 @@ export function getCachedLeads(crmType: 'elios' | 'formatic'): { data: any[] | n
     return { data: entry.data, isStale: false };
   }
 
-  if (age < STALE_TTL_MS) {
-    return { data: entry.data, isStale: true };
-  }
-
+  // Si le cache a plus de 15s, on force le rechargement immédiat pour intégrité absolue
   return { data: null, isStale: true };
 }
 

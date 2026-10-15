@@ -62,4 +62,28 @@ export function prependClientCachedLead(key: string, newLead: any) {
   } catch {}
 }
 
+export function updateClientCachedLead(updatedLead: any) {
+  if (typeof window === 'undefined' || !updatedLead) return;
+  const leadId = updatedLead._id ? String(updatedLead._id) : updatedLead.id;
+  const keys = ['elios_cached_leads', 'formatic_cached_leads'];
+  for (const key of keys) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const idx = parsed.findIndex((l: any) => 
+          (l._id && String(l._id) === leadId) || 
+          (l.id && l.id === leadId)
+        );
+        if (idx !== -1) {
+          parsed[idx] = { ...parsed[idx], ...updatedLead };
+          sessionStorage.setItem(key, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
+  }
+}
+
+
 

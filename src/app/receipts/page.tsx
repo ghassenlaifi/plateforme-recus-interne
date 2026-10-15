@@ -9,6 +9,7 @@ import { Receipt, Operator, getThemeColors } from '@/types';
 import { useToast } from '@/components/Toast';
 import { formatPhone, extractPhoneDigits, isSamePhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
+import { broadcastFinancialChange, subscribeToFinancialSync } from '@/lib/financialSync';
 
 const fetcher = (url: string) => fetch(url).then(res => {
   if (!res.ok) throw new Error('Erreur chargement données');
@@ -95,6 +96,13 @@ export default function ReceiptsPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+
+  // Abonnement aux synchronisations financières temps réel multi-onglets
+  useEffect(() => {
+    return subscribeToFinancialSync(() => {
+      mutate();
+    });
+  }, [mutate]);
 
   // Persistence utilisateur
   useEffect(() => {
@@ -548,6 +556,7 @@ export default function ReceiptsPage() {
       resetUploadForm();
       setTab('todo');
       mutate();
+      broadcastFinancialChange('receipt_created');
     } catch (err: any) {
       setFormErr(err.message || 'Une erreur est survenue.');
     } finally {
@@ -593,12 +602,13 @@ export default function ReceiptsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error('Erreur lors de la mise à jour du reçu');
-      const updated = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour du reçu');
       toast({ message: 'Modifications enregistrées avec succès', tone: 'ok' });
-      setSelectedReceipt(updated);
+      setSelectedReceipt(data);
       setModalNote('');
       mutate();
+      broadcastFinancialChange('receipt_updated');
     } catch (err: any) {
       toast({ message: err.message || 'Erreur lors de la sauvegarde', tone: 'warn' });
     } finally {
@@ -632,6 +642,7 @@ export default function ReceiptsPage() {
       setNewNoteText('');
       toast({ message: 'Note ajoutée avec succès', tone: 'ok' });
       mutate();
+      broadcastFinancialChange('receipt_updated');
     } catch (err: any) {
       console.error('Erreur ajout note:', err);
       toast({ message: err.message || 'Erreur lors de l’ajout de la note', tone: 'warn' });
@@ -709,6 +720,7 @@ export default function ReceiptsPage() {
       toast({ message: 'Reçu validé et marqué comme traité', tone: 'ok' });
       closeReceiptModal();
       mutate();
+      broadcastFinancialChange('receipt_processed');
     } catch (err: any) {
       toast({ message: err.message, tone: 'warn' });
     } finally {
@@ -734,6 +746,7 @@ export default function ReceiptsPage() {
       });
       closeReceiptModal();
       mutate();
+      broadcastFinancialChange('receipt_deleted');
     } catch (err: any) {
       toast({ message: err.message || 'Impossible de supprimer le reçu', tone: 'warn' });
     } finally {

@@ -322,6 +322,7 @@ export function MotivationalModal() {
   if (!isOpen || !modalData) return null;
 
   const operatorName = modalData.operatorName || getActiveOperatorName();
+  const count = modalData.notesCount ?? modalData.opsCount ?? 0;
 
   let badgeIcon = <Sparkles size={14} />;
   let badgeText = "ELIOS MOTIVATION";
@@ -359,9 +360,9 @@ export function MotivationalModal() {
     case 'MILESTONE_21_OPS':
     case 'MILESTONE_7_OPS':
       badgeIcon = <Zap size={14} />;
-      badgeText = `🔥 ${modalData.opsCount} OPÉRATIONS EFFECTUÉES`;
+      badgeText = `🔥 ${count} OPÉRATIONS EFFECTUÉES`;
       badgeColor = "#16A34A";
-      mainTitle = `${modalData.opsCount} opérations effectuées ! Bravo aliiiik ${operatorName} !! rabi iberekleek ..`;
+      mainTitle = `${count} opérations effectuées ! Bravo aliiiik ${operatorName} !! rabi iberekleek ..`;
       arabicDuaa = "بَارَكَ اللَّهُ فِي جُهُودِك وَزَادَكَ مِنْ فَضْلِهِ وَتَوْفِيقِهِ وَأَسْعَدَكَ فِي كُلِّ خُطْوَة";
       duaaSubtext = "« عمل ممتاز وهمّة عالية، كل مجهود يبني نجاح فريق Elios ! »";
       buttonText = "Nkammlou hakka !";
@@ -371,10 +372,10 @@ export function MotivationalModal() {
     case 'STATUS_21':
     case 'STATUS_10':
       badgeIcon = <Sparkles size={14} />;
-      badgeText = `⚡ ${modalData.opsCount || 30} OPÉRATIONS • GHOUL EL WORKSPACE`;
+      badgeText = `⚡ ${count || 30} OPÉRATIONS • GHOUL EL WORKSPACE`;
       badgeColor = "#D97706";
       mainTitle = `Bravo ${operatorName} ! Hak l ghoul mta3 el workspace!`;
-      subTitle = `${modalData.opsCount || 30} opérations !`;
+      subTitle = `${count || 30} opérations !`;
       subTitleExtra = "تحب نطلبولك قهوة ولا تاكسي للدار؟ ☕️🚕";
       arabicDuaa = "بَارَكَ اللهُ فِي جُهُودِكَ وَزَادَكَ مِنْ فَضْلِهِ.";
       duaaSubtext = "";

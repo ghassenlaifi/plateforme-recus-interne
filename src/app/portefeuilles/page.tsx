@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { EliosHeader } from '@/components/EliosHeader';
 import { useToast } from '@/components/Toast';
 import { resolveExactReceiptDate, formatFullDateTimeFR } from '@/lib/dateUtils';
+import { broadcastFinancialChange, subscribeToFinancialSync } from '@/lib/financialSync';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
@@ -149,7 +150,15 @@ export default function PortefeuillesPage() {
   // Data fetching (réactif au filtre de date)
   const walletApiUrl = selectedDate ? `/api/portefeuilles?date=${selectedDate}` : '/api/portefeuilles';
   const { data: wallets, isLoading, error, mutate } = useSWR<WalletData[]>(walletApiUrl, fetcher);
-  const { data: allReceipts } = useSWR<ReceiptItem[]>('/api/receipts?status=all', fetcher);
+  const { data: allReceipts, mutate: mutateAllReceipts } = useSWR<ReceiptItem[]>('/api/receipts?status=all', fetcher);
+
+  // Synchronisation financière temps réel multi-onglets (Encaissements, Reçus, Portefeuilles)
+  useEffect(() => {
+    return subscribeToFinancialSync(() => {
+      mutate();
+      mutateAllReceipts();
+    });
+  }, [mutate, mutateAllReceipts]);
 
   // Active Category Filter Tab
   const [tab, setTab] = useState<string>('');
@@ -414,6 +423,8 @@ export default function PortefeuillesPage() {
       }
 
       await mutate();
+      await mutateAllReceipts();
+      broadcastFinancialChange('wallet_retrait');
       toast({ message: `Retrait de ${formatDT(v)} DT enregistré avec succès`, tone: 'ok' });
       closeRetrait();
     } catch (err: any) {
@@ -657,6 +668,8 @@ export default function PortefeuillesPage() {
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la remise à zéro');
 
       await mutate();
+      await mutateAllReceipts();
+      broadcastFinancialChange('wallet_reset');
       toast({ message: `Portefeuille ${resetWallet.mode} - ${resetWallet.details} remis à zéro.`, tone: 'ok' });
       closeReset();
     } catch (err: any) {

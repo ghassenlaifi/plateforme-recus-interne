@@ -5,6 +5,15 @@ import { formatPhone, buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
 import { getCachedLeads, setCachedLeads, invalidateLeadsCache, updateCachedLeadInPlace } from '@/lib/leadsCache';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0'
+};
+
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
   try {
@@ -21,41 +30,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
 
     const { data: cached, isStale } = getCachedLeads(validCrm);
 
-    // Si nous avons des données fraîches en cache mémoire (sans forçage) : réponse quasi instantanée (< 5ms)
+    // Si nous avons des données ultra-fraîches en mémoire vive (< 15s) et sans forçage : réponse instantanée (< 5ms)
     if (cached && !isStale && !forceRefresh) {
-      return NextResponse.json(cached);
-    }
-
-    // Si les données sont en cache mais stale (périmées) : renvoyer immédiatement les données du cache et revalider en tâche de fond
-    if (cached && isStale) {
-      // Déclencher la revalidation asynchrone sans bloquer l'utilisateur
-      (async () => {
-        try {
-          await connectMongo();
-          if (validCrm === 'formatic') {
-            const [formaticLeads, migratedLeads] = await Promise.all([
-              Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
-              Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
-            ]);
-            const formattedMigrated = migratedLeads.map((l: any) => ({ ...l, isMigratedToElios: true, toElios: true }));
-            const result = [...formaticLeads, ...formattedMigrated];
-            result.sort((a, b) => {
-              const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-              const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-              if (timeB !== timeA) return timeB - timeA;
-              const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
-              const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
-              if (idNumB !== idNumA) return idNumB - idNumA;
-              return String(b.id || b._id).localeCompare(String(a.id || a._id));
-            });
-            setCachedLeads('formatic', result);
-          } else {
-            const fresh = await Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
-            setCachedLeads('elios', fresh);
-          }
-        } catch {}
-      })();
-      return NextResponse.json(cached);
+      return NextResponse.json(cached, { headers: NO_CACHE_HEADERS });
     }
 
     await connectMongo();
@@ -84,13 +61,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
         return String(b.id || b._id).localeCompare(String(a.id || a._id));
       });
       setCachedLeads('formatic', result);
-      return NextResponse.json(result);
+      return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
     }
 
     // Sort by creation date so new leads are strictly on top
     const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
     setCachedLeads('elios', leads);
-    return NextResponse.json(leads);
+    return NextResponse.json(leads, { headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Failed to fetch leads:', error);
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 });

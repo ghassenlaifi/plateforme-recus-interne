@@ -3,7 +3,16 @@ import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import { formatPhone, buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { isClassWithoutSection } from '@/types/crm';
-import { invalidateLeadsCache, removeCachedLeadEverywhere } from '@/lib/leadsCache';
+import { invalidateLeadsCache, removeCachedLeadEverywhere, updateCachedLeadInPlace } from '@/lib/leadsCache';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0'
+};
 
 export async function GET(
   request: Request,
@@ -19,9 +28,9 @@ export async function GET(
 
     const lead = await Lead.findOne({ ...query, ...crmFilter }).lean();
     if (!lead) {
-      return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
+      return NextResponse.json({ error: 'Lead introuvable' }, { status: 404, headers: NO_CACHE_HEADERS });
     }
-    return NextResponse.json(lead);
+    return NextResponse.json(lead, { headers: NO_CACHE_HEADERS });
   } catch (error: any) {
     console.error('Failed to fetch lead:', error);
     return NextResponse.json({ error: error.message || 'Erreur récupération prospect' }, { status: 500 });
@@ -78,7 +87,7 @@ export async function PATCH(
       );
 
       if (!updated) return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
-      invalidateLeadsCache(crmType as any);
+      updateCachedLeadInPlace(crmType as 'elios' | 'formatic', updated.toObject ? updated.toObject() : updated);
       return NextResponse.json(updated);
     }
 
@@ -106,7 +115,15 @@ export async function PATCH(
 
       const noteToEdit = notes[noteIdx];
       const noteAuthor = noteToEdit.by || noteToEdit.addedBy || '';
+      const isValidationNote = Boolean(
+        (noteToEdit.text && (
+          noteToEdit.text.includes('Inscription validée') ||
+          noteToEdit.text.includes('Inscription validée automatiquement')
+        )) ||
+        (noteToEdit.id && typeof noteToEdit.id === 'string' && noteToEdit.id.startsWith('auto-'))
+      );
       const isAuthorized = Boolean(
+        isValidationNote ||
         !noteAuthor ||
         noteAuthor.toLowerCase() === 'système' ||
         noteAuthor.toLowerCase() === 'systeme' ||
@@ -136,7 +153,7 @@ export async function PATCH(
         if (existing.modifierLogs.length > 100) existing.modifierLogs = existing.modifierLogs.slice(-100);
       }
       await existing.save();
-      invalidateLeadsCache(crmType as any);
+      updateCachedLeadInPlace(crmType as 'elios' | 'formatic', existing.toObject ? existing.toObject() : existing);
       return NextResponse.json(existing);
     }
 
@@ -175,13 +192,11 @@ export async function PATCH(
 
       let isAuthorized = false;
       if (isValidationNote) {
-        // La note de validation de paiement ne peut être supprimée QUE par l'opérateur porteur de la note
-        if (noteAuthor && noteAuthor.toLowerCase() !== 'système' && noteAuthor.toLowerCase() !== 'systeme') {
-          isAuthorized = Boolean(operator && operator.trim().toLowerCase() === noteAuthor.toLowerCase());
-        } else {
-          // Si la note est estampillée Système pur : seul l'administrateur système (Ghassen/Admin) peut intervenir
-          isAuthorized = Boolean(operator && ['ghassen', 'admin', 'superadmin'].includes(operator.trim().toLowerCase()));
-        }
+        // La note de validation de paiement peut être modifiée/supprimée manuellement par tout opérateur en session
+        isAuthorized = Boolean(
+          (operator && operator.trim()) ||
+          (!noteAuthor || noteAuthor.toLowerCase() === 'système' || noteAuthor.toLowerCase() === 'systeme')
+        );
       } else {
         // Notes manuelles classiques : auteur de la note ou administrateur
         isAuthorized = Boolean(
@@ -195,9 +210,7 @@ export async function PATCH(
 
       if (!isAuthorized) {
         return NextResponse.json({ 
-          error: isValidationNote 
-            ? `Seul l'opérateur porteur de cette note de validation (${noteAuthor}) peut la supprimer` 
-            : "Seul l'auteur de cette note ou un administrateur peut la supprimer" 
+          error: "Seul un opérateur authentifié ou un administrateur peut supprimer cette note" 
         }, { status: 403 });
       }
 
@@ -214,7 +227,7 @@ export async function PATCH(
         if (existing.modifierLogs.length > 100) existing.modifierLogs = existing.modifierLogs.slice(-100);
       }
       await existing.save();
-      invalidateLeadsCache(crmType as any);
+      updateCachedLeadInPlace(crmType as 'elios' | 'formatic', existing.toObject ? existing.toObject() : existing);
       return NextResponse.json(existing);
     }
 
@@ -406,7 +419,11 @@ export async function PATCH(
       }
     }
 
-    invalidateLeadsCache(crmType as any);
+    if (crmType === 'formatic' && isToEliosActive) {
+      invalidateLeadsCache('all');
+    } else {
+      updateCachedLeadInPlace(crmType as 'elios' | 'formatic', updated.toObject ? updated.toObject() : updated);
+    }
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('Failed to update lead:', error);

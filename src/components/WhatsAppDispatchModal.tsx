@@ -58,7 +58,9 @@ export function WhatsAppDispatchModal({
 
   if (!isOpen) return null;
 
-  const isApproved = targetStatus === 'Approved Prospect' || targetStatus === 'Approved';
+  const cleanTarget = (targetStatus || '').trim().toLowerCase();
+  const isApprovedProspect = cleanTarget === 'approved prospect';
+  const isNa = cleanTarget === 'n/a';
   const hasValidPhone = extractPhoneDigits(phone).length === 8;
 
   const handleSendWhatsApp = () => {
@@ -105,7 +107,11 @@ export function WhatsAppDispatchModal({
               Communication WhatsApp
             </span>
             <h3 style={{ margin: '2px 0 0', fontSize: '15.5px', fontWeight: 700, color: 'var(--ink)' }}>
-              {isApproved ? 'Envoyer les modes de paiement' : 'Envoyer un message de relance'}
+              {isApprovedProspect 
+                ? 'Envoyer les modes de paiement (Approved Prospect)' 
+                : isNa 
+                ? 'Envoyer le message de relance (Statut N/A)' 
+                : 'Envoyer un message WhatsApp'}
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
               <span 
@@ -117,8 +123,13 @@ export function WhatsAppDispatchModal({
                   fontWeight: 700,
                   padding: '2px 8px',
                   borderRadius: '6px',
-                  background: isApproved ? 'color-mix(in srgb, var(--warn) 15%, transparent)' : 'color-mix(in srgb, var(--ink3) 15%, transparent)',
-                  color: isApproved ? 'var(--warn)' : 'var(--ink2)'
+                  background: isApprovedProspect 
+                    ? 'color-mix(in srgb, #7BA25B 18%, transparent)' 
+                    : isNa 
+                    ? 'color-mix(in srgb, #64748B 18%, transparent)' 
+                    : 'color-mix(in srgb, var(--ink3) 15%, transparent)',
+                  color: isApprovedProspect ? '#2E7D32' : isNa ? '#334155' : 'var(--ink2)',
+                  border: `1px solid ${isApprovedProspect ? '#7BA25B44' : isNa ? '#64748B44' : 'var(--line)'}`
                 }}
               >
                 Statut : {targetStatus}

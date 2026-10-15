@@ -173,6 +173,12 @@ export const FORMATIC_SECTIONS = ELIOS_SECTIONS;
 export const FORMATIC_SOURCES = ELIOS_SOURCES;
 export const FORMATIC_OFFERS = ELIOS_OFFERS;
 
+export const RAPPELS_ELIGIBLE_STATUSES = [
+  'N/A',
+  'Potential Prospect',
+  'Approved Prospect'
+] as const;
+
 /**
  * Règle Métier Stricte des Rappels Elios :
  * - Un élève au statut 'N/A' passe aux Rappels exactement 5 jours après sa dernière modification.

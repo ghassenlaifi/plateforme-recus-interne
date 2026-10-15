@@ -3,10 +3,12 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import Lead from '@/models/Lead';
 import { deleteFileFromDrive } from '@/lib/googleDrive';
-import { formatPhone } from '@/lib/phoneUtils';
+import { formatPhone, isSamePhone } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
 import { checkMonthlyReceiptConflict } from '@/lib/receiptConflict';
+import { generateReceiptReference } from '@/lib/receiptReference';
+import { handleReceiptPhoneReassignment, rollbackCrmApproval } from '@/lib/receiptSync';
 
 type Params = { id: string };
 
@@ -126,6 +128,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
       setFields.lastModifiedBy = noteAuthor;
     }
 
+    // Détection rigoureuse d'un changement de numéro de téléphone
+    const oldPhone = existingReceipt.clientDetails?.telephone;
+    const isPhoneChanged = Boolean(newPhone && (!oldPhone || !isSamePhone(oldPhone, newPhone)));
+
+    // Recalcul officiel de la référence selon la nomenclature EA-[TEL]-[DATE] si le numéro est corrigé
+    if (isPhoneChanged && newPhone) {
+      const effectiveDate = setFields.paymentDate !== undefined 
+        ? setFields.paymentDate 
+        : (existingReceipt.paymentDate || existingReceipt.createdAt || new Date());
+      setFields.reference = generateReceiptReference(newPhone, effectiveDate);
+    } else {
+      delete setFields.reference;
+    }
+
     if (Object.keys(setFields).length > 0) {
       updateOps.$set = setFields;
     }
@@ -138,6 +154,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Params | Pro
     
     if (!updatedReceipt) {
       return NextResponse.json({ error: 'Receipt not found' }, { status: 404 });
+    }
+
+    // Réaffectation automatique multi-CRM : Rollback sur l'ancien prospect et Approbation du nouveau avec nouvelle référence
+    if (isPhoneChanged && newPhone) {
+      await handleReceiptPhoneReassignment({
+        existingReceipt,
+        newTelephone: newPhone,
+        newReference: updatedReceipt.reference,
+        amount: updatedReceipt.amount !== undefined ? updatedReceipt.amount : existingReceipt.amount,
+        operatorName: updatedReceipt.lastModifiedBy || body.operatorName || body.lastModifiedBy || 'Système',
+        paymentDate: updatedReceipt.paymentDate || existingReceipt.paymentDate
+      });
     }
 
     return NextResponse.json(updatedReceipt, { status: 200 });
@@ -168,18 +196,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Params | Pr
       }
     }
 
-    // Cohérence bidirectionnelle : Purge des notes CRM associées au reçu supprimé
-    if (deletedReceipt.reference) {
+    // Cohérence bidirectionnelle et Rollback rigoureux du statut CRM
+    if (deletedReceipt.reference && deletedReceipt.clientDetails?.telephone) {
       try {
-        const escapedRef = deletedReceipt.reference.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        await Lead.updateMany(
-          { 'notes.text': { $regex: new RegExp(escapedRef, 'i') } },
-          { $pull: { notes: { text: { $regex: new RegExp(escapedRef, 'i') } } } }
-        );
-        invalidateLeadsCache('all');
-        console.log(`[Delete Pipeline] Purge des notes CRM effectuée pour le reçu supprimé ${deletedReceipt.reference}.`);
+        await rollbackCrmApproval({
+          telephone: deletedReceipt.clientDetails.telephone,
+          reference: deletedReceipt.reference,
+          operatorName: 'Système'
+        });
       } catch (crmCleanErr) {
-        console.warn(`[Delete Pipeline] Avertissement nettoyage note CRM:`, crmCleanErr);
+        console.warn(`[Delete Pipeline] Avertissement rollback CRM:`, crmCleanErr);
       }
     }
     

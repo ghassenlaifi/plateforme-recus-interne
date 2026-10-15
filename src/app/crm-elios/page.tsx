@@ -9,6 +9,7 @@ import {
   LeadNote,
   ELIOS_STATUSES,
   ELIOS_STATUS_COLORS,
+  RAPPELS_ELIGIBLE_STATUSES,
   ELIOS_CLASSES,
   ELIOS_SECTIONS,
   ELIOS_SOURCES,
@@ -27,19 +28,24 @@ import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
-import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead } from '@/lib/clientCache';
+import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead, updateClientCachedLead } from '@/lib/clientCache';
 import { recordCrmActivity } from '@/lib/motivationTracker';
 import { broadcastCrmChange, subscribeToCrmSync } from '@/lib/crmSync';
 
-const fetcher = (url: string) => fetch(url).then(res => {
-  if (!res.ok) throw new Error('Erreur chargement données Elios');
-  return res.json();
-});
+const fetcher = (url: string) => {
+  const sep = url.includes('?') ? '&' : '?';
+  return fetch(`${url}${sep}_t=${Date.now()}`, { cache: 'no-store' }).then(res => {
+    if (!res.ok) throw new Error('Erreur chargement données Elios');
+    return res.json();
+  });
+};
 
 const IC = {
   users: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></>,
   lead: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
   up: <><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></>,
+  star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
+  trendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
   ok: <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></>,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></>,
   plus: <path d="M12 5v14M5 12h14"/>,
@@ -106,7 +112,7 @@ export default function CRMEliosPage() {
     refreshInterval: selectedLead ? 0 : 15000, // Synchronisation temps réel automatique
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
-    dedupingInterval: 8000
+    dedupingInterval: 500
   });
 
   // Abonnement temps réel instantané (Cross-Tabs, Cross-Windows via BroadcastChannel)
@@ -115,6 +121,27 @@ export default function CRMEliosPage() {
       mutate();
     });
   }, [mutate]);
+
+  // Synchronisation en temps réel de la fiche ouverte (selectedLead) avec les données fraîches SWR
+  useEffect(() => {
+    if (!selectedLead || !Array.isArray(leads)) return;
+    const currentId = selectedLead._id || selectedLead.id;
+    const fresh = leads.find((l: any) => (l._id && l._id === currentId) || (l.id && l.id === currentId));
+    if (fresh) {
+      const statusChanged = fresh.status !== selectedLead.status;
+      const notesChanged = (fresh.notes?.length ?? 0) !== (selectedLead.notes?.length ?? 0);
+      const updateChanged = fresh.updatedAt !== selectedLead.updatedAt;
+
+      if (statusChanged || notesChanged || updateChanged) {
+        setSelectedLead(fresh);
+        if (statusChanged) {
+          const rawStatus = fresh.status === 'Converti' ? 'Approved' : (fresh.status || 'Lead');
+          setEditStatus(rawStatus);
+          setInitialFormValues((prev: any) => prev ? { ...prev, status: rawStatus } : null);
+        }
+      }
+    }
+  }, [leads, selectedLead]);
 
   // Hydratation sécurisée du cache client (Zéro mismatch SSR / Zéro flash)
   useEffect(() => {
@@ -310,7 +337,7 @@ export default function CRMEliosPage() {
     let msgFr = '';
     let msgAr = '';
     const st = (status || '').trim().toLowerCase();
-    if (st === 'approved prospect' || st === 'approved' || st === 'converti') {
+    if (st === 'approved prospect') {
       msgFr = buildApprovedProspectMessage(
         whatsappTemplates.approvedProspectHeader,
         whatsappTemplates.approvedProspectFooter,
@@ -414,12 +441,19 @@ export default function CRMEliosPage() {
           staff: initialStaff,
           familyGroup: initialFamily
         });
+      } else {
+        // La même fiche est déjà ouverte : réactivité immédiate sur statut et notes si externe
+        const rawStatus = selectedLead.status === 'Converti' ? 'Approved' : (selectedLead.status || 'Lead');
+        if (initialFormValues && initialFormValues.status !== rawStatus && editStatus === initialFormValues.status) {
+          setEditStatus(rawStatus);
+          setInitialFormValues((prev: any) => prev ? { ...prev, status: rawStatus } : null);
+        }
       }
     } else {
       openedLeadIdRef.current = null;
       setInitialFormValues(null);
     }
-  }, [selectedLead]);
+  }, [selectedLead, editStatus, initialFormValues]);
 
   // Détection des modifications non enregistrées (champs ou note en cours)
   const hasUnsavedChanges = useMemo(() => {
@@ -485,29 +519,63 @@ export default function CRMEliosPage() {
     const currentNotes = selectedLead.notes || [];
     const incomingNotes = liveLead.notes || [];
     
-    // Détection stricte et instantanée de modifications dans les notes (ajout, modification, suppression par d'autres opérateurs)
     const notesChanged = JSON.stringify(currentNotes) !== JSON.stringify(incomingNotes);
+    const statusChanged = Boolean(liveLead.status && liveLead.status !== selectedLead.status);
+    const amountChanged = Boolean(liveLead.amount !== undefined && liveLead.amount !== selectedLead.amount);
+    const dateChanged = Boolean(liveLead.updatedAt && liveLead.updatedAt !== selectedLead.updatedAt);
 
-    if (notesChanged) {
+    if (notesChanged || statusChanged || amountChanged || dateChanged) {
+      const normalizedStatus = liveLead.status === 'Converti' ? 'Approved' : (liveLead.status || 'Lead');
+
       setSelectedLead(prev => {
         if (!prev) return null;
         return {
           ...prev,
+          ...liveLead,
+          status: liveLead.status || prev.status,
           notes: incomingNotes,
+          amount: liveLead.amount !== undefined ? liveLead.amount : prev.amount,
           updatedAt: liveLead.updatedAt,
           lastModifiedBy: liveLead.lastModifiedBy
         };
       });
-      // Synchroniser également dans le cache global SWR des prospects sans perturber le formulaire
+
+      // Synchroniser immédiatement les labels et le sélecteur de statut de la modale
+      if (statusChanged) {
+        setEditStatus(normalizedStatus);
+        setInitialFormValues((prev: any) => prev ? { ...prev, status: normalizedStatus } : null);
+      }
+      if (amountChanged && (!initialFormValues || editAmount === initialFormValues.amount)) {
+        setEditAmount(liveLead.amount || '');
+        setInitialFormValues((prev: any) => prev ? { ...prev, amount: liveLead.amount || '' } : null);
+      }
+
+      // Synchroniser également dans le cache global SWR des prospects ET le sessionStorage avec le NOUVEAU STATUT
       mutate((currentLeads: LeadItem[] = []) => {
         return currentLeads.map(l => 
           (l._id === liveLead._id || l.id === liveLead.id) 
-            ? { ...l, notes: incomingNotes, updatedAt: liveLead.updatedAt, lastModifiedBy: liveLead.lastModifiedBy } 
+            ? { 
+                ...l, 
+                ...liveLead, 
+                status: liveLead.status || l.status,
+                notes: incomingNotes, 
+                updatedAt: liveLead.updatedAt, 
+                lastModifiedBy: liveLead.lastModifiedBy 
+              } 
             : l
         );
       }, false);
+
+      updateClientCachedLead({
+        _id: liveLead._id,
+        id: liveLead.id,
+        status: liveLead.status,
+        notes: incomingNotes,
+        amount: liveLead.amount,
+        updatedAt: liveLead.updatedAt
+      });
     }
-  }, [liveLead, selectedLead, mutate]);
+  }, [liveLead, selectedLead, mutate, initialFormValues, editAmount]);
 
   // KPI Stats avec Règle Métier Stricte des Rappels et Comptage Temps Réel des Leads
   const stats = useMemo(() => {
@@ -537,6 +605,16 @@ export default function CRMEliosPage() {
     if (activeCard === card && card !== 'all') {
       setActiveCard('all');
       setFilterStatus('ALL');
+      // Sortie du mode Rappels : réinitialisation complète de tous les filtres
+      if (card === 'rappels') {
+        setFilterQuery('');
+        setFilterClasse('ALL');
+        setFilterSection('ALL');
+        setFilterStaff('ALL');
+        setFilterDate('ALL');
+        setCustomStartDate('');
+        setCustomEndDate('');
+      }
     } else {
       setActiveCard(card);
       if (card === 'all') {
@@ -773,11 +851,66 @@ export default function CRMEliosPage() {
       return;
     }
 
+    const targetId = selectedLead._id || selectedLead.id;
+    const computedFullName = [editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name || 'Prospect sans nom';
+    const savedStatus = (editStatus || '').trim();
+    const oldStatus = (selectedLead.status || 'Lead').trim().toLowerCase();
+    const newStatus = (editStatus || '').trim().toLowerCase();
+    const isStatusChanged = oldStatus !== newStatus;
+    const isEligibleWaStatus = newStatus === 'approved prospect' || newStatus === 'n/a';
+    const shouldTrigger = isStatusChanged && isEligibleWaStatus;
+    const nowIso = new Date().toISOString();
+    const operatorName = activeUser || editStaff || selectedLead.staff || 'Système';
+
+    // 1. MISE À JOUR OPTIMISTE IMMÉDIATE (T=0ms) DANS SWR ET LE CACHE CLIENT
+    const updatedLeadOptimistic: LeadItem = {
+      ...selectedLead,
+      firstName: editFirst.trim(),
+      lastName: editLast.trim(),
+      name: computedFullName,
+      phone: cleanPhone,
+      offer: editOffer,
+      amount: editAmount,
+      source: editSource,
+      grade: editGrade,
+      section: editSection,
+      status: editStatus,
+      staff: editStaff || activeUser || selectedLead.staff || 'Non assigné',
+      familyGroup: editFamilyGroup.trim(),
+      updatedAt: nowIso,
+      lastModifiedBy: operatorName
+    };
+
+    setLastInteractedLeadId(targetId);
+    if (isStatusChanged) {
+      recordCrmActivity('status_change', activeUser);
+    } else {
+      recordCrmActivity('operation', activeUser);
+    }
+
+    // Éviction / Mise à jour instantanée du cache SWR (revalidate = false -> 0ms)
+    mutate(
+      (currentLeads: any) => {
+        if (!Array.isArray(currentLeads)) return [updatedLeadOptimistic];
+        return currentLeads.map((l: any) => 
+          (l._id === targetId || l.id === targetId) ? { ...l, ...updatedLeadOptimistic } : l
+        );
+      },
+      false
+    );
+
+    // Fermeture instantanée de la fiche prospect et masquage du dialogue dirty
+    setSelectedLead(null);
+    setShowUnsavedConfirm(false);
+    showToast('Prospect mis à jour avec succès');
+
+    if (shouldTrigger) {
+      triggerWhatsAppPopup(computedFullName, cleanPhone, savedStatus);
+    }
+
+    // 2. REQUÊTE RÉSEAU EN ARRIÈRE-PLAN AVEC REVALIDATION SILENCIEUSE
     try {
       setIsSaving(true);
-      const computedFullName = [editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || 'Prospect sans nom';
-      const targetId = selectedLead._id || selectedLead.id;
-
       const res = await fetch(`/api/leads/elios/${targetId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -794,7 +927,7 @@ export default function CRMEliosPage() {
           status: editStatus,
           staff: editStaff || activeUser || selectedLead.staff || 'Non assigné',
           familyGroup: editFamilyGroup.trim(),
-          lastModifiedBy: activeUser || editStaff || 'Système'
+          lastModifiedBy: operatorName
         })
       });
 
@@ -803,32 +936,84 @@ export default function CRMEliosPage() {
         throw new Error(d.error || 'Erreur lors de la sauvegarde');
       }
 
-      const savedStatus = (editStatus || '').trim();
-      const shouldTrigger = (
-        savedStatus.toLowerCase() === 'approved prospect'
+      const serverUpdated = await res.json();
+      mutate(
+        (currentLeads: any) => {
+          if (!Array.isArray(currentLeads)) return currentLeads;
+          return currentLeads.map((l: any) => 
+            (l._id === targetId || l.id === targetId) ? { ...l, ...serverUpdated } : l
+          );
+        },
+        false
       );
-
-      if (selectedLead) {
-        setLastInteractedLeadId(selectedLead._id || selectedLead.id);
-      }
-      const oldStatus = (selectedLead.status === 'Converti' ? 'Approved' : (selectedLead.status || 'Lead')).trim().toLowerCase();
-      const newStatus = (editStatus || '').trim().toLowerCase();
-      const isStatusChanged = oldStatus !== newStatus;
-      recordCrmActivity(isStatusChanged ? 'status_change' : 'operation', activeUser);
-
-      setSelectedLead(null);
-      setShowUnsavedConfirm(false);
-      mutate();
       broadcastCrmChange('elios');
-      showToast('Prospect mis à jour avec succès');
-
-      if (shouldTrigger) {
-        triggerWhatsAppPopup(computedFullName, cleanPhone, savedStatus);
-      }
     } catch (err: any) {
-      setEditErr(err.message || 'Une erreur est survenue.');
+      showToast(err.message || 'Erreur sauvegarde prospect');
+      mutate();
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Modification instantanée du statut (Sauvegarde automatique optimiste à T=0ms)
+  const handleStatusChange = async (newStatus: string) => {
+    if (!selectedLead || !newStatus || newStatus === editStatus) return;
+    const oldStatus = (selectedLead.status === 'Converti' ? 'Approved' : (selectedLead.status || 'Lead')).trim().toLowerCase();
+    const cleanNewStatus = (newStatus || '').trim();
+    const isStatusChanged = oldStatus !== cleanNewStatus.toLowerCase();
+    const targetId = selectedLead._id || selectedLead.id;
+    const nowIso = new Date().toISOString();
+    const operatorName = activeUser || editStaff || selectedLead.staff || 'Système';
+
+    setEditStatus(newStatus);
+    setInitialFormValues((prev: any) => prev ? { ...prev, status: newStatus } : null);
+    setLastInteractedLeadId(targetId);
+
+    if (isStatusChanged) {
+      recordCrmActivity('status_change', activeUser);
+    }
+
+    // 1. Optimistic Update instantané dans SWR à T=0ms
+    mutate(
+      (currentLeads: any) => {
+        if (!Array.isArray(currentLeads)) return currentLeads;
+        return currentLeads.map((l: any) => 
+          (l._id === targetId || l.id === targetId) 
+            ? { ...l, status: newStatus, updatedAt: nowIso, lastModifiedBy: operatorName } 
+            : l
+        );
+      },
+      false
+    );
+
+    // Mettre à jour l'état selectedLead en cours pour affichage immédiat dans la modale
+    setSelectedLead(prev => prev ? { ...prev, status: newStatus, updatedAt: nowIso, lastModifiedBy: operatorName } : null);
+    showToast(`Statut mis à jour : ${newStatus}`);
+
+    const stLower = cleanNewStatus.toLowerCase();
+    const shouldTriggerWa = stLower === 'approved prospect' || stLower === 'n/a';
+    if (shouldTriggerWa) {
+      const computedFullName = [editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name;
+      triggerWhatsAppPopup(computedFullName, editPhone, cleanNewStatus);
+    }
+
+    // 2. Persistance réseau en tâche de fond
+    try {
+      const res = await fetch(`/api/leads/elios/${targetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          lastModifiedBy: operatorName
+        })
+      });
+      if (!res.ok) {
+        throw new Error('Erreur sauvegarde statut');
+      }
+      broadcastCrmChange('elios');
+    } catch (err: any) {
+      showToast(err.message || 'Erreur lors de la mise à jour du statut');
+      mutate();
     }
   };
 
@@ -860,8 +1045,16 @@ export default function CRMEliosPage() {
       setSelectedLead(updatedLead);
       setLastInteractedLeadId(targetId);
       setNewNoteText('');
-      recordCrmActivity('operation', activeUser);
-      mutate();
+      recordCrmActivity('note_added', activeUser);
+      mutate(
+        (currentLeads: any) => {
+          if (!Array.isArray(currentLeads)) return currentLeads;
+          return currentLeads.map((l: any) => 
+            (l._id === targetId || l.id === targetId) ? { ...l, ...updatedLead } : l
+          );
+        },
+        false
+      );
       showToast('Note ajoutée à l\'historique');
     } catch (err: any) {
       showToast(err.message || 'Erreur ajout note');
@@ -906,7 +1099,15 @@ export default function CRMEliosPage() {
       setEditingNoteId(null);
       setEditingNoteText('');
       recordCrmActivity('operation', activeUser);
-      mutate();
+      mutate(
+        (currentLeads: any) => {
+          if (!Array.isArray(currentLeads)) return currentLeads;
+          return currentLeads.map((l: any) => 
+            (l._id === targetId || l.id === targetId) ? { ...l, ...updatedLead } : l
+          );
+        },
+        false
+      );
       showToast('Note modifiée');
     } catch (err: any) {
       showToast(err.message || 'Erreur mise à jour note');
@@ -926,28 +1127,17 @@ export default function CRMEliosPage() {
       (targetNote?.id && typeof targetNote.id === 'string' && targetNote.id.startsWith('auto-'))
     );
 
-    let isAllowed = false;
-    if (isValidationNote) {
-      if (author && author.toLowerCase() !== 'système' && author.toLowerCase() !== 'systeme') {
-        isAllowed = Boolean(activeUser && activeUser.trim().toLowerCase() === author.toLowerCase());
-      } else {
-        isAllowed = Boolean(activeUser && ['ghassen', 'admin', 'superadmin'].includes(activeUser.trim().toLowerCase()));
-      }
-    } else {
-      isAllowed = Boolean(
-        activeUser && (
-          (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
-          (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
-          ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
-        )
-      );
-    }
+    const isAllowed = Boolean(
+      activeUser && (
+        isValidationNote ||
+        (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
+        (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
+        ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
+      )
+    );
 
     if (!isAllowed) {
-      showToast(isValidationNote 
-        ? `Seul l'opérateur porteur de cette note de validation (${author}) peut la supprimer`
-        : "Seul l'auteur de cette note ou un administrateur peut la supprimer"
-      );
+      showToast("Seul l'auteur de cette note ou un administrateur peut la supprimer");
       return;
     }
     try {
@@ -965,7 +1155,15 @@ export default function CRMEliosPage() {
       if (!res.ok) throw new Error('Erreur suppression note');
       const updatedLead = await res.json();
       setSelectedLead(updatedLead);
-      mutate();
+      mutate(
+        (currentLeads: any) => {
+          if (!Array.isArray(currentLeads)) return currentLeads;
+          return currentLeads.map((l: any) => 
+            (l._id === targetId || l.id === targetId) ? { ...l, ...updatedLead } : l
+          );
+        },
+        false
+      );
       showToast('Note supprimée');
     } catch (err: any) {
       showToast(err.message || 'Erreur suppression note');
@@ -1206,7 +1404,7 @@ export default function CRMEliosPage() {
             )}
             <span className="text-xs">Forte Intention</span>
             <i className="si" style={{ color: '#F49E1F', background: 'rgba(244, 158, 31, 0.12)' }}>
-              <svg className="i" viewBox="0 0 24 24">{IC.up}</svg>
+              <svg className="i" viewBox="0 0 24 24">{IC.star}</svg>
             </i>
           </button>
 
@@ -1262,23 +1460,30 @@ export default function CRMEliosPage() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setFilterStatus(val);
-                  if (val === 'ALL') {
-                    setActiveCard('all');
-                  } else if (val === 'Lead') {
-                    setActiveCard('leads');
-                  } else if (val === 'Approved') {
-                    setActiveCard('approved');
-                  } else if (val === 'Potential Prospect') {
-                    setActiveCard('potential');
-                  } else {
-                    setActiveCard(null);
+                  // En Mode Rappels, le filtre de statut s'applique strictement à l'intérieur des rappels sans en sortir
+                  if (activeCard !== 'rappels') {
+                    if (val === 'ALL') {
+                      setActiveCard('all');
+                    } else if (val === 'Lead') {
+                      setActiveCard('leads');
+                    } else if (val === 'Approved') {
+                      setActiveCard('approved');
+                    } else if (val === 'Potential Prospect') {
+                      setActiveCard('potential');
+                    } else {
+                      setActiveCard(null);
+                    }
                   }
                   setCurrentPage(1);
                 }}
                 className="w-full sm:w-auto py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)]"
               >
-                <option value="ALL">Statut : Tous</option>
-                {ELIOS_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="ALL">
+                  {activeCard === 'rappels' ? 'Statut : Tous (Rappels)' : 'Statut : Tous'}
+                </option>
+                {(activeCard === 'rappels' ? RAPPELS_ELIGIBLE_STATUSES : ELIOS_STATUSES).map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
               </select>
             </div>
 
@@ -1418,7 +1623,7 @@ export default function CRMEliosPage() {
             ) : isFiltered ? (
               <span>
                 <strong className="text-[var(--ink)]">{filteredLeads.length.toLocaleString('fr-FR')}</strong> résultat{filteredLeads.length > 1 ? 's' : ''} sur {(leads?.length || 0).toLocaleString('fr-FR')}
-                {activeCard === 'rappels' && <span className="ml-2 font-semibold text-amber-600">(Mode Rappels)</span>}
+                {activeCard === 'rappels' && <span className="ml-2 font-semibold text-amber-600">(Mode Rappels{filterStatus !== 'ALL' ? ` · ${filterStatus}` : ''})</span>}
                 {activeCard === 'leads' && <span className="ml-2 font-semibold text-[#0284C7]">(Filtre Leads)</span>}
               </span>
             ) : (
@@ -1593,20 +1798,18 @@ export default function CRMEliosPage() {
                       >
                         <svg className="i" viewBox="0 0 24 24">{IC.open}</svg>
                       </button>
-                      <a 
+                      <button 
                         className="ib wa" 
-                        href={normalizePhoneForUrl(l.phone) ? `https://wa.me/${normalizePhoneForUrl(l.phone)}` : '#'} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        title="WhatsApp" 
+                        type="button"
+                        title="Ouvrir le module WhatsApp avec modèle" 
                         aria-label="WhatsApp"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!normalizePhoneForUrl(l.phone)) e.preventDefault();
+                          triggerWhatsAppPopup(l.name, l.phone, l.status);
                         }}
                       >
                         <svg className="i" viewBox="0 0 24 24">{IC.chat}</svg>
-                      </a>
+                      </button>
                     </div>
                   </div>
                 );
@@ -1745,18 +1948,17 @@ export default function CRMEliosPage() {
                     </div>
 
                     <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <a 
+                      <button 
                         className="ib wa w-7 h-7"
-                        href={normalizePhoneForUrl(l.phone) ? `https://wa.me/${normalizePhoneForUrl(l.phone)}` : '#'} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        title="WhatsApp"
+                        type="button"
+                        title="Ouvrir le module WhatsApp avec modèle"
                         onClick={(e) => {
-                          if (!normalizePhoneForUrl(l.phone)) e.preventDefault();
+                          e.stopPropagation();
+                          triggerWhatsAppPopup(l.name, l.phone, l.status);
                         }}
                       >
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.chat}</svg>
-                      </a>
+                      </button>
                       <button 
                         className="ib w-7 h-7" 
                         type="button" 
@@ -2294,7 +2496,7 @@ export default function CRMEliosPage() {
                       </label>
                       <select 
                         value={editStatus} 
-                        onChange={(e) => setEditStatus(e.target.value)}
+                        onChange={(e) => handleStatusChange(e.target.value)}
                         className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
                       >
                         {ELIOS_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2362,7 +2564,7 @@ export default function CRMEliosPage() {
                       <button 
                         type="button" 
                         onClick={() => triggerWhatsAppPopup([editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name, editPhone, editStatus)}
-                        className="text-xs font-mono font-semibold text-[var(--ink2)] hover:text-[var(--acc)] px-2.5 py-1 rounded-lg hover:bg-[var(--hover)] transition border border-[var(--line)]"
+                        className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:text-white hover:bg-emerald-600 px-2.5 py-1 rounded-lg transition border border-emerald-500/30 shadow-2xs"
                         title="Ouvrir le module WhatsApp"
                       >
                         {formatPhone(editPhone) || 'Envoyer'}
@@ -2396,25 +2598,19 @@ export default function CRMEliosPage() {
                             (n.id && typeof n.id === 'string' && n.id.startsWith('auto-'))
                           );
 
-                          // Note système de validation après paiement : SEUL l'opérateur porteur de la note peut la supprimer
-                          const canDelete = isValidationNote
-                            ? Boolean(
-                                activeUser && (
-                                  (author && author.toLowerCase() !== 'système' && author.toLowerCase() !== 'systeme' && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
-                                  ((!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') && ['ghassen', 'admin', 'superadmin'].includes(activeUser.trim().toLowerCase()))
-                                )
-                              )
-                            : Boolean(
-                                activeUser && (
-                                  (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
-                                  (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
-                                  ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
-                                )
-                              );
-
-                          // Une note officielle générée par le système après paiement ne doit pas être altérée manuellement
-                          const canEdit = !isValidationNote && Boolean(
+                          // Note système ou manuelle : modifiable et supprimable par tout opérateur
+                          const canDelete = Boolean(
                             activeUser && (
+                              isValidationNote ||
+                              (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
+                              (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
+                              ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
+                            )
+                          );
+
+                          const canEdit = Boolean(
+                            activeUser && (
+                              isValidationNote ||
                               (!author || author.toLowerCase() === 'système' || author.toLowerCase() === 'systeme') ||
                               (author && activeUser.trim().toLowerCase() === author.toLowerCase()) ||
                               ['ghassen', 'admin', 'superadmin', 'amine'].includes(activeUser.trim().toLowerCase())
@@ -2447,7 +2643,7 @@ export default function CRMEliosPage() {
                                         setEditingNoteText(n.text || '');
                                       }}
                                       className="text-[var(--ink3)] hover:text-[var(--acc)] p-0.5 transition"
-                                      title="Modifier votre note"
+                                      title={isValidationNote ? "Modifier la note de validation" : "Modifier votre note"}
                                     >
                                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.edit}</svg>
                                     </button>
@@ -2534,10 +2730,15 @@ export default function CRMEliosPage() {
             {/* PIED DE MODALE PANORAMIQUE RESPONSIVE TOUT EN FRANÇAIS */}
             <div className="px-5 py-3 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
               <button 
-                className={`btn del text-xs py-2 px-3.5 rounded-xl transition ${isDeleteArmed ? 'armed bg-red-600 text-white' : ''} disabled:opacity-50`} 
+                className={`btn text-xs py-2 px-3.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50 ${
+                  isDeleteArmed 
+                    ? '!bg-red-600 hover:!bg-red-700 !text-white !border-red-600 ring-2 ring-red-400 animate-pulse' 
+                    : '!bg-white dark:!bg-[var(--card)] !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-950/30 !border !border-red-500/30 hover:!border-red-500'
+                }`} 
                 type="button" 
                 onClick={handleDeleteLead}
                 disabled={isDeletingLead}
+                title="Supprimer définitivement ce prospect"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
                 <span>{isDeletingLead ? 'Suppression...' : (isDeleteArmed ? 'Confirmer la suppression ?' : 'Supprimer')}</span>
@@ -2547,7 +2748,7 @@ export default function CRMEliosPage() {
                 <button 
                   type="button" 
                   onClick={() => triggerWhatsAppPopup([editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name, editPhone, editStatus)}
-                  className="btn text-xs py-2 px-3.5 rounded-xl hover:bg-emerald-500 hover:text-white transition flex items-center gap-1.5 border border-emerald-500/30 text-emerald-600"
+                  className="btn text-xs py-2 px-3.5 rounded-xl !bg-emerald-600 hover:!bg-emerald-700 !text-white font-bold transition flex items-center gap-1.5 shadow-sm !border-emerald-600"
                   title="Envoyer un message WhatsApp avec aperçu"
                 >
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2664,7 +2865,7 @@ export default function CRMEliosPage() {
         frenchMessage={whatsAppModal.frenchMessage}
         arabicMessage={whatsAppModal.arabicMessage}
         defaultLanguage={
-          (whatsAppModal.targetStatus?.trim().toLowerCase() === 'approved prospect' || whatsAppModal.targetStatus?.trim().toLowerCase() === 'approved' || whatsAppModal.targetStatus?.trim().toLowerCase() === 'converti')
+          (whatsAppModal.targetStatus?.trim().toLowerCase() === 'approved prospect')
             ? (whatsappTemplates.approvedProspectLang || 'fr')
             : (whatsAppModal.targetStatus?.trim().toLowerCase() === 'n/a')
             ? (whatsappTemplates.naMessageLang || 'fr')

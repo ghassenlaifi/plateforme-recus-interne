@@ -1,19 +1,18 @@
 /**
  * Moteur d'engagement et de motivation des opérateurs Elios Workspace.
  * 
- * Règles militaires :
+ * Règles d'Architecture :
  * 1. Absence > 1h 30 min (90 minutes) :
- *    - Au retour de l'opérateur, affichage du popup de reprise avec دعاء بالتوفيق.
- *    - Réinitialisation complète des compteurs de contribution successive.
+ *    - Au retour de l'opérateur (focus / visibilité), affichage du popup de reprise avec دعاء بالتوفيق.
+ *    - Réinitialisation complète de tous les compteurs successifs à 0.
  * 
- * 2. Toutes les 7 opérations successives (7, 14, 21, 28...) :
- *    - Affichage du popup de célébration avec le nombre total d'opérations et دعاء البركة.
+ * 2. Déclenchement Strict sur Ajout de Notes Successives (pendant l'intervalle d'activité) :
+ *    - Coordination Stratégique (Soumaya) : Déclenché aux 7 premières notes successives, puis toutes les 40 notes successives.
+ *    - Célébration d'Effort : Déclenché toutes les 21 notes successives (21, 42, 63, 84...).
+ *    - Encouragement Moral ("Ghoul el Workspace") : Déclenché toutes les 30 notes successives (30, 60, 90, 120...).
  * 
- * 3. 10 modifications successives de statut :
- *    - Popup d'encouragement : "Aadi tesma3 klem mouch houwa ama was3alna belk myselch."
- * 
- * 4. 15 modifications successives de statut :
- *    - Popup de synchronisation stratégique : "Nverifiw besoin maa Soumaya chkoun lezem nkallmou jem3a hedhi"
+ * 3. Activités générales (appels WhatsApp, créations, modifications de champs) :
+ *    - Maintiennent la session active (mise à jour du timestamp d'activité) sans déclencher les popups de paliers.
  */
 
 export type MotivationalPopupType = 
@@ -30,6 +29,7 @@ export type MotivationalPopupType =
 export interface MotivationalEventData {
   type: MotivationalPopupType;
   operatorName: string;
+  notesCount?: number;
   opsCount: number;
   statusCount: number;
 }
@@ -39,6 +39,7 @@ export const INACTIVITY_THRESHOLD_MS = 90 * 60 * 1000;
 
 const STORAGE_KEYS = {
   LAST_ACTIVITY: 'elios_motivation_last_activity',
+  NOTES_COUNT: 'elios_motivation_notes_count',
   OPS_COUNT: 'elios_motivation_ops_count',
   STATUS_COUNT: 'elios_motivation_status_count',
   LAST_ABSENCE_SHOWN: 'elios_motivation_last_absence_shown',
@@ -78,6 +79,17 @@ export function getActiveOperatorName(): string {
 }
 
 /**
+ * Réinitialise manuellement tous les compteurs d'activité à 0
+ */
+export function resetMotivationalCounters() {
+  if (typeof window === 'undefined') return;
+  setStorageNumber(STORAGE_KEYS.NOTES_COUNT, 0);
+  setStorageNumber(STORAGE_KEYS.OPS_COUNT, 0);
+  setStorageNumber(STORAGE_KEYS.STATUS_COUNT, 0);
+  setStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, Date.now());
+}
+
+/**
  * Déclenche l'événement global pour afficher le popup motivant
  */
 export function dispatchMotivationalPopup(data: MotivationalEventData) {
@@ -88,6 +100,7 @@ export function dispatchMotivationalPopup(data: MotivationalEventData) {
 
 /**
  * Vérifie si l'opérateur revient après une absence supérieure à 1 heure 30 minutes.
+ * Réinitialise tous les compteurs successifs à 0 et affiche le popup de reprise.
  */
 export function checkInactivityReturn(): boolean {
   if (typeof window === 'undefined') return false;
@@ -111,6 +124,7 @@ export function checkInactivityReturn(): boolean {
     }
 
     // Réinitialisation militaire des compteurs suite à inactivité > 1h30
+    setStorageNumber(STORAGE_KEYS.NOTES_COUNT, 0);
     setStorageNumber(STORAGE_KEYS.OPS_COUNT, 0);
     setStorageNumber(STORAGE_KEYS.STATUS_COUNT, 0);
     setStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, now);
@@ -121,6 +135,7 @@ export function checkInactivityReturn(): boolean {
     dispatchMotivationalPopup({
       type: 'RETURN_AFTER_ABSENCE',
       operatorName,
+      notesCount: 0,
       opsCount: 0,
       statusCount: 0,
     });
@@ -134,12 +149,14 @@ export function checkInactivityReturn(): boolean {
 }
 
 /**
- * Enregistre une opération ou un changement de statut effectué par l'opérateur.
- * @param type 'operation' (appel, note, modif générale) ou 'status_change' (changement de statut lead)
+ * Enregistre une activité CRM effectuée par l'opérateur.
+ * @param type 'note_added' (DÉCLENCHEUR STRICT des popups de paliers successifs),
+ *             'operation' (appel, WhatsApp, création, modif : maintient la session active sans déclencher de palier),
+ *             'status_change' (changement de statut : maintient la session active sans déclencher de palier)
  * @param operator Nom optionnel de l'opérateur
  */
 export function recordCrmActivity(
-  type: 'operation' | 'status_change' = 'operation',
+  type: 'note_added' | 'operation' | 'status_change' = 'operation',
   operator?: string | null
 ) {
   if (typeof window === 'undefined') return;
@@ -148,16 +165,24 @@ export function recordCrmActivity(
   const lastActivity = getStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, now);
   const operatorName = (operator && operator.trim()) || getActiveOperatorName();
 
+  let notesCount = getStorageNumber(STORAGE_KEYS.NOTES_COUNT, 0);
   let opsCount = getStorageNumber(STORAGE_KEYS.OPS_COUNT, 0);
   let statusCount = getStorageNumber(STORAGE_KEYS.STATUS_COUNT, 0);
 
-  // Règle d'inactivité : Si plus de 1h 30 min sans activité, réinitialisation à zéro
+  // Règle d'inactivité : Si plus de 1h 30 min sans activité, réinitialisation complète à 0
   if (now - lastActivity >= INACTIVITY_THRESHOLD_MS) {
+    notesCount = 0;
     opsCount = 0;
     statusCount = 0;
+    setStorageNumber(STORAGE_KEYS.NOTES_COUNT, 0);
+    setStorageNumber(STORAGE_KEYS.OPS_COUNT, 0);
+    setStorageNumber(STORAGE_KEYS.STATUS_COUNT, 0);
   }
 
-  // Incrémenter les opérations
+  // Mettre à jour l'horodatage de dernière activité pour maintenir la session active
+  setStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, now);
+
+  // Métriques générales
   opsCount += 1;
   setStorageNumber(STORAGE_KEYS.OPS_COUNT, opsCount);
 
@@ -166,39 +191,56 @@ export function recordCrmActivity(
     setStorageNumber(STORAGE_KEYS.STATUS_COUNT, statusCount);
   }
 
-  // Mettre à jour l'horodatage de dernière activité
-  setStorageNumber(STORAGE_KEYS.LAST_ACTIVITY, now);
+  // RÈGLE ARCHITECTURALE STRICTE :
+  // Seul l'AJOUT DE NOTES SUCCESSIVES incrémente le compteur de palier et déclenche les popups !
+  if (type !== 'note_added') {
+    return;
+  }
 
-  // 1. Palier 30 Opérations successives : L'Ghoul mta3 el workspace (30, 60, 90, 120...)
-  if (opsCount > 0 && opsCount % 30 === 0) {
+  // Incrémenter le compteur de notes successives
+  notesCount += 1;
+  setStorageNumber(STORAGE_KEYS.NOTES_COUNT, notesCount);
+
+  // 1. Palier 30 Notes successives : L'Ghoul mta3 el workspace (30, 60, 90, 120...)
+  if (notesCount > 0 && notesCount % 30 === 0) {
     dispatchMotivationalPopup({
       type: 'MILESTONE_30_GHOUL',
       operatorName,
-      opsCount,
+      notesCount,
+      opsCount: notesCount,
       statusCount,
     });
     return;
   }
 
-  // 2. Palier 21 Opérations successives : Célébration d'Effort (21, 42, 63, 84...)
-  if (opsCount > 0 && opsCount % 21 === 0) {
+  // 2. Palier 21 Notes successives : Célébration d'Effort (21, 42, 63, 84...)
+  if (notesCount > 0 && notesCount % 21 === 0) {
     dispatchMotivationalPopup({
       type: 'MILESTONE_21_OPS',
       operatorName,
-      opsCount,
+      notesCount,
+      opsCount: notesCount,
       statusCount,
     });
     return;
   }
 
-  // 3. Coordination Stratégique Soumaya : Les 7 premières opérations, puis toutes les 40 opérations
-  if (opsCount === 7 || (opsCount > 7 && opsCount % 40 === 0)) {
+  // 3. Coordination Stratégique Soumaya : Les 7 premières notes successives, puis toutes les 40 notes
+  if (notesCount === 7 || (notesCount > 7 && notesCount % 40 === 0)) {
     dispatchMotivationalPopup({
       type: 'STRATEGIC_COORDINATION',
       operatorName,
-      opsCount,
+      notesCount,
+      opsCount: notesCount,
       statusCount,
     });
     return;
   }
+}
+
+/**
+ * Raccourci explicite pour enregistrer l'ajout d'une note successive
+ */
+export function recordNoteAdded(operator?: string | null) {
+  recordCrmActivity('note_added', operator);
 }
