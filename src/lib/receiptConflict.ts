@@ -41,13 +41,13 @@ export async function checkMonthlyReceiptConflict(
   const twentyFiveDaysAfter = new Date(validTargetDate.getTime() + 25 * 24 * 60 * 60 * 1000);
 
   // Expression régulière MongoDB universelle
-  const phoneRegex = buildPhoneMongoRegex(digits);
+  const phoneRegex = buildPhoneMongoRegex(phone);
 
   const query: any = {
     $or: [
       { 'clientDetails.telephone': phoneRegex },
       { 'clientDetails.telephone': digits },
-      { 'clientDetails.telephone': formatPhone(digits) },
+      { 'clientDetails.telephone': formatPhone(phone) },
       { 'clientDetails.phone': phoneRegex },
       { 'clientDetails.phone': digits },
       { telephone: phoneRegex },

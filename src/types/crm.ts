@@ -594,8 +594,111 @@ export function getStaffContributionTimestamps(
 }
 
 /**
+ * Détermine avec une rigueur absolue si un prospect a été CRÉÉ dans l'intervalle temporel spécifié.
+ * Règle d'or : se base EXCLUSIVEMENT sur la date de création de la fiche (createdAt ou date).
+ */
+export function isLeadCreatedInDateRange(
+  lead?: Partial<LeadItem> | null,
+  range?: DateRange | null
+): boolean {
+  if (!lead || !range) return true;
+
+  if (isTimestampInRange(lead.createdAt, range)) return true;
+  if (isTimestampInRange(lead.date, range)) return true;
+
+  return false;
+}
+
+/**
+ * Détermine avec une rigueur absolue si un prospect a fait l'objet d'au moins une VRAIE MODIFICATION
+ * par un opérateur cible dans l'intervalle temporel donné.
+ * 
+ * RÈGLE STRICTE (Intégrité & Audit Métier) :
+ * - La simple création d'une fiche (action: 'create', createdAt/date initiale) NE DOIT PAS être considérée comme une modification.
+ * - Sont considérées comme modifications valides à cette date par cet opérateur :
+ *   1. Entrée dans modifierLogs avec operator = targetStaff, at dans range, et action !== 'create'
+ *      (actions : update, add_note, edit_note, delete_note, migrate, auto_approval_receipt, etc.).
+ *   2. Ajout ou édition d'une note par targetStaff dans range (excluant la note auto initiale de création).
+ *   3. lead.lastModifiedBy = targetStaff avec lead.updatedAt dans range, sous réserve que cette mise à jour
+ *      soit une modification réelle (postérieure à la création d'au moins 3 secondes ou effectuée par un opérateur différent du créateur).
+ */
+export function isLeadModifiedByStaffInDateRange(
+  lead?: Partial<LeadItem> | null,
+  targetStaff?: string | null,
+  range?: DateRange | null
+): boolean {
+  if (!lead || !range) return false;
+  if (!targetStaff || targetStaff === 'ALL') return false;
+
+  const target = targetStaff.trim().toLowerCase();
+  if (!target || target === 'all') return false;
+
+  const creationTime = lead.createdAt 
+    ? new Date(lead.createdAt).getTime() 
+    : (lead.date ? new Date(lead.date).getTime() : NaN);
+
+  // 1. Recherche dans modifierLogs (toute action explicite de modification)
+  if (Array.isArray(lead.modifierLogs)) {
+    for (const log of lead.modifierLogs) {
+      if (!log || !log.operator) continue;
+      const op = log.operator.trim().toLowerCase();
+      if (op === target) {
+        const action = (log.action || '').trim().toLowerCase();
+        // Exclusion impérative de l'action de création initiale
+        if (action === 'create') continue;
+
+        if (isTimestampInRange(log.at, range)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // 2. Recherche dans les notes ajoutées ou modifiées par cet opérateur dans l'intervalle
+  if (Array.isArray(lead.notes)) {
+    for (const n of lead.notes) {
+      if (!n) continue;
+      const author = (n.by || n.addedBy || '').trim().toLowerCase();
+      const editor = ((n as any).editedBy || '').trim().toLowerCase();
+
+      // Note éditée par cet opérateur dans l'intervalle
+      if (editor === target && isTimestampInRange((n as any).editedAt, range)) {
+        return true;
+      }
+
+      // Note rédigée par cet opérateur dans l'intervalle
+      if (author === target) {
+        const noteTime = n.addedAt ? new Date(n.addedAt).getTime() : (n.date ? new Date(n.date).getTime() : NaN);
+        // Exclure toute note système ou note générée automatiquement à la création
+        const isNotAtCreation = isNaN(creationTime) || isNaN(noteTime) || Math.abs(noteTime - creationTime) > 3000;
+        const isExplicitModificationNote = !n.text?.toLowerCase().includes('nouveau prospect formatic créé');
+
+        if (isTimestampInRange(n.addedAt || n.date, range) && (isNotAtCreation || isExplicitModificationNote)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // 3. Dernier modificateur officiel (lead.lastModifiedBy & lead.updatedAt)
+  const lastMod = (lead.lastModifiedBy || '').trim().toLowerCase();
+  if (lastMod === target && isTimestampInRange(lead.updatedAt, range)) {
+    const updateTime = lead.updatedAt ? new Date(lead.updatedAt).getTime() : NaN;
+    const isDistinctFromCreation = isNaN(creationTime) || isNaN(updateTime) || Math.abs(updateTime - creationTime) > 3000;
+    const isDifferentFromCreator = (lead.staff || '').trim().toLowerCase() !== target;
+
+    // Si la mise à jour est postérieure à la création (> 3s) OU si l'opérateur est différent du créateur
+    if (isDistinctFromCreation || isDifferentFromCreator) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Détermine si un prospect a eu une activité quelconque (création, modification, note, log)
- * dans l'intervalle temporel spécifié.
+ * dans l'intervalle temporel spécifié (conservé pour compatibilité).
  */
 export function isLeadActiveInDateRange(
   lead?: Partial<LeadItem> | null,
@@ -603,21 +706,16 @@ export function isLeadActiveInDateRange(
 ): boolean {
   if (!lead || !range) return true;
 
-  // 1. Date de modification
   if (isTimestampInRange(lead.updatedAt, range)) return true;
-
-  // 2. Date de création
   if (isTimestampInRange(lead.date, range)) return true;
   if (isTimestampInRange(lead.createdAt, range)) return true;
 
-  // 3. ModifierLogs
   if (Array.isArray(lead.modifierLogs)) {
     for (const log of lead.modifierLogs) {
       if (isTimestampInRange(log?.at, range)) return true;
     }
   }
 
-  // 4. Notes
   if (Array.isArray(lead.notes)) {
     for (const n of lead.notes) {
       if (isTimestampInRange(n?.addedAt, range)) return true;
@@ -630,8 +728,7 @@ export function isLeadActiveInDateRange(
 }
 
 /**
- * Détermine avec une rigueur absolue si un prospect a été modifié/créé/annoté
- * par un opérateur cible durant un intervalle temporel donné.
+ * Détermine si un prospect a été modifié/créé/annoté par un opérateur cible dans l'intervalle temporel.
  */
 export function isLeadTouchedByStaffInDateRange(
   lead?: Partial<LeadItem> | null,
@@ -640,26 +737,29 @@ export function isLeadTouchedByStaffInDateRange(
 ): boolean {
   if (!lead) return false;
   if (!range) return isLeadTouchedByStaff(lead, targetStaff);
-  if (!targetStaff || targetStaff === 'ALL') return isLeadActiveInDateRange(lead, range);
+  if (!targetStaff || targetStaff === 'ALL') return isLeadCreatedInDateRange(lead, range);
 
-  const timestamps = getStaffContributionTimestamps(lead, targetStaff);
-  if (timestamps.length === 0) return false;
-
-  return timestamps.some(t => isTimestampInRange(t, range));
+  return isLeadModifiedByStaffInDateRange(lead, targetStaff, range);
 }
 
 /**
- * RÈGLE D'OR MÉTIER DU FILTRE COMBINÉ (STAFF & DATE) :
+ * RÈGLE D'OR MÉTIER DU FILTRE (STAFF & DATE) :
  * 
- * 1. Aucun filtre -> true
+ * 1. Aucun filtre (Staff = 'ALL', Date = 'ALL') :
+ *    -> true (tous les prospects).
+ * 
  * 2. Staff seul (Date = 'ALL') :
  *    "Si je choisit que l'operateur sans date, je doit avoir tout les clients que cet operateur a contribué, de n'importe quel facon et a n'importe quel date."
- *    -> Tous les clients touchés par cet opérateur à n'importe quel moment.
+ *    -> Tous les clients touchés par cet opérateur à n'importe quel moment (créateur, modificateur, notes, etc.).
+ * 
  * 3. Date seule (Staff = 'ALL') :
- *    -> Tous les clients ayant eu une activité durant cette période.
+ *    "si on choisie dans les filtres seulement le filtre Date : le CRM devrait afficher seulement les fiches crées a cette date ou intervalle de temps exacte."
+ *    -> STRICTEMENT les prospects créés à cette date ou dans cet intervalle exact.
+ * 
  * 4. Staff ET Date choisis :
- *    "si je fait Ghassen et Aujourd'hui je dois avoir les clients que Ghassen a fait des modification aujourd'hui, si Cette semaine ou n'importe quel date ou intervalle, ca doit etre rigouresemnt concut et implementé."
- *    -> STRICTEMENT les clients que cet opérateur précis a modifiés/créés/annotés durant cet intervalle précis.
+ *    "Si on applique les filtres Date+ Staff : il doit pas affichés les fiches crees mais ceux qui ont eu n'importe quelle type de modification a cette date ou intervalle de temps exacte par operateur choisit.
+ *     Ici on affiche que celui qui a fait la modification a cette date, si plusieurs ont fait des modifications a cette date donc on accepte qu'il soit partagé et visible chez eux tous."
+ *    -> STRICTEMENT les prospects qui ont subi au moins une MODIFICATION par cet opérateur dans cet intervalle exact.
  */
 export function isLeadMatchingStaffAndDate(
   lead?: Partial<LeadItem> | null,
@@ -680,16 +780,17 @@ export function isLeadMatchingStaffAndDate(
     return true;
   }
 
-  // 2. Staff seul sans date
+  // 2. Staff seul sans date : tous les clients où l'opérateur est intervenu
   if (hasStaffFilter && !hasDateFilter) {
     return isLeadTouchedByStaff(lead, filterStaff);
   }
 
-  // 3. Date seule sans staff
+  // 3. Date seule sans staff : UNIQUEMENT les fiches CRÉÉES à cette date ou dans cet intervalle
   if (!hasStaffFilter && hasDateFilter) {
-    return isLeadActiveInDateRange(lead, dateRange!);
+    return isLeadCreatedInDateRange(lead, dateRange!);
   }
 
-  // 4. Staff ET Date combinés
-  return isLeadTouchedByStaffInDateRange(lead, filterStaff, dateRange);
+  // 4. Staff ET Date combinés : UNIQUEMENT les fiches MODIFIÉES par cet opérateur à cette date
+  return isLeadModifiedByStaffInDateRange(lead, filterStaff, dateRange);
 }
+

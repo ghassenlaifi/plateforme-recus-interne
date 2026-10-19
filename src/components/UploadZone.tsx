@@ -4,7 +4,7 @@ import React, { useState, useRef, FormEvent } from 'react';
 import { CloudUpload, X, FileText, Loader2 } from 'lucide-react';
 import { useToast } from './Toast';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
-import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
+import { formatPhone, formatPhoneInput, isValidPhone } from '@/lib/phoneUtils';
 
 interface UploadZoneProps {
   activeUser: string | null;
@@ -110,7 +110,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
       classeCustom: '',
       email: '',
       mode: 'Edinar - D17',
-      paymentDetails: 'Soumaya',
+      paymentDetails: 'Elyes',
       amount: '150',
       date: todayFR(),
       note: ''
@@ -137,7 +137,7 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
 
     const finalClasse = formData.classeSelect === 'Offre personnalisé' ? formData.classeCustom : formData.classeSelect;
 
-    check('phone', extractPhoneDigits(formData.phone).length !== 8);
+    check('phone', !isValidPhone(formData.phone));
     check('mode', !formData.mode);
     check('paymentDetails', !formData.paymentDetails.trim());
     check('amount', !formData.amount.trim() || isNaN(parseFloat(formData.amount)));
@@ -320,14 +320,14 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                   name="phone" 
                   type="tel" 
                   inputMode="tel" 
-                  maxLength={16} 
+                  maxLength={24} 
                   className="input tnum" 
-                  placeholder="Ex : 92 330 331" 
+                  placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78" 
                   autoComplete="off" 
                   aria-invalid={errors.phone ? 'true' : 'false'}
                   value={formData.phone}
                   disabled={isUploading}
-                  onChange={(e) => { setFormData({...formData, phone: formatPhone(e.target.value)}); setErrors({...errors, phone: false}); }}
+                  onChange={(e) => { setFormData({...formData, phone: formatPhoneInput(e.target.value)}); setErrors({...errors, phone: false}); }}
                 />
               </div>
 
@@ -461,8 +461,8 @@ export function UploadZone({ activeUser, triggerAttention, onUploadSuccess }: Up
                       {formData.mode === 'Edinar - D17' && (
                         <>
                           <option value="" disabled>Sélectionner un titulaire</option>
-                          <option value="Soumaya">Soumaya</option>
                           <option value="Elyes">Elyes</option>
+                          <option value="Soumaya">Soumaya</option>
                         </>
                       )}
                       {formData.mode === 'Virement Bancaire' && (

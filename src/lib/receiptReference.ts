@@ -12,7 +12,7 @@
 import { extractPhoneDigits } from '@/lib/phoneUtils';
 
 export function generateReceiptReference(phone: string, dateInput?: Date | string | null): string {
-  // 1. Nettoyer le numéro de téléphone pour extraire exactement les 8 chiffres tunisiens
+  // 1. Nettoyer le numéro de téléphone pour extraire les chiffres nationaux normalisés
   let digits = extractPhoneDigits(phone);
 
   // Fallback si moins de 8 chiffres
@@ -20,9 +20,14 @@ export function generateReceiptReference(phone: string, dateInput?: Date | strin
     digits = digits.padEnd(8, '0');
   }
 
-  const part1 = digits.slice(0, 3);
-  const part2 = digits.slice(3, 6);
-  const remainingPhone = digits.slice(6, 8);
+  // Pour garantir la nomenclature stricte EA-XXX-XXX-XXX-XXX (3-3-3-3) :
+  // Si le numéro a plus de 8 chiffres (France 9 chiffres, Italie 10 chiffres, etc.),
+  // on retient les 8 derniers chiffres nationaux significatifs.
+  const refPhone = digits.length > 8 ? digits.slice(-8) : digits;
+
+  const part1 = refPhone.slice(0, 3);
+  const part2 = refPhone.slice(3, 6);
+  const remainingPhone = refPhone.slice(6, 8);
 
   // 2. Extraire les composantes de la date
   const date = dateInput ? new Date(dateInput) : new Date();

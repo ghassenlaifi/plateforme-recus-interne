@@ -7,7 +7,7 @@ import { EliosHeader } from '@/components/EliosHeader';
 import { PaymentReceiptModal } from '@/components/PaymentReceiptModal';
 import { Receipt, Operator, getThemeColors } from '@/types';
 import { useToast } from '@/components/Toast';
-import { formatPhone, extractPhoneDigits, isSamePhone } from '@/lib/phoneUtils';
+import { formatPhone, formatPhoneInput, extractPhoneDigits, isSamePhone, isValidPhone, matchesPhoneQuery } from '@/lib/phoneUtils';
 import { resolveExactReceiptDate } from '@/lib/dateUtils';
 import { broadcastFinancialChange, subscribeToFinancialSync } from '@/lib/financialSync';
 
@@ -30,7 +30,7 @@ export const PAYMENT_MODES_CONFIG: Record<string, { label: string; placeholder: 
   'Edinar - D17': {
     label: 'Titulaire de la carte',
     placeholder: 'Sélectionner un titulaire',
-    options: ['Soumaya', 'Elyes']
+    options: ['Elyes', 'Soumaya']
   }
 };
 
@@ -79,7 +79,7 @@ const IC = {
 export default function ReceiptsPage() {
   const { toast } = useToast();
   const [activeUser, setActiveUser] = useState<string | null>(null);
-  const [tab, setTab] = useState<'todo' | 'done'>('todo');
+  const [tab, setTab] = useState<'todo' | 'done' | 'archived'>('todo');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modal détail / traitement & édition
@@ -764,16 +764,29 @@ export default function ReceiptsPage() {
     return (Date.now() - new Date(r.lockedAt).getTime()) < 45000;
   };
 
+  // Fonction utilitaire pour tester si un reçu a été traité il y a plus de 7 jours
+  const isOlderThan7Days = (r: Receipt) => {
+    const d = r.processedAt || r.paymentDate || r.createdAt;
+    if (!d) return false;
+    const time = new Date(d).getTime();
+    if (isNaN(time)) return false;
+    return (Date.now() - time) > 7 * 24 * 60 * 60 * 1000;
+  };
+
   // Statistiques avec exclusion des reçus verrouillés par d'autres opérateurs
   const stats = useMemo(() => {
     const available = receipts.filter(r => !isLockedByOther(r));
     const todo = available.filter(r => r.status === 'PENDING');
-    const done = available.filter(r => r.status === 'PROCESSED' || r.status === 'ARCHIVED');
+    // Strictement les reçus traités actifs de moins de 7 jours
+    const done = available.filter(r => r.status === 'PROCESSED' && !isOlderThan7Days(r));
+    // Reçus archivés (statut ARCHIVED ou traités depuis plus de 7 jours)
+    const archived = available.filter(r => r.status === 'ARCHIVED' || (r.status === 'PROCESSED' && isOlderThan7Days(r)));
     const totalAmount = done.reduce((sum, r) => sum + (r.amount || 0), 0);
     return {
       totalAmount,
       doneCount: done.length,
-      todoCount: todo.length
+      todoCount: todo.length,
+      archivedCount: archived.length
     };
   }, [receipts, activeUser]);
 
@@ -785,9 +798,18 @@ export default function ReceiptsPage() {
       // Disparaît de la liste si actuellement ouvert par un autre opérateur
       if (isLockedByOther(r)) return false;
 
-      if (tab === 'todo' && r.status !== 'PENDING') return false;
-      if (tab === 'done' && r.status !== 'PROCESSED' && r.status !== 'ARCHIVED') return false;
+      if (tab === 'todo') {
+        if (r.status !== 'PENDING') return false;
+      } else if (tab === 'done') {
+        // Strictement les reçus traités actifs de moins de 7 jours
+        if (r.status !== 'PROCESSED' || isOlderThan7Days(r)) return false;
+      } else if (tab === 'archived') {
+        // Reçus archivés (+7 jours)
+        if (r.status !== 'ARCHIVED' && !(r.status === 'PROCESSED' && isOlderThan7Days(r))) return false;
+      }
+
       if (!s) return true;
+      if (matchesPhoneQuery(r.clientDetails?.telephone, s)) return true;
       if (queryDigits && queryDigits.length >= 2) {
         const telDigits = (r.clientDetails?.telephone || '').replace(/\D/g, '');
         if (telDigits.includes(queryDigits)) return true;
@@ -865,7 +887,7 @@ export default function ReceiptsPage() {
         {/* Section Stats */}
         <section className="stats" aria-label="Résumé">
           <div className="stat" style={{ '--c': 'var(--fin)' } as React.CSSProperties}>
-            <small><i/>Reçus traités</small>
+            <small><i/>Reçus traités (7j)</small>
             <b id="sDone">{stats.doneCount}</b>
           </div>
           <div className="stat" style={{ '--c': 'var(--warn)' } as React.CSSProperties}>
@@ -995,10 +1017,10 @@ export default function ReceiptsPage() {
                 <input 
                   id="fp" 
                   inputMode="tel" 
-                  placeholder="Ex : 92 330 331"
-                  maxLength={16}
+                  placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78"
+                  maxLength={24}
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, phone: formatPhoneInput(e.target.value) })}
                   style={uploadConflictReceipt ? { borderColor: '#e11d48', backgroundColor: '#fff1f2' } : {}}
                 />
               </label>
@@ -1225,11 +1247,15 @@ export default function ReceiptsPage() {
           <section aria-labelledby="hList">
             <div className="bar">
               <div>
-                <h2 id="hList">{tab === 'todo' ? 'Reçus en attente' : 'Reçus traités'}</h2>
+                <h2 id="hList">
+                  {tab === 'todo' ? 'Reçus en attente' : tab === 'done' ? 'Reçus traités (7 derniers jours)' : 'Reçus archivés'}
+                </h2>
                 <p className="hint" id="hHint">
                   {tab === 'todo' 
                     ? 'Ouvrez un reçu pour vérifier les informations, ajouter une note puis le marquer comme traité.'
-                    : 'Consultez l’historique des reçus validés et traités.'
+                    : tab === 'done'
+                      ? 'Consultez les reçus validés et traités au cours des 7 derniers jours.'
+                      : 'Consultez l’historique des reçus archivés après 7 jours (soldes intégralement préservés dans les portefeuilles).'
                   }
                 </p>
               </div>
@@ -1253,6 +1279,15 @@ export default function ReceiptsPage() {
                   type="button"
                 >
                   Traités <em id="cDone">{stats.doneCount}</em>
+                </button>
+                <button 
+                  role="tab" 
+                  id="tArchived" 
+                  aria-selected={tab === 'archived'}
+                  onClick={() => setTab('archived')}
+                  type="button"
+                >
+                  Archivés <em id="cArchived">{stats.archivedCount}</em>
                 </button>
               </div>
             </div>
@@ -1337,8 +1372,10 @@ export default function ReceiptsPage() {
                     <b>Aucun résultat. Essayez un autre nom ou numéro.</b>
                   ) : tab === 'todo' ? (
                     <b>Tous les reçus sont traités. Les nouveaux reçus envoyés apparaîtront ici.</b>
+                  ) : tab === 'done' ? (
+                    <b>Aucun reçu traité au cours des 7 derniers jours.</b>
                   ) : (
-                    <b>Aucun reçu traité. Les reçus traités apparaîtront ici.</b>
+                    <b>Aucun reçu archivé. Les reçus traités depuis plus de 7 jours apparaîtront ici.</b>
                   )}
                 </div>
               )}
@@ -1381,7 +1418,23 @@ export default function ReceiptsPage() {
                 </span>
                 
                 {/* Badge Statut Fiable */}
-                {isProcessed ? (
+                {selectedReceipt.status === 'ARCHIVED' ? (
+                  <span style={{ 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '5px', 
+                    fontSize: '11px', 
+                    fontWeight: 700,
+                    padding: '3px 9px', 
+                    borderRadius: '20px',
+                    background: '#F1F5F9', 
+                    color: '#475569', 
+                    border: '1px solid #CBD5E1' 
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#64748B', display: 'inline-block' }} />
+                    {selectedReceipt.processedBy ? `Archivé (Traité par ${selectedReceipt.processedBy})` : 'Archivé (+7j)'}
+                  </span>
+                ) : isProcessed ? (
                   <span style={{ 
                     display: 'inline-flex', 
                     alignItems: 'center', 
@@ -1742,10 +1795,10 @@ export default function ReceiptsPage() {
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Téléphone</span>
                   <input 
                     inputMode="tel"
-                    placeholder="Ex : 92 330 331"
-                    maxLength={16}
+                    placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78"
+                    maxLength={24}
                     value={editPhone}
-                    onChange={(e) => setEditPhone(formatPhone(e.target.value))}
+                    onChange={(e) => setEditPhone(formatPhoneInput(e.target.value))}
                     style={editConflictReceipt ? { borderColor: '#e11d48', backgroundColor: '#fff1f2' } : {}}
                   />
                 </label>

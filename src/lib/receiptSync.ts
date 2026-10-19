@@ -11,20 +11,23 @@ import { invalidateLeadsCache, updateCachedLeadInPlace } from '@/lib/leadsCache'
 export function buildPhoneMatchConditions(phone: string): any[] {
   const rawPhone = String(phone || '').trim();
   const digitsOnly = extractPhoneDigits(rawPhone) || rawPhone.replace(/\D/g, '');
-  const norm8 = digitsOnly.length > 8 && digitsOnly.startsWith('216') 
-    ? digitsOnly.slice(-8) 
-    : (digitsOnly.length === 8 ? digitsOnly : digitsOnly);
+  const formatted = formatPhone(rawPhone);
 
   const phoneOrConditions: any[] = [
     { phone: rawPhone },
     { phone: digitsOnly },
-    { phone: norm8 }
+    { 'clientDetails.telephone': rawPhone },
+    { 'clientDetails.telephone': digitsOnly }
   ];
 
-  if (norm8.length === 8) {
-    const regex = buildPhoneMongoRegex(norm8);
-    phoneOrConditions.push({ phone: regex });
+  if (formatted && formatted !== rawPhone) {
+    phoneOrConditions.push({ phone: formatted });
+    phoneOrConditions.push({ 'clientDetails.telephone': formatted });
   }
+
+  const regex = buildPhoneMongoRegex(rawPhone);
+  phoneOrConditions.push({ phone: regex });
+  phoneOrConditions.push({ 'clientDetails.telephone': regex });
 
   return phoneOrConditions;
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
-import { extractPhoneDigits, buildPhoneMongoRegex, formatPhone } from '@/lib/phoneUtils';
+import { extractPhoneData, buildPhoneMongoRegex, formatPhone } from '@/lib/phoneUtils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,14 +12,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ existsInElios: false }, { status: 200 });
     }
 
-    const digits = extractPhoneDigits(phone);
-    if (!digits || digits.length < 8) {
+    const data = extractPhoneData(phone);
+    if (!data.isValid && data.nationalDigits.length < 6) {
       return NextResponse.json({ existsInElios: false }, { status: 200 });
     }
 
     await connectMongo();
 
-    const phoneRegex = buildPhoneMongoRegex(digits);
+    const phoneRegex = buildPhoneMongoRegex(phone);
     const existingEliosLead = await Lead.findOne({
       crmType: 'elios',
       phone: phoneRegex
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         lastModifiedBy: doc.lastModifiedBy || doc.staff || 'Système',
         date: doc.date || doc.createdAt
       },
-      eliosUrl: `/crm-elios?search=${encodeURIComponent(digits)}&openLead=${encodeURIComponent(leadId)}`
+      eliosUrl: `/crm-elios?search=${encodeURIComponent(data.nationalDigits || phone)}&openLead=${encodeURIComponent(leadId)}`
     }, { status: 200 });
   } catch (error: any) {
     console.error('Error in /api/leads/check-cross-crm:', error);

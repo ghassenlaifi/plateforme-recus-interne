@@ -15,6 +15,24 @@ export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
 
+    // Règle d'or Data Management & Integrity :
+    // Auto-archivage idempotent en temps réel des reçus traités depuis plus de 7 jours.
+    // Garantit une consistance absolue de la base sans dépendance aux crons externes.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await Receipt.updateMany(
+      {
+        status: 'PROCESSED',
+        $or: [
+          { processedAt: { $lte: sevenDaysAgo } },
+          { processedAt: { $exists: false }, paymentDate: { $lte: sevenDaysAgo } },
+          { processedAt: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $lte: sevenDaysAgo } }
+        ]
+      },
+      {
+        $set: { status: 'ARCHIVED' }
+      }
+    );
+
     const url = new URL(req.url);
     const status = url.searchParams.get('status');
 

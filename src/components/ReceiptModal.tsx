@@ -473,8 +473,8 @@ export function ReceiptModal({ receipt, isOpen, onClose, activeUser }: ReceiptMo
                           {editData.paymentMode === 'Edinar - D17' && (
                             <>
                               <option value="" disabled>Sélectionner un titulaire</option>
-                              <option value="Soumaya">Soumaya</option>
                               <option value="Elyes">Elyes</option>
+                              <option value="Soumaya">Soumaya</option>
                             </>
                           )}
                           {editData.paymentMode === 'Virement Bancaire' && (

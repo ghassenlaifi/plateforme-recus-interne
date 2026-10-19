@@ -4,7 +4,8 @@ import {
   formatPhoneInput as formatPhoneInputUtil,
   extractPhoneDigits, 
   normalizePhoneForUrl,
-  extractPhoneData 
+  extractPhoneData,
+  PhoneCountry 
 } from '@/lib/phoneUtils';
 
 export const COUNTRY_CODE = '216';
@@ -68,17 +69,16 @@ export function formatPhoneInput(value: string): string {
 }
 
 /**
- * Valide rigoureusement le numéro de téléphone (Tunisie et Sultanat d'Oman +968).
+ * Valide rigoureusement le numéro de téléphone pour tous les pays supportés
+ * (Tunisie, France, Italie, Allemagne, Arabie Saoudite, Oman, Qatar).
  * Règles :
  * - Si vide et non requis => valide.
- * - Si Oman (+968) => doit compter exactement 8 chiffres après l'indicatif.
- * - Si Tunisie (défaut local ou +216) => doit compter exactement 8 chiffres
- *   et commencer par un préfixe valide en Tunisie (2, 3, 4, 5, 7, 9).
+ * - S'appuie sur extractPhoneData pour une validation infaillible selon le pays.
  */
 export function validatePhone(
   raw?: string | null,
   required: boolean = false
-): { isValid: boolean; error?: string; country?: 'TN' | 'OM' } {
+): { isValid: boolean; error?: string; country?: PhoneCountry } {
   if (!raw || !raw.trim()) {
     if (required) {
       return { isValid: false, error: 'Le numéro de téléphone est obligatoire.' };
@@ -89,41 +89,15 @@ export function validatePhone(
   const str = raw.trim();
   const data = extractPhoneData(str);
 
-  if (!data.nationalDigits) {
-    return { isValid: false, error: 'Veuillez saisir un numéro de téléphone valide.' };
-  }
-
-  if (data.country === 'OM') {
-    if (data.nationalDigits.length !== 8) {
-      return {
-        isValid: false,
-        error: `Numéro omanais (+968) incomplet : 8 chiffres requis (${data.nationalDigits.length}/8 saisis).`,
-        country: 'OM',
-      };
-    }
-    return { isValid: true, country: 'OM' };
-  }
-
-  // Tunisie
-  if (data.nationalDigits.length !== 8) {
+  if (!data.isValid) {
     return {
       isValid: false,
-      error: `Numéro tunisien invalide : 8 chiffres requis (${data.nationalDigits.length}/8 saisis).`,
-      country: 'TN',
+      error: data.error || 'Veuillez saisir un numéro de téléphone valide.',
+      country: data.country
     };
   }
 
-  const firstDigit = data.nationalDigits.charAt(0);
-  const validPrefixes = ['2', '3', '4', '5', '7', '9'];
-  if (!validPrefixes.includes(firstDigit)) {
-    return {
-      isValid: false,
-      error: 'Préfixe opérateur invalide en Tunisie. Doit débuter par 2, 4, 5, 9 (mobile) ou 3, 7 (fixe).',
-      country: 'TN',
-    };
-  }
-
-  return { isValid: true, country: 'TN' };
+  return { isValid: true, country: data.country };
 }
 
 /**

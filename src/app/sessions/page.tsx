@@ -1042,7 +1042,7 @@ export default function SessionsPage() {
                     Numéro WhatsApp Enseignant
                     <input 
                       inputMode="tel"
-                      placeholder="ex. 20 123 456 ou +968 9123 4567"
+                      placeholder="ex. 20 123 456 ou +33 6 12 34 56 78"
                       value={formPhone}
                       onChange={(e) => {
                         const formatted = formatPhoneInput(e.target.value);
@@ -1512,7 +1512,7 @@ export default function SessionsPage() {
                     Téléphone / WhatsApp
                     <input 
                       inputMode="tel"
-                      placeholder="ex. 20 123 456 ou +968 9123 4567"
+                      placeholder="ex. 20 123 456 ou +33 6 12 34 56 78"
                       value={tFormPhone}
                       onChange={(e) => {
                         const formatted = formatPhoneInput(e.target.value);
@@ -2077,7 +2077,7 @@ export default function SessionsPage() {
                   Numéro WhatsApp Enseignant
                   <input 
                     inputMode="tel"
-                    placeholder="ex. 20 123 456 ou +968 9123 4567"
+                    placeholder="ex. 20 123 456 ou +33 6 12 34 56 78"
                     value={editingSession.teacherPhone || ''}
                     onChange={(e) => {
                       const formatted = formatPhoneInput(e.target.value);
@@ -2302,7 +2302,7 @@ export default function SessionsPage() {
                   Téléphone / WhatsApp
                   <input 
                     inputMode="tel"
-                    placeholder="ex. 20 123 456 ou +968 9123 4567"
+                    placeholder="ex. 20 123 456 ou +33 6 12 34 56 78"
                     value={editingTeacher.phone || ''}
                     onChange={(e) => {
                       const formatted = formatPhoneInput(e.target.value);

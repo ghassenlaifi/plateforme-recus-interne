@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { formatPhone } from '@/lib/phoneUtils';
+import { formatPhone, formatPhoneInput } from '@/lib/phoneUtils';
 
 const NIVEAU_OPTIONS = ['7ème de Base', '8ème de Base', '9ème de Base', '1ère Année', '2ème Année', '3ème Année', 'BAC'];
 const CLASSE_OPTIONS = NIVEAU_OPTIONS;
@@ -59,10 +59,10 @@ export function NewLeadModal({ isOpen, onClose, theme }: NewLeadModalProps) {
             </label>
             <input 
               type="tel"
-              placeholder="Ex : 92 330 331"
-              maxLength={16}
+              placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78"
+              maxLength={24}
               value={phone}
-              onChange={(e) => setPhone(formatPhone(e.target.value))}
+              onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
               className={`w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${themeRing} text-gray-900 font-medium text-sm transition-all shadow-sm`}
             />
           </div>

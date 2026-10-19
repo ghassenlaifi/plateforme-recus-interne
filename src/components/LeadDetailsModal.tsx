@@ -113,7 +113,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, theme }: LeadDetailsMo
                 <div className="flex gap-2">
                   <input 
                     type="tel" 
-                    placeholder="Ex : 92 330 331"
+                    placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78"
                     defaultValue={formatPhone(lead.phone)} 
                     className={`flex-1 px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${ringTheme} text-gray-900 font-medium text-sm transition-all shadow-sm`} 
                   />

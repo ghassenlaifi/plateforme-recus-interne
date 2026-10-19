@@ -27,7 +27,7 @@ import {
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
-import { formatPhone, extractPhoneDigits, normalizePhoneForUrl, isSamePhone } from '@/lib/phoneUtils';
+import { formatPhone, formatPhoneInput, extractPhoneDigits, normalizePhoneForUrl, isSamePhone, isValidPhone, extractPhoneData, matchesPhoneQuery } from '@/lib/phoneUtils';
 import { getClientCachedLeads, setClientCachedLeads, removeClientCachedLead, prependClientCachedLead, updateClientCachedLead } from '@/lib/clientCache';
 import { recordCrmActivity } from '@/lib/motivationTracker';
 import { broadcastCrmChange, subscribeToCrmSync } from '@/lib/crmSync';
@@ -266,11 +266,10 @@ export default function CRMEliosPage() {
   const [newErr, setNewErr] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  // Détection instantanée de doublon de numéro dans CRM Elios
+  // Détection instantanée de doublon de numéro dans CRM Elios (tous pays supportés)
   const duplicateLeadInElios = useMemo(() => {
     if (!newPhone || !Array.isArray(leads)) return null;
-    const digits = extractPhoneDigits(newPhone);
-    if (digits.length !== 8) return null;
+    if (!isValidPhone(newPhone)) return null;
     return leads.find(l => isSamePhone(l.phone, newPhone)) || null;
   }, [newPhone, leads]);
 
@@ -645,9 +644,7 @@ export default function CRMEliosPage() {
         const lName = (l.lastName || '').toLowerCase().replace(/\s/g, '');
         const tel = (l.phone || '').replace(/\s/g, '');
         const fam = (l.familyGroup || '').toLowerCase().replace(/\s/g, '');
-        const queryDigits = extractPhoneDigits(filterQuery) || filterQuery.replace(/\D/g, '');
-        const telDigits = extractPhoneDigits(l.phone);
-        const matchPhone = (queryDigits && queryDigits.length >= 2 && telDigits.includes(queryDigits)) || tel.includes(query);
+        const matchPhone = matchesPhoneQuery(l.phone, filterQuery) || tel.includes(query);
         if (!nom.includes(query) && !fName.includes(query) && !lName.includes(query) && !matchPhone && !fam.includes(query)) {
           return false;
         }
@@ -692,10 +689,10 @@ export default function CRMEliosPage() {
         if (leadSec !== targetSec) return false;
       }
 
-      // 6 & 7. Filtre STAFF et DATE unifiés et rigoureux
+      // 6 & 7. Filtre STAFF et DATE unifiés et rigoureux (Architecture Data Integrity)
       // - Si Staff seul : tous les clients auxquels cet opérateur a contribué à n'importe quelle date
-      // - Si Date seule : tous les clients ayant eu une activité durant cette période
-      // - Si Staff ET Date : STRICTEMENT les clients que cet opérateur a modifiés/créés/annotés durant cette période exacte
+      // - Si Date seule : STRICTEMENT les clients CRÉÉS durant cette date ou intervalle exact
+      // - Si Staff ET Date : STRICTEMENT les clients que cet opérateur a MODIFIÉS durant cette date ou intervalle exact
       if (!isLeadMatchingStaffAndDate(l, filterStaff, filterDate, customStartDate, customEndDate)) {
         return false;
       }
@@ -750,9 +747,9 @@ export default function CRMEliosPage() {
   // Création d'un prospect
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    const digits = extractPhoneDigits(newPhone);
-    if (digits.length !== 8) {
-      setNewErr('Veuillez saisir un numéro de téléphone valide à 8 chiffres (ex : 92 330 331).');
+    const phoneData = extractPhoneData(newPhone);
+    if (!phoneData.isValid) {
+      setNewErr(phoneData.error || 'Veuillez saisir un numéro de téléphone valide.');
       return;
     }
 
@@ -761,7 +758,7 @@ export default function CRMEliosPage() {
       return;
     }
 
-    const cleanPhone = formatPhone(digits);
+    const cleanPhone = phoneData.formatted || formatPhone(newPhone);
 
     try {
       setIsCreating(true);
@@ -833,12 +830,12 @@ export default function CRMEliosPage() {
   // Enregistrement des modifications du prospect
   const handleSaveLead = async () => {
     if (!selectedLead) return;
-    const digits = extractPhoneDigits(editPhone);
-    if (digits.length !== 8) {
-      setEditErr('Le numéro de téléphone doit comporter exactement 8 chiffres.');
+    const phoneData = extractPhoneData(editPhone);
+    if (!phoneData.isValid) {
+      setEditErr(phoneData.error || 'Veuillez saisir un numéro de téléphone valide.');
       return;
     }
-    const cleanPhone = formatPhone(digits);
+    const cleanPhone = phoneData.formatted || formatPhone(editPhone);
 
     // Vérification de doublon lors de la modification du numéro
     const duplicateOther = Array.isArray(leads) ? leads.find(l => 
@@ -2111,13 +2108,13 @@ export default function CRMEliosPage() {
                 <input 
                   id="new-phone" 
                   inputMode="tel" 
-                  placeholder="Ex : 92 330 331" 
+                  placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78" 
                   autoComplete="off" 
-                  maxLength={16}
+                  maxLength={24}
                   required
                   value={newPhone}
                   onChange={(e) => {
-                    setNewPhone(formatPhone(e.target.value));
+                    setNewPhone(formatPhoneInput(e.target.value));
                     if (newErr) setNewErr('');
                   }}
                   className={`w-full text-base font-mono py-2 px-3 rounded-xl border ${duplicateLeadInElios || newErr ? 'border-red-500 ring-1 ring-red-500' : 'border-[var(--line)]'} bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-amber-500`}
@@ -2130,11 +2127,26 @@ export default function CRMEliosPage() {
                       </span>
                     )}
                   </div>
-                  {newPhone.length > 0 && (
-                    <span className={duplicateLeadInElios ? "text-red-500 font-bold" : extractPhoneDigits(newPhone).length === 8 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                      {duplicateLeadInElios ? "Doublon interdit" : extractPhoneDigits(newPhone).length === 8 ? "✓ Valide (8 chiffres)" : `${extractPhoneDigits(newPhone).length} / 8`}
-                    </span>
-                  )}
+                  {newPhone.length > 0 && (() => {
+                    const data = extractPhoneData(newPhone);
+                    if (duplicateLeadInElios) {
+                      return <span className="text-red-500 font-bold">Doublon interdit</span>;
+                    }
+                    if (data.isValid) {
+                      return (
+                        <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                          <span>{data.countryFlag}</span>
+                          <span>{data.countryName} ✓ Valide</span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-amber-600 font-semibold flex items-center gap-1">
+                        <span>{data.countryFlag}</span>
+                        <span>{data.countryName} ({data.nationalDigits.length} chiffres)</span>
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {duplicateLeadInElios && (
@@ -2412,11 +2424,11 @@ export default function CRMEliosPage() {
                       <div className="flex gap-2">
                         <input 
                           inputMode="tel" 
-                          maxLength={16}
-                          placeholder="Ex : 92 330 331"
+                          maxLength={24}
+                          placeholder="Ex : 92 330 331 ou +33 6 12 34 56 78"
                           value={editPhone} 
                           onChange={(e) => {
-                            setEditPhone(formatPhone(e.target.value));
+                            setEditPhone(formatPhoneInput(e.target.value));
                             if (editErr) setEditErr('');
                           }}
                           className="py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] flex-1 min-w-0 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -2433,6 +2445,20 @@ export default function CRMEliosPage() {
                           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.phone}</svg>
                         </a>
                       </div>
+                      {editPhone.length > 0 && (() => {
+                        const data = extractPhoneData(editPhone);
+                        return (
+                          <div className="mt-1 text-[11px] flex items-center justify-between text-[var(--ink3)]">
+                            <span className="flex items-center gap-1 font-medium">
+                              <span>{data.countryFlag}</span>
+                              <span>{data.countryName}</span>
+                            </span>
+                            <span className={data.isValid ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                              {data.isValid ? "✓ Valide" : `${data.nationalDigits.length} chiffres`}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div>

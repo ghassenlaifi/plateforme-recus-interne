@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getWhatsAppLink, cleanTunisianPhone } from '@/lib/whatsappHelper';
-import { formatPhone, extractPhoneDigits } from '@/lib/phoneUtils';
+import { formatPhone, isValidPhone } from '@/lib/phoneUtils';
 
 interface WhatsAppDispatchModalProps {
   isOpen: boolean;
@@ -61,7 +61,7 @@ export function WhatsAppDispatchModal({
   const cleanTarget = (targetStatus || '').trim().toLowerCase();
   const isApprovedProspect = cleanTarget === 'approved prospect';
   const isNa = cleanTarget === 'n/a';
-  const hasValidPhone = extractPhoneDigits(phone).length === 8;
+  const hasValidPhone = isValidPhone(phone);
 
   const handleSendWhatsApp = () => {
     const url = getWhatsAppLink(phone, message);
