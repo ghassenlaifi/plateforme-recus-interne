@@ -520,6 +520,7 @@ export function getDateFilterRange(
 /**
  * Détermine si un horodatage se trouve dans l'intervalle donné.
  */
+
 export function isTimestampInRange(
   time: Date | string | number | undefined | null,
   range: DateRange
@@ -534,6 +535,7 @@ export function isTimestampInRange(
  * Extrait l'ensemble des horodatages réels où un opérateur cible a créé, modifié
  * ou annoté un prospect donné.
  */
+
 export function getStaffContributionTimestamps(
   lead?: Partial<LeadItem> | null,
   targetStaff?: string | null
@@ -633,9 +635,22 @@ export function isLeadModifiedByStaffInDateRange(
   const target = targetStaff.trim().toLowerCase();
   if (!target || target === 'all') return false;
 
-  const creationTime = lead.createdAt 
+  let creationTime = lead.createdAt 
     ? new Date(lead.createdAt).getTime() 
     : (lead.date ? new Date(lead.date).getTime() : NaN);
+
+  if (isNaN(creationTime) && Array.isArray(lead.modifierLogs)) {
+    const createLog = lead.modifierLogs.find((l: any) => (l?.action || '').toLowerCase() === 'create');
+    if (createLog?.at) {
+      creationTime = new Date(createLog.at).getTime();
+    }
+  }
+
+  const isCreator = (lead.staff || '').trim().toLowerCase() === target;
+  // Fenêtre de création initiale (5 minutes = 300 000 ms) :
+  // Toute action (save, update automatique du formulaire) effectuée par le créateur dans ce créneau fait partie de la création du prospect.
+  // Elle ne constitue pas une modification commerciale ultérieure.
+  const CREATION_SESSION_WINDOW_MS = 300000;
 
   // 1. Recherche dans modifierLogs (toute action explicite de modification)
   if (Array.isArray(lead.modifierLogs)) {
@@ -646,6 +661,13 @@ export function isLeadModifiedByStaffInDateRange(
         const action = (log.action || '').trim().toLowerCase();
         // Exclusion impérative de l'action de création initiale
         if (action === 'create') continue;
+
+        const logTime = new Date(log.at).getTime();
+        // Si l'opérateur est le créateur de la fiche, tout log survenu durant la session de création initiale (< 5 min)
+        // fait partie de la création du prospect et ne constitue pas une modification ultérieure.
+        if (isCreator && !isNaN(creationTime) && !isNaN(logTime) && (logTime - creationTime) <= CREATION_SESSION_WINDOW_MS) {
+          continue;
+        }
 
         if (isTimestampInRange(log.at, range)) {
           return true;
@@ -669,11 +691,13 @@ export function isLeadModifiedByStaffInDateRange(
       // Note rédigée par cet opérateur dans l'intervalle
       if (author === target) {
         const noteTime = n.addedAt ? new Date(n.addedAt).getTime() : (n.date ? new Date(n.date).getTime() : NaN);
-        // Exclure toute note système ou note générée automatiquement à la création
-        const isNotAtCreation = isNaN(creationTime) || isNaN(noteTime) || Math.abs(noteTime - creationTime) > 3000;
-        const isExplicitModificationNote = !n.text?.toLowerCase().includes('nouveau prospect formatic créé');
+        // Exclure toute note rédigée à la création par le créateur (< 5 min)
+        if (isCreator && !isNaN(creationTime) && !isNaN(noteTime) && (noteTime - creationTime) <= CREATION_SESSION_WINDOW_MS) {
+          continue;
+        }
+        const isNotAutoCreationNote = !n.text?.toLowerCase().includes('nouveau prospect formatic créé') && !n.text?.toLowerCase().includes('nouveau prospect');
 
-        if (isTimestampInRange(n.addedAt || n.date, range) && (isNotAtCreation || isExplicitModificationNote)) {
+        if (isTimestampInRange(n.addedAt || n.date, range) && isNotAutoCreationNote) {
           return true;
         }
       }
@@ -684,11 +708,8 @@ export function isLeadModifiedByStaffInDateRange(
   const lastMod = (lead.lastModifiedBy || '').trim().toLowerCase();
   if (lastMod === target && isTimestampInRange(lead.updatedAt, range)) {
     const updateTime = lead.updatedAt ? new Date(lead.updatedAt).getTime() : NaN;
-    const isDistinctFromCreation = isNaN(creationTime) || isNaN(updateTime) || Math.abs(updateTime - creationTime) > 3000;
-    const isDifferentFromCreator = (lead.staff || '').trim().toLowerCase() !== target;
-
-    // Si la mise à jour est postérieure à la création (> 3s) OU si l'opérateur est différent du créateur
-    if (isDistinctFromCreation || isDifferentFromCreator) {
+    // Pour le créateur, la mise à jour doit être postérieure d'au moins 5 minutes à la création
+    if (!isCreator || (!isNaN(creationTime) && !isNaN(updateTime) && (updateTime - creationTime) > CREATION_SESSION_WINDOW_MS)) {
       return true;
     }
   }
