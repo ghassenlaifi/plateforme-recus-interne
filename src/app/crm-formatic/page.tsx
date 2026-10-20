@@ -868,6 +868,14 @@ export default function CRMFormaticPage() {
   // Enregistrement des modifications du prospect
   const handleSaveLead = async () => {
     if (!selectedLead) return;
+
+    // Si aucune modification et aucune note en cours, fermer sans requete fantome
+    if (!hasUnsavedChanges) {
+      setSelectedLead(null);
+      setShowUnsavedConfirm(false);
+      return;
+    }
+
     const phoneData = extractPhoneData(editPhone);
     if (!phoneData.isValid) {
       setEditErr(phoneData.error || 'Veuillez saisir un numéro de téléphone valide.');
@@ -909,7 +917,7 @@ export default function CRMFormaticPage() {
     const newStatus = (editStatus || '').trim().toLowerCase();
     const isStatusChanged = oldStatus !== newStatus;
     const nowIso = new Date().toISOString();
-    const operatorName = activeUser || selectedLead.staff || 'Système';
+    const operatorName = activeUser || 'Système';
 
     // 1. MISE À JOUR OPTIMISTE IMMÉDIATE (T=0ms) DANS SWR
     const updatedLeadOptimistic: LeadItem = {
@@ -1019,7 +1027,7 @@ export default function CRMFormaticPage() {
     const isStatusChanged = oldStatus !== cleanNewStatus.toLowerCase();
     const targetId = selectedLead._id || selectedLead.id;
     const nowIso = new Date().toISOString();
-    const operatorName = activeUser || selectedLead.staff || 'Système';
+    const operatorName = activeUser || 'Système';
 
     setEditStatus(newStatus);
     setInitialFormValues((prev: any) => prev ? { ...prev, status: newStatus } : null);
@@ -1059,6 +1067,7 @@ export default function CRMFormaticPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'status_change',
           status: newStatus,
           lastModifiedBy: operatorName
         })

@@ -830,6 +830,14 @@ export default function CRMEliosPage() {
   // Enregistrement des modifications du prospect
   const handleSaveLead = async () => {
     if (!selectedLead) return;
+
+    // Si aucune modification et aucune note en cours, fermer sans requete fantome
+    if (!hasUnsavedChanges) {
+      setSelectedLead(null);
+      setShowUnsavedConfirm(false);
+      return;
+    }
+
     const phoneData = extractPhoneData(editPhone);
     if (!phoneData.isValid) {
       setEditErr(phoneData.error || 'Veuillez saisir un numéro de téléphone valide.');
@@ -857,7 +865,7 @@ export default function CRMEliosPage() {
     const isEligibleWaStatus = newStatus === 'approved prospect' || newStatus === 'n/a';
     const shouldTrigger = isStatusChanged && isEligibleWaStatus;
     const nowIso = new Date().toISOString();
-    const operatorName = activeUser || editStaff || selectedLead.staff || 'Système';
+    const operatorName = activeUser || 'Système';
 
     // 1. MISE À JOUR OPTIMISTE IMMÉDIATE (T=0ms) DANS SWR ET LE CACHE CLIENT
     const updatedLeadOptimistic: LeadItem = {
@@ -960,7 +968,7 @@ export default function CRMEliosPage() {
     const isStatusChanged = oldStatus !== cleanNewStatus.toLowerCase();
     const targetId = selectedLead._id || selectedLead.id;
     const nowIso = new Date().toISOString();
-    const operatorName = activeUser || editStaff || selectedLead.staff || 'Système';
+    const operatorName = activeUser || 'Système';
 
     setEditStatus(newStatus);
     setInitialFormValues((prev: any) => prev ? { ...prev, status: newStatus } : null);
@@ -1000,6 +1008,7 @@ export default function CRMEliosPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'status_change',
           status: newStatus,
           lastModifiedBy: operatorName
         })

@@ -46,7 +46,7 @@ export async function PATCH(
     await connectMongo();
     const body = await request.json();
     const now = new Date();
-    const operator = body.lastModifiedBy || body.operator || body.staff || 'Système';
+    const operator = body.lastModifiedBy || body.operator || 'Système';
 
     const query = id.match(/^[0-9a-fA-F]{24}$/) ? { _id: id } : { id };
 
@@ -285,8 +285,9 @@ export async function PATCH(
     body.updatedAt = now;
     body.lastModifiedBy = operator;
 
+    const actionType = body.action || (body.status !== undefined ? 'status_change' : 'update');
     const logEntry = (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné')
-      ? [{ operator, at: now, action: 'update' }]
+      ? [{ operator, at: now, action: actionType }]
       : [];
 
     const updateQuery: any = { $set: body };
