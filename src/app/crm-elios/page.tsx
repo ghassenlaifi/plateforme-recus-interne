@@ -1228,12 +1228,12 @@ export default function CRMEliosPage() {
     }
   };
 
-  // Suppression définitive d'un prospect (fluide, optimiste et ultra-résiliente)
+  // Suppression définitive d'un prospect (1 clic avec confirmation, optimiste T=0ms, sans rebond)
   const handleDeleteLead = async () => {
     if (!selectedLead || isDeletingLead) return;
-    if (!isDeleteArmed) {
-      setIsDeleteArmed(true);
-      setTimeout(() => setIsDeleteArmed(false), 5000);
+
+    const leadDisplayName = [editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name || selectedLead.phone || 'ce prospect';
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer définitivement le prospect "${leadDisplayName}" ? Cette action est irréversible.`)) {
       return;
     }
 
@@ -1247,7 +1247,7 @@ export default function CRMEliosPage() {
     setShowUnsavedConfirm(false);
     removeClientCachedLead(targetId, customId);
     
-    // Éviction optimiste instantanée du state SWR
+    // Éviction optimiste instantanée du state SWR (sans revalidation prématurée)
     mutate(
       (currentLeads: any) => {
         if (!Array.isArray(currentLeads)) return currentLeads;
@@ -1259,7 +1259,6 @@ export default function CRMEliosPage() {
       },
       false
     );
-    broadcastCrmChange('elios');
     showToast('Prospect supprimé avec succès');
 
     // 2. Requête réseau résiliente en arrière-plan
@@ -1270,8 +1269,8 @@ export default function CRMEliosPage() {
       if (!res.ok && res.status !== 404) {
         throw new Error('Erreur lors de la suppression');
       }
-      // Revalidation silencieuse en arrière-plan
-      mutate();
+      // Revalidation et synchronisation des autres onglets UNIQUEMENT après confirmation de la suppression en base
+      removeClientCachedLead(targetId, customId);
       broadcastCrmChange('elios');
     } catch (err: any) {
       showToast(err.message || 'Erreur suppression');
@@ -2881,18 +2880,14 @@ export default function CRMEliosPage() {
             {/* PIED DE MODALE PANORAMIQUE RESPONSIVE TOUT EN FRANÇAIS */}
             <div className="px-5 py-3 border-t border-[var(--line)] bg-[var(--card)] flex flex-wrap items-center justify-between gap-2.5">
               <button 
-                className={`btn text-xs py-2 px-3.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50 ${
-                  isDeleteArmed 
-                    ? '!bg-red-600 hover:!bg-red-700 !text-white !border-red-600 ring-2 ring-red-400 animate-pulse' 
-                    : '!bg-white dark:!bg-[var(--card)] !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-950/30 !border !border-red-500/30 hover:!border-red-500'
-                }`} 
+                className="btn text-xs py-2 px-3.5 rounded-xl font-medium transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50 !bg-white dark:!bg-[var(--card)] !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-950/30 !border !border-red-500/30 hover:!border-red-500" 
                 type="button" 
                 onClick={handleDeleteLead}
                 disabled={isDeletingLead}
                 title="Supprimer définitivement ce prospect"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                <span>{isDeletingLead ? 'Suppression...' : (isDeleteArmed ? 'Confirmer la suppression ?' : 'Supprimer')}</span>
+                <span>{isDeletingLead ? 'Suppression...' : 'Supprimer'}</span>
               </button>
 
               <div className="flex items-center gap-2.5 ml-auto">
