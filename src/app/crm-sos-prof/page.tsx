@@ -295,6 +295,27 @@ export default function CRMSOSProfPage() {
   const [newTeacherSearch, setNewTeacherSearch] = useState('');
   const [isNewTeacherDropdownOpen, setIsNewTeacherDropdownOpen] = useState(false);
 
+  const newTeacherRef = useRef<HTMLDivElement>(null);
+  const editTeacherRef = useRef<HTMLDivElement>(null);
+
+  // Fermeture automatique des listes déroulantes Enseignants lors d'un clic extérieur
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (newTeacherRef.current && !newTeacherRef.current.contains(event.target as Node)) {
+        setIsNewTeacherDropdownOpen(false);
+      }
+      if (editTeacherRef.current && !editTeacherRef.current.contains(event.target as Node)) {
+        setIsTeacherDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
   // Chargement dynamique des enseignants SOS Prof
   const { data: teachersData } = useSWR<any[]>('/api/sessions/teachers', fetcher, {
     revalidateOnFocus: false,
@@ -793,6 +814,7 @@ export default function CRMSOSProfPage() {
           phone: cleanPhone,
           grade: newGrade || '',
           section: newSection || '',
+          assignedTeachers: newAssignedTeachers,
           status: 'Lead',
           source: 'Facebook',
           staff: activeUser || 'Non assigné',
@@ -813,6 +835,9 @@ export default function CRMSOSProfPage() {
       setNewGrade('');
       setNewSection('');
       setNewErr('');
+      setNewAssignedTeachers([]);
+      setNewTeacherSearch('');
+      setIsNewTeacherDropdownOpen(false);
 
       // 1. Pré-pendre immédiatement dans le cache local sessionStorage (T=0ms)
       prependClientCachedLead('sos_prof_cached_leads', created);
@@ -957,6 +982,7 @@ export default function CRMSOSProfPage() {
           status: editStatus,
           staff: editStaff || activeUser || selectedLead.staff || 'Non assigné',
           familyGroup: editFamilyGroup.trim(),
+          assignedTeachers: editAssignedTeachers,
           lastModifiedBy: operatorName
         })
       });
@@ -2257,10 +2283,10 @@ export default function CRMSOSProfPage() {
 
               
               {/* ENSEIGNANT(S) ASSIGNÉ(S) DANS NOUVEAU PROSPECT */}
-              <div className="space-y-1.5 p-2.5 rounded-xl bg-purple-500/5 border border-purple-500/20">
+              <div ref={newTeacherRef} className="space-y-1.5 p-2.5 rounded-xl bg-purple-500/5 border border-purple-500/20">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">
-                    👨‍🏫 ENSEIGNANT(S) ASSIGNÉ(S)
+                    ENSEIGNANT(S) ASSIGNÉ(S)
                   </label>
                   <span className="text-[10px] text-[var(--ink3)]">
                     {newAssignedTeachers.length} sélectionné{newAssignedTeachers.length > 1 ? 's' : ''}
@@ -2276,7 +2302,7 @@ export default function CRMSOSProfPage() {
                         <button
                           type="button"
                           onClick={() => setNewAssignedTeachers(prev => prev.filter(x => x !== t))}
-                          className="hover:text-red-500 font-bold text-xs ml-0.5"
+                          className="hover:text-red-500 font-bold text-xs ml-0.5 cursor-pointer"
                         >
                           ×
                         </button>
@@ -2296,6 +2322,17 @@ export default function CRMSOSProfPage() {
                         setIsNewTeacherDropdownOpen(true);
                       }}
                       onFocus={() => setIsNewTeacherDropdownOpen(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const t = newTeacherSearch.trim();
+                          if (t && !newAssignedTeachers.includes(t)) {
+                            setNewAssignedTeachers(prev => [...prev, t]);
+                            setNewTeacherSearch('');
+                            setIsNewTeacherDropdownOpen(false);
+                          }
+                        }
+                      }}
                       placeholder="Rechercher ou ajouter un enseignant..."
                       className="w-full py-1.5 px-3 text-xs rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-purple-500"
                     />
@@ -2310,7 +2347,7 @@ export default function CRMSOSProfPage() {
                             setIsNewTeacherDropdownOpen(false);
                           }
                         }}
-                        className="px-2.5 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 shrink-0 transition"
+                        className="px-2.5 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 shrink-0 transition cursor-pointer"
                       >
                         + Ajouter
                       </button>
@@ -2332,7 +2369,7 @@ export default function CRMSOSProfPage() {
                               setNewTeacherSearch('');
                               setIsNewTeacherDropdownOpen(false);
                             }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)] text-[var(--ink)] flex items-center justify-between group transition"
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)] text-[var(--ink)] flex items-center justify-between group transition cursor-pointer"
                           >
                             <span className="font-medium group-hover:text-purple-600">{teacher.name}</span>
                             {teacher.subject && (
@@ -2342,20 +2379,19 @@ export default function CRMSOSProfPage() {
                             )}
                           </button>
                         ))}
-                      <div className="pt-1 border-t border-[var(--line)] flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => setIsNewTeacherDropdownOpen(false)}
-                          className="text-[10px] text-[var(--ink3)] hover:text-[var(--ink)] px-2 py-0.5"
-                        >
-                          Fermer
-                        </button>
-                      </div>
+                      {availableTeachers.filter(t => (t.name || '').toLowerCase().includes(newTeacherSearch.toLowerCase()) && !newAssignedTeachers.includes(t.name)).length === 0 && (
+                        <div className="py-2 px-3 text-xs text-[var(--ink3)] text-center">
+                          {newTeacherSearch.trim() ? (
+                            <span>Cliquez sur « + Ajouter » ou appuyez sur Entrée pour ajouter <strong>{newTeacherSearch.trim()}</strong>.</span>
+                          ) : (
+                            <span>Tous les enseignants sont déjà assignés ou aucun enseignant en base.</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
-
 
               {newErr && <p className="text-xs text-red-500 font-semibold">{newErr}</p>}
 
@@ -2711,6 +2747,118 @@ export default function CRMSOSProfPage() {
                         placeholder="Ex : Famille Ben Ali / Groupe 1"
                         className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-purple-500"
                       />
+                    </div>
+
+                    {/* ENSEIGNANT(S) ASSIGNÉ(S) DANS LA FICHE PROSPECT */}
+                    <div ref={editTeacherRef} className="sm:col-span-2 space-y-1.5 p-3 rounded-xl bg-purple-500/5 border border-purple-500/20">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">
+                          ENSEIGNANT(S) ASSIGNÉ(S)
+                        </label>
+                        <span className="text-[10px] text-[var(--ink3)]">
+                          {editAssignedTeachers.length} sélectionné{editAssignedTeachers.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      {/* Chips des enseignants assignés */}
+                      {editAssignedTeachers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-1.5">
+                          {editAssignedTeachers.map(t => (
+                            <span key={t} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                              <span>{t}</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditAssignedTeachers(prev => prev.filter(x => x !== t))}
+                                className="hover:text-red-500 font-bold text-xs ml-0.5 cursor-pointer transition"
+                                title={`Retirer ${t}`}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Champ de saisie / recherche / ajout avec dropdown */}
+                      <div className="relative">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={teacherSearch}
+                            onChange={(e) => {
+                              setTeacherSearch(e.target.value);
+                              setIsTeacherDropdownOpen(true);
+                            }}
+                            onFocus={() => setIsTeacherDropdownOpen(true)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const t = teacherSearch.trim();
+                                if (t && !editAssignedTeachers.includes(t)) {
+                                  setEditAssignedTeachers(prev => [...prev, t]);
+                                  setTeacherSearch('');
+                                  setIsTeacherDropdownOpen(false);
+                                }
+                              }
+                            }}
+                            placeholder="Rechercher ou ajouter un enseignant..."
+                            className="w-full py-2 px-3 text-xs sm:text-sm rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          {teacherSearch.trim() && !editAssignedTeachers.includes(teacherSearch.trim()) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const t = teacherSearch.trim();
+                                if (t && !editAssignedTeachers.includes(t)) {
+                                  setEditAssignedTeachers(prev => [...prev, t]);
+                                  setTeacherSearch('');
+                                  setIsTeacherDropdownOpen(false);
+                                }
+                              }}
+                              className="px-3 py-2 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 shrink-0 transition cursor-pointer"
+                            >
+                              + Ajouter
+                            </button>
+                          )}
+                        </div>
+
+                        {isTeacherDropdownOpen && (
+                          <div className="absolute left-0 right-0 top-full mt-1 z-30 max-h-48 overflow-y-auto rounded-xl bg-[var(--card)] border border-[var(--line)] shadow-xl p-1.5 space-y-0.5">
+                            {availableTeachers
+                              .filter(t => (t.name || '').toLowerCase().includes(teacherSearch.toLowerCase()) && !editAssignedTeachers.includes(t.name))
+                              .map(teacher => (
+                                <button
+                                  key={teacher._id || teacher.name}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!editAssignedTeachers.includes(teacher.name)) {
+                                      setEditAssignedTeachers(prev => [...prev, teacher.name]);
+                                    }
+                                    setTeacherSearch('');
+                                    setIsTeacherDropdownOpen(false);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)] text-[var(--ink)] flex items-center justify-between group transition cursor-pointer"
+                                >
+                                  <span className="font-medium group-hover:text-purple-600">{teacher.name}</span>
+                                  {teacher.subject && (
+                                    <span className="text-[10px] text-[var(--ink3)] bg-[var(--hover)] px-1.5 py-0.5 rounded">
+                                      {teacher.subject}
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            {availableTeachers.filter(t => (t.name || '').toLowerCase().includes(teacherSearch.toLowerCase()) && !editAssignedTeachers.includes(t.name)).length === 0 && (
+                              <div className="py-2 px-3 text-xs text-[var(--ink3)] text-center">
+                                {teacherSearch.trim() ? (
+                                  <span>Cliquez sur « + Ajouter » ou appuyez sur Entrée pour ajouter <strong>{teacherSearch.trim()}</strong>.</span>
+                                ) : (
+                                  <span>Tous les enseignants sont déjà assignés ou aucun enseignant en base.</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
