@@ -10,7 +10,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
   try {
     await connectMongo();
     
-    if (!['elios', 'formatic'].includes(crmType)) {
+    if (!['elios', 'formatic', 'sos-prof'].includes(crmType)) {
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 

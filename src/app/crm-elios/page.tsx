@@ -25,6 +25,7 @@ import {
   isLeadMatchingStaffAndDate
 } from '@/types/crm';
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
+import { CrmImportModal } from '@/components/CrmImportModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, formatPhoneInput, extractPhoneDigits, normalizePhoneForUrl, isSamePhone, isValidPhone, extractPhoneData, matchesPhoneQuery } from '@/lib/phoneUtils';
@@ -50,6 +51,7 @@ const IC = {
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></>,
   plus: <path d="M12 5v14M5 12h14"/>,
   dl: <path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>,
+  upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>,
   chat: <path d="M4 5h16v11H9l-5 4z"/>,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/>,
   phone: <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>,
@@ -104,6 +106,7 @@ export default function CRMEliosPage() {
 
   // Modales & Fiche Prospect
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
   const [lastInteractedLeadId, setLastInteractedLeadId] = useState<string | null>(null);
 
@@ -285,6 +288,7 @@ export default function CRMEliosPage() {
   const [editStatus, setEditStatus] = useState('Lead');
   const [editStaff, setEditStaff] = useState('');
   const [editFamilyGroup, setEditFamilyGroup] = useState('');
+  const [editToSosProf, setEditToSosProf] = useState(false);
   const [editErr, setEditErr] = useState('');
   const [isDeleteArmed, setIsDeleteArmed] = useState(false);
   const [isDeletingLead, setIsDeletingLead] = useState(false);
@@ -409,6 +413,7 @@ export default function CRMEliosPage() {
         const initialSource = selectedLead.source === 'WhatsApp' ? 'Whatsapp' : (selectedLead.source === 'Ex_elios' ? 'Ex-Elios' : (selectedLead.source || 'Facebook'));
         const initialStaff = selectedLead.staff || selectedLead.lastModifiedBy || '';
         const initialFamily = selectedLead.familyGroup || '';
+        const initialToSosProf = Boolean(selectedLead.toSosProf || (selectedLead as any).isMigratedToSosProf);
 
         setEditFirst(fName);
         setEditLast(lName);
@@ -421,6 +426,7 @@ export default function CRMEliosPage() {
         setEditStatus(rawStatus);
         setEditStaff(initialStaff);
         setEditFamilyGroup(initialFamily);
+        setEditToSosProf(initialToSosProf);
         setEditErr('');
         setNewNoteText('');
         setEditingNoteId(null);
@@ -438,7 +444,8 @@ export default function CRMEliosPage() {
           section: selectedLead.section || '',
           status: rawStatus,
           staff: initialStaff,
-          familyGroup: initialFamily
+          familyGroup: initialFamily,
+          toSosProf: initialToSosProf
         });
       } else {
         // La même fiche est déjà ouverte : réactivité immédiate sur statut et notes si externe
@@ -468,12 +475,13 @@ export default function CRMEliosPage() {
       editSection !== initialFormValues.section ||
       editStatus !== initialFormValues.status ||
       editStaff !== initialFormValues.staff ||
-      editFamilyGroup !== initialFormValues.familyGroup
+      editFamilyGroup !== initialFormValues.familyGroup ||
+      editToSosProf !== initialFormValues.toSosProf
     );
     const hasPendingNewNote = Boolean(newNoteText.trim().length > 0);
     const hasPendingNoteEdit = Boolean(editingNoteId && editingNoteText.trim().length > 0);
     return formFieldsChanged || hasPendingNewNote || hasPendingNoteEdit;
-  }, [initialFormValues, editFirst, editLast, editPhone, editOffer, editAmount, editSource, editGrade, editSection, editStatus, editStaff, editFamilyGroup, newNoteText, editingNoteId, editingNoteText]);
+  }, [initialFormValues, editFirst, editLast, editPhone, editOffer, editAmount, editSource, editGrade, editSection, editStatus, editStaff, editFamilyGroup, editToSosProf, newNoteText, editingNoteId, editingNoteText]);
 
   // Écoute de la touche Échap pour la fermeture sécurisée
   useEffect(() => {
@@ -818,7 +826,7 @@ export default function CRMEliosPage() {
 
       recordCrmActivity('operation', activeUser);
       showToast('Nouveau prospect créé avec succès !');
-      broadcastCrmChange('elios');
+      broadcastCrmChange(editToSosProf ? 'all' : 'elios');
       setTimeout(() => mutate(), 400);
     } catch (err: any) {
       setNewErr(err.message || 'Une erreur est survenue.');
@@ -882,6 +890,7 @@ export default function CRMEliosPage() {
       status: editStatus,
       staff: editStaff || activeUser || selectedLead.staff || 'Non assigné',
       familyGroup: editFamilyGroup.trim(),
+          toSosProf: editToSosProf,
       updatedAt: nowIso,
       lastModifiedBy: operatorName
     };
@@ -894,20 +903,24 @@ export default function CRMEliosPage() {
     }
 
     // Éviction / Mise à jour instantanée du cache SWR (revalidate = false -> 0ms)
-    mutate(
-      (currentLeads: any) => {
-        if (!Array.isArray(currentLeads)) return [updatedLeadOptimistic];
-        return currentLeads.map((l: any) => 
-          (l._id === targetId || l.id === targetId) ? { ...l, ...updatedLeadOptimistic } : l
-        );
-      },
-      false
-    );
+    if (editToSosProf) {
+      mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
+    } else {
+      mutate(
+        (currentLeads: any) => {
+          if (!Array.isArray(currentLeads)) return [updatedLeadOptimistic];
+          return currentLeads.map((l: any) => 
+            (l._id === targetId || l.id === targetId) ? { ...l, ...updatedLeadOptimistic } : l
+          );
+        },
+        false
+      );
+    }
 
     // Fermeture instantanée de la fiche prospect et masquage du dialogue dirty
     setSelectedLead(null);
     setShowUnsavedConfirm(false);
-    showToast('Prospect mis à jour avec succès');
+    showToast(editToSosProf ? 'Prospect migré vers le CRM SOS Prof avec succès !' : 'Prospect mis à jour avec succès');
 
     if (shouldTrigger) {
       triggerWhatsAppPopup(computedFullName, cleanPhone, savedStatus);
@@ -1284,6 +1297,10 @@ export default function CRMEliosPage() {
             </div>
           </div>
           <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
+            <button className="btn flex-1 sm:flex-initial text-xs sm:text-sm py-2 px-3.5" type="button" onClick={() => setIsImportModalOpen(true)} title="Importer un fichier Excel ou CSV">
+              <svg className="i" viewBox="0 0 24 24">{IC.upload}</svg>
+              <span>Importer Excel</span>
+            </button>
             <button className="btn flex-1 sm:flex-initial text-xs sm:text-sm py-2 px-3.5" type="button" onClick={handleExportExcel} title="Exporter la base Excel">
               <svg className="i" viewBox="0 0 24 24">{IC.dl}</svg>
               <span>Exporter Excel</span>
@@ -2294,6 +2311,13 @@ export default function CRMEliosPage() {
                       <span>From Formatic</span>
                     </span>
                   )}
+
+                  {/* Étiquette To SOS Prof */}
+                  {(editToSosProf || (selectedLead as any).isMigratedToSosProf || selectedLead.toSosProf) && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-500/15 text-purple-600 border border-purple-500/30 flex items-center gap-1 shadow-2xs">
+                      <span>{(selectedLead as any).isMigratedToSosProf ? 'Migré vers SOS Prof' : 'To SOS Prof'}</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2310,6 +2334,17 @@ export default function CRMEliosPage() {
 
             {/* CORPS PANORAMIQUE 3 COLONNES DEVANT L'OPERATEUR (COLONNE GAUCHE COMPACTÉE POUR FAVORISER LE CENTRE) */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              {(selectedLead as any).isMigratedToSosProf && (
+                <div className="mb-4 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-between text-xs text-purple-700 dark:text-purple-300">
+                  <span className="flex items-center gap-2 font-medium">
+                    <span className="text-base">🚀</span>
+                    <span>Ce prospect a été migré définitivement vers le <b>CRM SOS Prof</b>.</span>
+                  </span>
+                  <a href="/crm-sos-prof" className="px-2.5 py-1 rounded-lg bg-purple-600 text-white font-bold text-[11px] hover:bg-purple-700 transition">
+                    Accéder à CRM SOS Prof →
+                  </a>
+                </div>
+              )}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
                 
                 {/* COLONNE 1 : SIDEBAR COMPACTÉE (lg:col-span-2) AVEC AVATAR CERCLE OFFICIEL DU CRM */}
@@ -2398,6 +2433,48 @@ export default function CRMEliosPage() {
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
                       ● Actif
                     </span>
+                  </div>
+
+                  {/* Bannière To SOS Prof avec switch iOS (MÊME TYPOGRAPHIE NON-GRAS SANS POINT) */}
+                  <div 
+                    className={`border rounded-xl p-2.5 sm:p-3 flex items-center justify-between transition-all duration-200 shadow-2xs ${
+                      editToSosProf 
+                        ? 'bg-purple-500/10 border-purple-500/40 ring-1 ring-purple-500/30' 
+                        : 'bg-[var(--hover)]/60 border-[var(--line)]'
+                    }`}
+                  >
+                    <div className="flex flex-col pr-2 min-w-0">
+                      <span className={`text-xs sm:text-sm font-medium tracking-tight truncate ${
+                        editToSosProf ? 'text-purple-700 dark:text-purple-400 font-semibold' : 'text-[var(--ink)]'
+                      }`}>
+                        To SOS Prof
+                      </span>
+                      <span className="text-[10px] text-[var(--ink3)] leading-tight mt-0.5">
+                        {(selectedLead as any).isMigratedToSosProf
+                          ? 'Ce prospect est déjà migré vers le CRM SOS Prof'
+                          : editToSosProf
+                            ? 'Ce prospect sera migré vers le CRM SOS Prof lors de l\'enregistrement'
+                            : 'Activer pour migrer ce prospect vers le CRM SOS Prof'}
+                      </span>
+                    </div>
+                    {/* Bouton switch style iPhone */}
+                    <button
+                      type="button"
+                      role="switch"
+                      disabled={Boolean((selectedLead as any).isMigratedToSosProf)}
+                      aria-checked={editToSosProf}
+                      onClick={() => setEditToSosProf(!editToSosProf)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-purple-500/30 ${
+                        editToSosProf ? 'bg-purple-600' : 'bg-[#E9E9EA] dark:bg-slate-600'
+                      } ${(selectedLead as any).isMigratedToSosProf ? 'opacity-80 cursor-default' : 'cursor-pointer'}`}
+                      title={(selectedLead as any).isMigratedToSosProf ? "Déjà migré vers CRM SOS Prof" : editToSosProf ? "To SOS Prof : Activé (Migrera vers SOS Prof)" : "To SOS Prof : Désactivé"}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          editToSosProf ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
                   </div>
 
                   {/* Grille des champs de saisie (2 colonnes) */}
@@ -2907,6 +2984,19 @@ export default function CRMEliosPage() {
             : 'fr'
         }
         onSent={() => showToast('WhatsApp ouvert avec succès !')}
+      />
+
+      {/* Modale d'importation Excel / CSV ultra-standardisée */}
+      <CrmImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        crmType="elios"
+        crmName="CRM Elios Academy"
+        activeUser={activeUser}
+        onSuccess={() => {
+          mutate();
+          showToast('Importation terminée avec succès !');
+        }}
       />
 
       {/* Toast Notification */}

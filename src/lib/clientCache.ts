@@ -19,7 +19,7 @@ export function getClientCachedLeads(key: string): any[] | undefined {
 
 export function removeClientCachedLead(targetId: string, customId?: string) {
   if (typeof window === 'undefined' || !targetId) return;
-  const keys = ['elios_cached_leads', 'formatic_cached_leads'];
+  const keys = ['elios_cached_leads', 'formatic_cached_leads', 'sos_prof_cached_leads'];
   for (const key of keys) {
     try {
       const raw = sessionStorage.getItem(key);
@@ -38,7 +38,7 @@ export function removeClientCachedLead(targetId: string, customId?: string) {
 }
 
 export function setClientCachedLeads(key: string, data: any[]) {
-  if (typeof window === 'undefined' || !Array.isArray(data) || data.length === 0) return;
+  if (typeof window === 'undefined' || !Array.isArray(data)) return;
   try {
     sessionStorage.setItem(key, JSON.stringify(data));
   } catch (err) {
@@ -65,7 +65,7 @@ export function prependClientCachedLead(key: string, newLead: any) {
 export function updateClientCachedLead(updatedLead: any) {
   if (typeof window === 'undefined' || !updatedLead) return;
   const leadId = updatedLead._id ? String(updatedLead._id) : updatedLead.id;
-  const keys = ['elios_cached_leads', 'formatic_cached_leads'];
+  const keys = ['elios_cached_leads', 'formatic_cached_leads', 'sos_prof_cached_leads'];
   for (const key of keys) {
     try {
       const raw = sessionStorage.getItem(key);

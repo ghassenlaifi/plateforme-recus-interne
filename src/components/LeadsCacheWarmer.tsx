@@ -15,6 +15,9 @@ export function LeadsCacheWarmer() {
         setTimeout(() => {
           fetch('/api/leads/formatic', { priority: 'low' } as any).catch(() => {});
         }, 1000);
+        setTimeout(() => {
+          fetch('/api/leads/sos-prof', { priority: 'low' } as any).catch(() => {});
+        }, 2000);
       } catch {}
     };
 

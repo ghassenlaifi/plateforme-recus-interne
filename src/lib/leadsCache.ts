@@ -14,6 +14,7 @@ const globalStore = global as unknown as {
   __leadsMemoryCache?: {
     elios?: CacheEntry;
     formatic?: CacheEntry;
+    'sos-prof'?: CacheEntry;
   };
 };
 
@@ -24,7 +25,7 @@ if (!globalStore.__leadsMemoryCache) {
 const cache = globalStore.__leadsMemoryCache;
 const TTL_MS = 15 * 1000; // 15 secondes de fraîcheur en mémoire vive
 
-export function getCachedLeads(crmType: 'elios' | 'formatic'): { data: any[] | null; isStale: boolean } {
+export function getCachedLeads(crmType: 'elios' | 'formatic' | 'sos-prof'): { data: any[] | null; isStale: boolean } {
   const entry = cache[crmType];
   if (!entry || !entry.data || entry.data.length === 0) {
     return { data: null, isStale: true };
@@ -39,7 +40,7 @@ export function getCachedLeads(crmType: 'elios' | 'formatic'): { data: any[] | n
   return { data: null, isStale: true };
 }
 
-export function setCachedLeads(crmType: 'elios' | 'formatic', data: any[]) {
+export function setCachedLeads(crmType: 'elios' | 'formatic' | 'sos-prof', data: any[]) {
   cache[crmType] = {
     data,
     timestamp: Date.now(),
@@ -47,10 +48,11 @@ export function setCachedLeads(crmType: 'elios' | 'formatic', data: any[]) {
   };
 }
 
-export function invalidateLeadsCache(crmType?: 'elios' | 'formatic' | 'all') {
+export function invalidateLeadsCache(crmType?: 'elios' | 'formatic' | 'sos-prof' | 'all') {
   if (!crmType || crmType === 'all') {
     delete cache.elios;
     delete cache.formatic;
+    delete cache['sos-prof'];
   } else {
     delete cache[crmType];
   }
@@ -59,7 +61,7 @@ export function invalidateLeadsCache(crmType?: 'elios' | 'formatic' | 'all') {
 /**
  * Mise à jour atomique dans le cache mémoire pour garantir une cohérence instantanée
  */
-export function updateCachedLeadInPlace(crmType: 'elios' | 'formatic', updatedLead: any) {
+export function updateCachedLeadInPlace(crmType: 'elios' | 'formatic' | 'sos-prof', updatedLead: any) {
   const entry = cache[crmType];
   if (!entry || !Array.isArray(entry.data)) return;
 
@@ -81,7 +83,7 @@ export function updateCachedLeadInPlace(crmType: 'elios' | 'formatic', updatedLe
 /**
  * Suppression atomique dans le cache mémoire
  */
-export function removeCachedLeadInPlace(crmType: 'elios' | 'formatic', targetId: string, customId?: string) {
+export function removeCachedLeadInPlace(crmType: 'elios' | 'formatic' | 'sos-prof', targetId: string, customId?: string) {
   const entry = cache[crmType];
   if (!entry || !Array.isArray(entry.data)) return;
 
@@ -99,6 +101,7 @@ export function removeCachedLeadInPlace(crmType: 'elios' | 'formatic', targetId:
 export function removeCachedLeadEverywhere(targetId: string, customId?: string) {
   removeCachedLeadInPlace('elios', targetId, customId);
   removeCachedLeadInPlace('formatic', targetId, customId);
+  removeCachedLeadInPlace('sos-prof', targetId, customId);
 }
 
 

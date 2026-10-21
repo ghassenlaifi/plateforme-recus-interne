@@ -7,7 +7,7 @@
 const SYNC_CHANNEL_NAME = 'elios_crm_sync_channel';
 const SYNC_STORAGE_KEY = 'elios_crm_sync_pulse';
 
-export type CrmTarget = 'elios' | 'formatic' | 'all';
+export type CrmTarget = 'elios' | 'formatic' | 'sos-prof' | 'all';
 
 /**
  * Diffuse un signal de synchronisation instantané à tous les onglets ouverts
@@ -39,7 +39,7 @@ export function broadcastCrmChange(crmType: CrmTarget = 'all') {
  * Souscrit un composant aux signaux de synchronisation en temps réel
  */
 export function subscribeToCrmSync(
-  crmType: 'elios' | 'formatic',
+  crmType: 'elios' | 'formatic' | 'sos-prof',
   callback: () => void
 ): () => void {
   if (typeof window === 'undefined') return () => {};

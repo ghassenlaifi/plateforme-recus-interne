@@ -25,6 +25,7 @@ import {
   RAPPELS_ELIGIBLE_STATUSES
 } from '@/types/crm';
 import { WhatsAppDispatchModal } from '@/components/WhatsAppDispatchModal';
+import { CrmImportModal } from '@/components/CrmImportModal';
 import { PaymentMethod, WhatsAppTemplates, DEFAULT_PAYMENT_METHODS, DEFAULT_WHATSAPP_TEMPLATES } from '@/types/settings';
 import { buildApprovedProspectMessage, buildNaMessage } from '@/lib/whatsappHelper';
 import { formatPhone, formatPhoneInput, extractPhoneDigits, normalizePhoneForUrl, isSamePhone, isValidPhone, extractPhoneData, matchesPhoneQuery } from '@/lib/phoneUtils';
@@ -52,6 +53,7 @@ const IC = {
   lightning: <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>,
   plus: <path d="M12 5v14M5 12h14"/>,
   dl: <path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>,
+  upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>,
   chat: <path d="M4 5h16v11H9l-5 4z"/>,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/>,
   phone: <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>,
@@ -105,6 +107,7 @@ export default function CRMFormaticPage() {
 
   // Modales & Fiche Prospect
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
   const [lastInteractedLeadId, setLastInteractedLeadId] = useState<string | null>(null);
 
@@ -291,6 +294,7 @@ export default function CRMFormaticPage() {
   const [editStaff, setEditStaff] = useState('');
   const [editFamilyGroup, setEditFamilyGroup] = useState('');
   const [editToElios, setEditToElios] = useState(false);
+  const [editToSosProf, setEditToSosProf] = useState(false);
   const [editErr, setEditErr] = useState('');
   const [isDeleteArmed, setIsDeleteArmed] = useState(false);
   const [isDeletingLead, setIsDeletingLead] = useState(false);
@@ -416,6 +420,7 @@ export default function CRMFormaticPage() {
         const initialStaff = selectedLead.staff || selectedLead.lastModifiedBy || '';
         const initialFamily = selectedLead.familyGroup || '';
         const initialToElios = Boolean(selectedLead.toElios);
+        const initialToSosProf = Boolean(selectedLead.toSosProf || (selectedLead as any).isMigratedToSosProf);
 
         setEditFirst(fName);
         setEditLast(lName);
@@ -429,6 +434,7 @@ export default function CRMFormaticPage() {
         setEditStaff(initialStaff);
         setEditFamilyGroup(initialFamily);
         setEditToElios(initialToElios);
+        setEditToSosProf(initialToSosProf);
         setEditErr('');
         setNewNoteText('');
         setEditingNoteId(null);
@@ -447,7 +453,8 @@ export default function CRMFormaticPage() {
           status: rawStatus,
           staff: initialStaff,
           familyGroup: initialFamily,
-          toElios: initialToElios
+          toElios: initialToElios,
+          toSosProf: initialToSosProf
         });
       } else {
         // La même fiche est déjà ouverte : réactivité immédiate sur statut et notes si externe
@@ -477,12 +484,13 @@ export default function CRMFormaticPage() {
       editSection !== initialFormValues.section ||
       editStatus !== initialFormValues.status ||
       editFamilyGroup !== initialFormValues.familyGroup ||
-      editToElios !== initialFormValues.toElios
+      editToElios !== initialFormValues.toElios ||
+      editToSosProf !== initialFormValues.toSosProf
     );
     const hasPendingNewNote = Boolean(newNoteText.trim().length > 0);
     const hasPendingNoteEdit = Boolean(editingNoteId && editingNoteText.trim().length > 0);
     return formFieldsChanged || hasPendingNewNote || hasPendingNoteEdit;
-  }, [initialFormValues, editFirst, editLast, editPhone, editOffer, editAmount, editSource, editGrade, editSection, editStatus, editFamilyGroup, editToElios, newNoteText, editingNoteId, editingNoteText]);
+  }, [initialFormValues, editFirst, editLast, editPhone, editOffer, editAmount, editSource, editGrade, editSection, editStatus, editFamilyGroup, editToElios, editToSosProf, newNoteText, editingNoteId, editingNoteText]);
 
   // Écoute de la touche Échap pour la fermeture sécurisée
   useEffect(() => {
@@ -935,6 +943,7 @@ export default function CRMFormaticPage() {
       staff: selectedLead.staff || activeUser || 'Non assigné',
       familyGroup: editFamilyGroup.trim(),
       toElios: editToElios,
+          toSosProf: editToSosProf,
       updatedAt: nowIso,
       lastModifiedBy: operatorName
     };
@@ -946,7 +955,7 @@ export default function CRMFormaticPage() {
       recordCrmActivity('operation', activeUser);
     }
 
-    if (editToElios) {
+    if (editToElios || editToSosProf) {
       mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
     } else {
       mutate(
@@ -962,7 +971,7 @@ export default function CRMFormaticPage() {
 
     setSelectedLead(null);
     setShowUnsavedConfirm(false);
-    showToast(editToElios ? 'Prospect migré vers le CRM Elios avec succès !' : 'Prospect mis à jour avec succès');
+    showToast(editToElios ? 'Prospect migré vers le CRM Elios avec succès !' : editToSosProf ? 'Prospect migré vers SOS Prof avec succès !' : 'Prospect mis à jour avec succès');
 
     const shouldTrigger = isStatusChanged && isEligibleWaStatus;
     if (shouldTrigger) {
@@ -1346,6 +1355,10 @@ export default function CRMFormaticPage() {
             </div>
           </div>
           <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
+            <button className="btn flex-1 sm:flex-initial text-xs sm:text-sm py-2 px-3.5" type="button" onClick={() => setIsImportModalOpen(true)} title="Importer un fichier Excel ou CSV">
+              <svg className="i" viewBox="0 0 24 24">{IC.upload}</svg>
+              <span>Importer Excel</span>
+            </button>
             <button className="btn flex-1 sm:flex-initial text-xs sm:text-sm py-2 px-3.5" type="button" onClick={handleExportExcel} title="Exporter la base Excel">
               <svg className="i" viewBox="0 0 24 24">{IC.dl}</svg>
               <span>Exporter Excel</span>
@@ -2448,6 +2461,13 @@ export default function CRMFormaticPage() {
                       <span>{(selectedLead as any).isMigratedToElios ? 'Migré vers Elios' : 'To Elios'}</span>
                     </span>
                   )}
+
+                  {/* Badge To SOS Prof si actif ou migré */}
+                  {(editToSosProf || (selectedLead as any).isMigratedToSosProf || selectedLead.toSosProf) && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-500/15 text-purple-600 border border-purple-500/30 flex items-center gap-1 shadow-2xs">
+                      <span>{(selectedLead as any).isMigratedToSosProf ? 'Migré vers SOS Prof' : 'To SOS Prof'}</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2472,6 +2492,18 @@ export default function CRMFormaticPage() {
                   </span>
                   <a href="/crm-elios" className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-bold text-[11px] hover:bg-indigo-700 transition">
                     Accéder à CRM Elios →
+                  </a>
+                </div>
+              )}
+
+              {(selectedLead as any).isMigratedToSosProf && (
+                <div className="mb-4 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-between text-xs text-purple-700 dark:text-purple-300">
+                  <span className="flex items-center gap-2 font-medium">
+                    <span className="text-base">🚀</span>
+                    <span>Ce prospect a été migré définitivement vers le <b>CRM SOS Prof</b>.</span>
+                  </span>
+                  <a href="/crm-sos-prof" className="px-2.5 py-1 rounded-lg bg-purple-600 text-white font-bold text-[11px] hover:bg-purple-700 transition">
+                    Accéder à CRM SOS Prof →
                   </a>
                 </div>
               )}
@@ -2555,38 +2587,97 @@ export default function CRMFormaticPage() {
 
                 {/* COLONNE 2 : FORMULAIRE PRINCIPAL ÉLARGI (lg:col-span-6) AVEC PETIT BOUTON TO ELIOS STYLISÉ */}
                 <div className="lg:col-span-6 space-y-3.5">
-                  {/* Bannière profil lié avec petit bouton TO ELIOS interactif élégant */}
-                  <div className="bg-[var(--hover)]/70 border border-[var(--line)] rounded-xl py-2.5 px-3.5 flex items-center justify-between shadow-2xs">
-                    <div className="flex flex-col pr-2">
-                      <span className="text-xs sm:text-sm font-bold text-[var(--ink)] tracking-tight">
-                        To Elios
-                      </span>
-                      <span className="text-[10px] text-[var(--ink3)]">
-                        {(selectedLead as any).isMigratedToElios
-                          ? 'Ce prospect est déjà migré vers le CRM Elios'
-                          : editToElios
-                            ? 'Ce prospect sera migré vers le CRM Elios lors de l\'enregistrement'
-                            : 'Activer pour migrer ce prospect vers le CRM Elios'}
-                      </span>
-                    </div>
-                    {/* Bouton switch style iPhone (Hotspot iOS) */}
-                    <button
-                      type="button"
-                      role="switch"
-                      disabled={Boolean((selectedLead as any).isMigratedToElios)}
-                      aria-checked={editToElios}
-                      onClick={() => setEditToElios(!editToElios)}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500/30 ${
-                        editToElios ? 'bg-[#34C759]' : 'bg-[#E9E9EA] dark:bg-slate-600'
-                      } ${(selectedLead as any).isMigratedToElios ? 'opacity-80 cursor-default' : 'cursor-pointer'}`}
-                      title={(selectedLead as any).isMigratedToElios ? "Déjà migré vers CRM Elios" : editToElios ? "To Elios : Activé (Migrera vers Elios)" : "To Elios : Désactivé"}
+                  {/* Bannières de migration Cross-CRM : TO ELIOS & TO SOS PROF (CÔTE À CÔTE, RESPONSIVE, MÊME TYPOGRAPHIE NON-GRAS) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                    {/* 1. Carte TO ELIOS (Identité Ambre Elios) */}
+                    <div 
+                      className={`border rounded-xl p-2.5 sm:p-3 flex items-center justify-between transition-all duration-200 shadow-2xs ${
+                        editToElios 
+                          ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-500/30' 
+                          : 'bg-[var(--hover)]/60 border-[var(--line)]'
+                      }`}
                     >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                          editToElios ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
+                      <div className="flex flex-col pr-2 min-w-0">
+                        <span className={`text-xs sm:text-sm font-medium tracking-tight truncate ${
+                          editToElios ? 'text-amber-700 dark:text-amber-400 font-semibold' : 'text-[var(--ink)]'
+                        }`}>
+                          To Elios
+                        </span>
+                        <span className="text-[10px] text-[var(--ink3)] leading-tight mt-0.5 line-clamp-1">
+                          {(selectedLead as any).isMigratedToElios
+                            ? 'Déjà migré vers Elios'
+                            : editToElios
+                              ? 'Migrera vers CRM Elios'
+                              : 'Migrer vers CRM Elios'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        disabled={Boolean((selectedLead as any).isMigratedToElios)}
+                        aria-checked={editToElios}
+                        onClick={() => {
+                          const nextVal = !editToElios;
+                          setEditToElios(nextVal);
+                          if (nextVal) setEditToSosProf(false);
+                        }}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-amber-500/30 ${
+                          editToElios ? 'bg-amber-500' : 'bg-[#E9E9EA] dark:bg-slate-600'
+                        } ${(selectedLead as any).isMigratedToElios ? 'opacity-80 cursor-default' : 'cursor-pointer'}`}
+                        title={(selectedLead as any).isMigratedToElios ? "Déjà migré vers CRM Elios" : editToElios ? "To Elios : Activé (Migrera vers Elios)" : "To Elios : Désactivé"}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            editToElios ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* 2. Carte TO SOS PROF (Identité Violet SOS Prof) */}
+                    <div 
+                      className={`border rounded-xl p-2.5 sm:p-3 flex items-center justify-between transition-all duration-200 shadow-2xs ${
+                        editToSosProf 
+                          ? 'bg-purple-500/10 border-purple-500/40 ring-1 ring-purple-500/30' 
+                          : 'bg-[var(--hover)]/60 border-[var(--line)]'
+                      }`}
+                    >
+                      <div className="flex flex-col pr-2 min-w-0">
+                        <span className={`text-xs sm:text-sm font-medium tracking-tight truncate ${
+                          editToSosProf ? 'text-purple-700 dark:text-purple-400 font-semibold' : 'text-[var(--ink)]'
+                        }`}>
+                          To SOS Prof
+                        </span>
+                        <span className="text-[10px] text-[var(--ink3)] leading-tight mt-0.5 line-clamp-1">
+                          {(selectedLead as any).isMigratedToSosProf
+                            ? 'Déjà migré vers SOS Prof'
+                            : editToSosProf
+                              ? 'Migrera vers SOS Prof'
+                              : 'Migrer vers SOS Prof'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        disabled={Boolean((selectedLead as any).isMigratedToSosProf)}
+                        aria-checked={editToSosProf}
+                        onClick={() => {
+                          const nextVal = !editToSosProf;
+                          setEditToSosProf(nextVal);
+                          if (nextVal) setEditToElios(false);
+                        }}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-purple-500/30 ${
+                          editToSosProf ? 'bg-purple-600' : 'bg-[#E9E9EA] dark:bg-slate-600'
+                        } ${(selectedLead as any).isMigratedToSosProf ? 'opacity-80 cursor-default' : 'cursor-pointer'}`}
+                        title={(selectedLead as any).isMigratedToSosProf ? "Déjà migré vers CRM SOS Prof" : editToSosProf ? "To SOS Prof : Activé (Migrera vers SOS Prof)" : "To SOS Prof : Désactivé"}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            editToSosProf ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Grille des champs de saisie (2 colonnes) */}
@@ -3094,6 +3185,19 @@ export default function CRMFormaticPage() {
             : 'fr'
         }
         onSent={() => showToast('WhatsApp ouvert avec succès !')}
+      />
+
+      {/* Modale d'importation Excel / CSV ultra-standardisée */}
+      <CrmImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        crmType="formatic"
+        crmName="CRM Formatic"
+        activeUser={activeUser}
+        onSuccess={() => {
+          mutate();
+          showToast('Importation terminée avec succès !');
+        }}
       />
 
       {/* Notification Toast */}

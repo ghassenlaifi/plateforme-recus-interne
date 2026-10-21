@@ -55,9 +55,9 @@
   --ped: var(--brand-amber-100);
   --ped-s: var(--brand-amber-10);
 
-  /* Modules Hub : Équipe (Tâches & Opérateurs) */
-  --team: var(--brand-navy-80);
-  --team-s: var(--brand-navy-10);
+  /* Modules Hub : Équipe (Tâches & Opérateurs - Fuchsia / Baie Magenta Pro) */
+  --team: #A21CAF;
+  --team-s: #FDF4FF;
 
   --warn: var(--brand-amber-100);
   --warn-s: var(--brand-amber-10);
@@ -83,6 +83,14 @@
   --cv: #FCDBB0, #F8C374 55%, #F49E1F;
 }
 
+[data-crm="sos-prof"] {
+  --acc: #7C3AED;
+  --acc-s: #F5F3FF;
+  --pri: #7C3AED;
+  --onpri: #fff;
+  --cv: #5EEAD4, #A78BFA 50%, #7C3AED;
+}
+
 [data-page="sessions"] {
   --acc: var(--brand-navy-100);
   --acc-s: var(--brand-navy-10);
@@ -102,8 +110,8 @@
   --brand: var(--brand-navy-40);
   --shadow: 0 1px 2px rgba(0, 0, 0, .4);
   --shadow2: 0 14px 34px rgba(0, 0, 0, .55);
-  --team: var(--brand-navy-60);
-  --team-s: rgba(35, 53, 110, 0.35);
+  --team: #E879F9;
+  --team-s: rgba(162, 28, 175, 0.22);
   --fin: var(--brand-green-60);
   --fin-s: rgba(123, 162, 91, 0.22);
   --pri: var(--brand-green-80);
@@ -129,6 +137,14 @@
   --acc-s: rgba(244, 158, 31, 0.22);
   --pri: var(--brand-amber-60);
   --onpri: #2A1A05;
+}
+
+[data-theme="dark"][data-crm="sos-prof"] {
+  --acc: #A78BFA;
+  --acc-s: rgba(167, 139, 250, 0.2);
+  --pri: #8B5CF6;
+  --onpri: #FFFFFF;
+  --cv: #115E59, #6D28D9 50%, #8B5CF6;
 }
 
 * { box-sizing: border-box; }
@@ -365,6 +381,8 @@ svg.i {
 }
 [data-crm="formatic"] .cover { background: linear-gradient(90deg, #B9AEFF, #8FA8FF 55%, #E3DCFF); }
 [data-crm="elios"] .cover { background: linear-gradient(90deg, #FFD199, #FFB870 55%, #FFE7C4); }
+[data-crm="sos-prof"] .cover { background: linear-gradient(90deg, #5EEAD4, #C4B5FD 50%, #A855F7); }
+[data-theme="dark"][data-crm="sos-prof"] .cover { background: linear-gradient(90deg, #0F766E, #6D28D9 50%, #7C3AED); }
 .cover svg {
   position: absolute;
   inset: 0;
@@ -406,6 +424,9 @@ svg.i {
 .bento .card.w {
   grid-column: span 6;
   min-height: 270px;
+}
+.bento .card.com {
+  grid-column: span 4;
 }
 .bento .card:hover {
   transform: translateY(-3px);
@@ -508,6 +529,11 @@ svg.i {
 .ped { --c: var(--ped); --s: var(--ped-s); }
 .team { --c: var(--team); --s: var(--team-s); }
 .card[data-id="crm"] { --c: var(--brand-amber-100); --s: var(--brand-amber-10); }
+.card[data-id="formatic"] { --c: var(--brand-navy-100); --s: var(--brand-navy-10); }
+.card[data-id="sos-prof"] { --c: #7C3AED; --s: #F5F3FF; }
+[data-theme="dark"] .card[data-id="sos-prof"] { --c: #A78BFA; --s: rgba(167, 139, 250, 0.18); }
+.card[data-id="taches"] { --c: #A21CAF; --s: #FDF4FF; }
+[data-theme="dark"] .card[data-id="taches"] { --c: #E879F9; --s: rgba(162, 28, 175, 0.22); }
 
 /* Palette de commande / Recherche rapide */
 .pal {
@@ -596,6 +622,7 @@ svg.i {
 }
 [data-crm="elios"] .pageicon { color: var(--acc); }
 [data-crm="formatic"] .pageicon { color: var(--acc); }
+[data-crm="sos-prof"] .pageicon { color: var(--acc); }
 .pageicon svg {
   width: 28px;
   height: 28px;
@@ -3886,21 +3913,21 @@ input:disabled, select:disabled, textarea:disabled {
    MODULE TÂCHES ET ÉQUIPE (Couleur Signature: Royal Indigo)
    ======================================================== */
 [data-page="tasks"], .theme-tasks {
-  --acc: #4F46E5;
-  --acc-s: #EEF2FF;
-  --pri: #4F46E5;
+  --acc: #A21CAF;
+  --acc-s: #FDF4FF;
+  --pri: #A21CAF;
   --onpri: #fff;
-  --team: #4F46E5;
-  --team-s: #EEF2FF;
+  --team: #A21CAF;
+  --team-s: #FDF4FF;
 }
 
 [data-theme="dark"][data-page="tasks"], [data-theme="dark"] .theme-tasks {
-  --acc: #818CF8;
-  --acc-s: rgba(99, 102, 241, 0.18);
-  --pri: #6366F1;
+  --acc: #E879F9;
+  --acc-s: rgba(162, 28, 175, 0.22);
+  --pri: #E879F9;
   --onpri: #fff;
-  --team: #818CF8;
-  --team-s: rgba(99, 102, 241, 0.18);
+  --team: #E879F9;
+  --team-s: rgba(162, 28, 175, 0.22);
 }
 
 .task-card-list {
@@ -4096,10 +4123,10 @@ input:disabled, select:disabled, textarea:disabled {
 }
 
 [data-page="tasks"] .cover {
-  background: linear-gradient(90deg, #A5B4FC, #C7D2FE 55%, #DDD6FE) !important;
+  background: linear-gradient(90deg, #F0ABFC, #E879F9 55%, #F472B6) !important;
 }
 [data-theme="dark"][data-page="tasks"] .cover {
-  background: linear-gradient(90deg, #3730A3, #312E81 55%, #4C1D95) !important;
+  background: linear-gradient(90deg, #701A75, #86198F 55%, #9D174D) !important;
   filter: brightness(0.8);
 }
 
@@ -4857,4 +4884,14 @@ input:disabled, select:disabled, textarea:disabled {
 [data-crm="formatic"] .card-last-modified {
   background: color-mix(in srgb, #5B45E0 9%, var(--card)) !important;
   border-left: 3px solid #5B45E0 !important;
+}
+
+[data-crm="sos-prof"] .tr.is-last-modified {
+  background: color-mix(in srgb, #7C3AED 9%, var(--card)) !important;
+  box-shadow: inset 3px 0 0 #7C3AED !important;
+}
+
+[data-crm="sos-prof"] .card-last-modified {
+  background: color-mix(in srgb, #7C3AED 9%, var(--card)) !important;
+  border-left: 3px solid #7C3AED !important;
 }

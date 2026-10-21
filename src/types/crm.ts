@@ -38,7 +38,12 @@ export interface LeadItem {
   toElios?: boolean;
   fromFormatic?: boolean;
   isMigratedToElios?: boolean;
-  crmType: 'elios' | 'formatic';
+  toSosProf?: boolean;
+  fromSosProf?: boolean;
+  fromElios?: boolean;
+  isMigratedToSosProf?: boolean;
+  assignedTeachers?: string[];
+  crmType: 'elios' | 'formatic' | 'sos-prof';
 }
 
 // -------------------------------------------------------------
@@ -172,6 +177,20 @@ export const FORMATIC_CLASSES_WITHOUT_SECTION = CLASSES_WITHOUT_SECTION;
 export const FORMATIC_SECTIONS = ELIOS_SECTIONS;
 export const FORMATIC_SOURCES = ELIOS_SOURCES;
 export const FORMATIC_OFFERS = ELIOS_OFFERS;
+
+// Alias SOS Prof (règles et filtres strictement identiques)
+export const SOS_PROF_STATUSES = ELIOS_STATUSES;
+export const SOS_PROF_STATUS_COLORS = ELIOS_STATUS_COLORS;
+export const SOS_PROF_CLASSES = ELIOS_CLASSES;
+export const SOS_PROF_CLASSES_WITHOUT_SECTION = CLASSES_WITHOUT_SECTION;
+export const SOS_PROF_SECTIONS = ELIOS_SECTIONS;
+export const SOS_PROF_SOURCES = [
+  ...ELIOS_SOURCES,
+  "From Elios"
+] as const;
+export const SOS_PROF_OFFERS = ELIOS_OFFERS;
+export const getSosProfStatusColor = getEliosStatusColor;
+
 
 export const RAPPELS_ELIGIBLE_STATUSES = [
   'N/A',

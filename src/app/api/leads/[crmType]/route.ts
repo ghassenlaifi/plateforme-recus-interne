@@ -17,11 +17,11 @@ const NO_CACHE_HEADERS = {
 export async function GET(request: Request, { params }: { params: Promise<{ crmType: string }> }) {
   const { crmType } = await params;
   try {
-    if (!['elios', 'formatic'].includes(crmType)) {
+    if (!['elios', 'formatic', 'sos-prof'].includes(crmType)) {
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 
-    const validCrm = crmType as 'elios' | 'formatic';
+    const validCrm = crmType as 'elios' | 'formatic' | 'sos-prof';
     const url = new URL(request.url);
     const forceRefresh = url.searchParams.get('refresh') === '1' || url.searchParams.get('force') === '1';
     if (forceRefresh) {
@@ -38,19 +38,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
     await connectMongo();
 
     if (crmType === 'formatic') {
-      // Pour Formatic : requêtes parallèles optimisées avec batchSize et tri chronologique unifié
-      const [formaticLeads, migratedLeads] = await Promise.all([
+      // Pour Formatic : requêtes parallèles incluant prospects migrés vers Elios ou SOS Prof
+      const [formaticLeads, migratedToElios, migratedToSos] = await Promise.all([
         Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
-        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
+        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
+        Lead.find({ crmType: 'sos-prof', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
       ]);
 
-      const formattedMigrated = migratedLeads.map((l: any) => ({
+      const formattedElios = migratedToElios.map((l: any) => ({
         ...l,
         isMigratedToElios: true,
         toElios: true
       }));
 
-      const result = [...formaticLeads, ...formattedMigrated];
+      const formattedSos = migratedToSos.map((l: any) => ({
+        ...l,
+        isMigratedToSosProf: true,
+        toSosProf: true
+      }));
+
+      const result = [...formaticLeads, ...formattedElios, ...formattedSos];
       result.sort((a, b) => {
         const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
         const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
@@ -64,9 +71,36 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
     }
 
-    // Sort by creation date so new leads are strictly on top
-    const leads = await Lead.find({ crmType }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
-    setCachedLeads('elios', leads);
+    if (crmType === 'elios') {
+      // Pour Elios : requêtes parallèles incluant prospects migrés vers SOS Prof
+      const [eliosLeads, migratedToSos] = await Promise.all([
+        Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
+        Lead.find({ crmType: 'sos-prof', fromElios: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
+      ]);
+
+      const formattedSos = migratedToSos.map((l: any) => ({
+        ...l,
+        isMigratedToSosProf: true,
+        toSosProf: true
+      }));
+
+      const result = [...eliosLeads, ...formattedSos];
+      result.sort((a, b) => {
+        const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        if (timeB !== timeA) return timeB - timeA;
+        const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+        const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+        if (idNumB !== idNumA) return idNumB - idNumA;
+        return String(b.id || b._id).localeCompare(String(a.id || a._id));
+      });
+      setCachedLeads('elios', result);
+      return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
+    }
+
+    // CRM SOS Prof
+    const leads = await Lead.find({ crmType: 'sos-prof' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
+    setCachedLeads('sos-prof', leads);
     return NextResponse.json(leads, { headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Failed to fetch leads:', error);
@@ -79,7 +113,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
   try {
     await connectMongo();
     
-    if (!['elios', 'formatic'].includes(crmType)) {
+    if (!['elios', 'formatic', 'sos-prof'].includes(crmType)) {
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 
@@ -93,13 +127,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     if (leadStatus === 'Converti') leadStatus = 'Approved';
 
     const isToEliosActive = Boolean(body.toElios);
-    const targetCrm = (crmType === 'formatic' && isToEliosActive) ? 'elios' : crmType;
+    const isToSosProfActive = Boolean(body.toSosProf);
+    
+    let targetCrm = crmType;
+    if (crmType === 'formatic' && isToEliosActive) targetCrm = 'elios';
+    if ((crmType === 'formatic' || crmType === 'elios') && isToSosProfActive) targetCrm = 'sos-prof';
 
-    // Règle d'intégrité absolue : INTERDICTION DES DOUBLONS DE NUMÉRO DE TÉLÉPHONE
+    // Règle d'intégrité absolue : INTERDICTION DES DOUBLONS DE NUMÉRO DE TÉLÉPHONE DANS LE CRM CIBLE
     const phoneRegex = buildPhoneMongoRegex(cleanPhone);
 
-    // 1. Règle magistrale Cross-CRM : Interdiction stricte si le numéro est déjà dans CRM Elios
-    if (crmType === 'formatic') {
+    // 1. Règle Cross-CRM Formatic -> Elios
+    if (crmType === 'formatic' && !isToEliosActive && !isToSosProfActive) {
       const eliosConflict = await Lead.findOne({ crmType: 'elios', phone: phoneRegex }).lean();
       if (eliosConflict) {
         const doc = eliosConflict as any;
@@ -133,7 +171,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     if (existingDuplicate) {
       const dupName = (existingDuplicate as any).name || (existingDuplicate as any).phone;
       const dupStatus = (existingDuplicate as any).status || 'Lead';
-      const crmLabel = targetCrm === 'elios' ? 'CRM Elios' : 'CRM Formatic';
+      const crmLabel = targetCrm === 'elios' ? 'CRM Elios' : targetCrm === 'sos-prof' ? 'CRM SOS Prof' : 'CRM Formatic';
       return NextResponse.json(
         { 
           error: `Ce numéro de téléphone est déjà enregistré pour le prospect "${dupName}" (${dupStatus}). Les doublons sont strictement interdits dans ${crmLabel}.`,
@@ -149,12 +187,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       );
     }
 
-    // Si nouveau prospect créé avec To Elios activé : création directe dans Elios (MIGRATION, zéro copie dans Formatic)
-    if (crmType === 'formatic' && isToEliosActive) {
-
-      // Attribution d'un ID PRO pour Elios
+    // Helper pour générer un ID séquentiel (PRO-XXXXX)
+    const generateSequentialId = async (targetType: string) => {
       let nextIdNumber = 1;
-      const allLeadsWithId = await Lead.find({ crmType: 'elios', id: /^PRO-\d+$/ }, { id: 1 }).lean();
+      const allLeadsWithId = await Lead.find({ crmType: targetType, id: /^PRO-\d+$/ }, { id: 1 }).lean();
       if (allLeadsWithId && allLeadsWithId.length > 0) {
         let maxNum = 0;
         for (const item of allLeadsWithId) {
@@ -163,8 +199,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
         }
         nextIdNumber = maxNum + 1;
       }
-      const newEliosId = `PRO-${nextIdNumber.toString().padStart(5, '0')}`;
+      return `PRO-${nextIdNumber.toString().padStart(5, '0')}`;
+    };
 
+    // Cas A : Création directe dans Elios depuis Formatic (To Elios)
+    if (crmType === 'formatic' && isToEliosActive) {
+      const newEliosId = await generateSequentialId('elios');
       const eliosLead = await Lead.create({
         id: body.id || newEliosId,
         firstName,
@@ -212,18 +252,61 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       }, { status: 201 });
     }
 
-    // Auto-generate an ID (PRO-XXXXX) sequentially
-    let nextIdNumber = 1;
-    const allLeadsWithId = await Lead.find({ crmType, id: /^PRO-\d+$/ }, { id: 1 }).lean();
-    if (allLeadsWithId && allLeadsWithId.length > 0) {
-      let maxNum = 0;
-      for (const item of allLeadsWithId) {
-        const num = parseInt(item.id.replace('PRO-', ''), 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      }
-      nextIdNumber = maxNum + 1;
+    // Cas B : Création directe dans SOS Prof (To SOS Prof) depuis Formatic ou Elios
+    if ((crmType === 'formatic' || crmType === 'elios') && isToSosProfActive) {
+      const newSosId = await generateSequentialId('sos-prof');
+      const originName = crmType === 'elios' ? 'Elios' : 'Formatic';
+      const sosLead = await Lead.create({
+        id: body.id || newSosId,
+        firstName,
+        lastName,
+        name: computedName,
+        phone: cleanPhone,
+        offer: body.offer || 'Zero to Hero',
+        amount: body.amount || '',
+        source: `From ${originName}`,
+        grade: body.grade || '',
+        section: isClassWithoutSection(body.grade) ? '' : (body.section || ''),
+        status: leadStatus,
+        staff: body.staff || 'Système',
+        crmType: 'sos-prof',
+        familyGroup: (body.familyGroup || '').trim(),
+        fromFormatic: crmType === 'formatic',
+        fromElios: crmType === 'elios',
+        toSosProf: false,
+        assignedTeachers: Array.isArray(body.assignedTeachers) ? body.assignedTeachers : [],
+        date: now,
+        updatedAt: now,
+        lastModifiedBy: body.staff || 'Système',
+        modifiers: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné') ? [body.staff] : [],
+        modifierLogs: (body.staff && body.staff.toLowerCase() !== 'système' && body.staff.toLowerCase() !== 'systeme' && body.staff.toLowerCase() !== 'non assigné')
+          ? [{ operator: body.staff, at: now, action: 'create' }]
+          : [],
+        notes: [
+          ...(body.notes || []),
+          {
+            id: `note-from-${crmType}-${Date.now()}`,
+            text: `Nouveau prospect ${originName} créé et migré vers SOS Prof par ${body.staff || 'Système'}`,
+            by: body.staff || 'Système',
+            addedBy: body.staff || 'Système',
+            date: now.toISOString(),
+            addedAt: now
+          }
+        ]
+      });
+
+      updateCachedLeadInPlace('sos-prof', sosLead.toObject());
+      invalidateLeadsCache('all');
+
+      return NextResponse.json({
+        ...sosLead.toObject(),
+        migrated: true,
+        targetCrm: 'sos-prof'
+      }, { status: 201 });
     }
-    const newId = `PRO-${nextIdNumber.toString().padStart(5, '0')}`;
+
+    // Cas C : Création classique dans le CRM courant (Elios, Formatic ou SOS Prof)
+    const newId = await generateSequentialId(crmType);
 
     const lead = await Lead.create({
       id: body.id || newId,
@@ -241,6 +324,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       crmType: crmType,
       familyGroup: (body.familyGroup || '').trim(),
       toElios: false,
+      toSosProf: false,
+      assignedTeachers: Array.isArray(body.assignedTeachers) ? body.assignedTeachers : [],
       date: now,
       updatedAt: now,
       lastModifiedBy: body.staff || 'Système',
@@ -252,7 +337,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
     });
 
     updateCachedLeadInPlace(crmType as any, lead.toObject());
-    invalidateLeadsCache(isToEliosActive ? 'all' : (crmType as any));
+    invalidateLeadsCache(crmType as any);
     return NextResponse.json(lead, { status: 201 });
   } catch (error: any) {
     console.error('Failed to create lead:', error);

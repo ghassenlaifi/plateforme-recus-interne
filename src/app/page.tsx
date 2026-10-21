@@ -100,6 +100,25 @@ const PREV = {
       </g>
     </svg>
   ),
+  sos_prof: (
+    <svg viewBox="0 0 240 78">
+      <g fill="currentColor">
+        <circle cx="28" cy="28" r="14" opacity=".2"/>
+        <circle cx="28" cy="28" r="6"/>
+        <rect x="56" y="20" width="120" height="6" rx="3" opacity=".7"/>
+        <rect x="56" y="32" width="70" height="5" rx="2.5" opacity=".3"/>
+      </g>
+      {/* 2ème couleur distinctive : Turquoise / Cyan pour les badges Enseignants */}
+      <g fill="#0D9488">
+        <rect x="56" y="48" width="56" height="20" rx="6" opacity=".22"/>
+        <rect x="63" y="55" width="42" height="6" rx="3" opacity=".9"/>
+        <rect x="118" y="48" width="56" height="20" rx="6" opacity=".22"/>
+        <rect x="125" y="55" width="42" height="6" rx="3" opacity=".9"/>
+        <circle cx="204" cy="38" r="13" opacity=".25"/>
+        <circle cx="204" cy="38" r="6" opacity=".85"/>
+      </g>
+    </svg>
+  ),
   formatic: (
     <svg viewBox="0 0 240 78">
       <g fill="currentColor">
@@ -158,8 +177,9 @@ const MODS = [
   { id: "receipts", name: "Suivi des encaissements", desc: "Centralisez les encaissements et les portefeuilles.", g: "fin" as const, ic: "wallet" as const, href: "/receipts", w: 1, p: "receipts" as const },
   { id: "crm", name: "CRM Elios", desc: "Gérez les prospects, les leads et le suivi commercial.", g: "com" as const, ic: "users" as const, href: "/crm-elios", w: 0, p: "crm" as const },
   { id: "formatic", name: "CRM Formatic", desc: "Gérez les prospects des formations.", g: "com" as const, ic: "book" as const, href: "/crm-formatic", w: 0, p: "formatic" as const },
-  { id: "seances", name: "Gestion des séances", desc: "Planifiez les cours et automatisez les rappels.", g: "ped" as const, ic: "cal" as const, href: "/sessions", w: 0, p: "seances" as const },
-  { id: "taches", name: "Tâches et équipe", desc: "Créez des tâches, assignez vos collaborateurs et suivez votre to-do list.", g: "team" as const, ic: "check" as const, href: "/tasks", w: 0, p: "taches" as const }
+  { id: "sos-prof", name: "SOS Prof", desc: "Gérez les prospects et assignez les enseignants SOS Prof.", g: "com" as const, ic: "users" as const, href: "/crm-sos-prof", w: 0, p: "sos_prof" as const },
+  { id: "seances", name: "Gestion des séances", desc: "Planifiez les cours et automatisez les rappels.", g: "ped" as const, ic: "cal" as const, href: "/sessions", w: 1, p: "seances" as const },
+  { id: "taches", name: "Tâches et équipe", desc: "Créez des tâches, assignez vos collaborateurs et suivez votre to-do list.", g: "team" as const, ic: "check" as const, href: "/tasks", w: 1, p: "taches" as const }
 ];
 
 export default function WorkspaceHome() {

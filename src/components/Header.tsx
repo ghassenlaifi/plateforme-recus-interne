@@ -37,6 +37,7 @@ const SEARCH_ITEMS = [
   { name: 'Suivi des encaissements', desc: 'Centralisation des encaissements et portefeuilles', href: '/receipts', icon: ReceiptText, category: 'Finance', badge: 'bg-[#e6f7f2] text-[#0d9488]' },
   { name: 'CRM Elios', desc: 'Gestion des prospects, leads et suivi commercial', href: '/crm-elios', icon: Users, category: 'Commercial', badge: 'bg-[#e0edff] text-[#2563eb]' },
   { name: 'CRM Formatic', desc: 'Gestion des prospects pour les formations', href: '/crm-formatic', icon: BookOpen, category: 'Commercial', badge: 'bg-[#e0edff] text-[#2563eb]' },
+  { name: 'CRM SOS Prof', desc: 'Gestion des prospects SOS Prof et affectation des enseignants', href: '/crm-sos-prof', icon: Users, category: 'Commercial', badge: 'bg-[#f3e8ff] text-[#9333ea]' },
   { name: 'Gestion des séances', desc: 'Planification des cours et automatisation des rappels', href: '/sessions', icon: CalendarClock, category: 'Pédagogie', badge: 'bg-[#fef3c7] text-[#d97706]' },
   { name: 'Tâches et équipe', desc: 'Créez des tâches, assignez vos collaborateurs et to-do list', href: '/tasks', icon: CheckSquare, category: 'Équipe', badge: 'bg-[#f3e8ff] text-[#9333ea]' },
   { name: 'Trésorerie & Portefeuilles', desc: 'Gestion sécurisée des caisses et comptes bancaires', href: '/portefeuilles', icon: ReceiptText, category: 'Finance', badge: 'bg-[#e6f7f2] text-[#0d9488]' },

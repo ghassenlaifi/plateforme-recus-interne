@@ -31,7 +31,11 @@ const LeadSchema = new mongoose.Schema({
   familyGroup: { type: String, default: '' },
   toElios: { type: Boolean, default: false },
   fromFormatic: { type: Boolean, default: false },
-  crmType: { type: String, enum: ['elios', 'formatic'], required: true },
+  toSosProf: { type: Boolean, default: false },
+  fromSosProf: { type: Boolean, default: false },
+  fromElios: { type: Boolean, default: false },
+  assignedTeachers: { type: [String], default: [] },
+  crmType: { type: String, enum: ['elios', 'formatic', 'sos-prof'], required: true },
 });
 
 // Indexes for ultra-fast query performance and robust lookups
@@ -39,6 +43,10 @@ LeadSchema.index({ phone: 1, crmType: 1 }, { unique: false });
 LeadSchema.index({ crmType: 1, status: 1 });
 LeadSchema.index({ crmType: 1, toElios: 1 });
 LeadSchema.index({ crmType: 1, fromFormatic: 1 });
+LeadSchema.index({ crmType: 1, toSosProf: 1 });
+LeadSchema.index({ crmType: 1, fromSosProf: 1 });
+LeadSchema.index({ crmType: 1, fromElios: 1 });
+LeadSchema.index({ crmType: 1, assignedTeachers: 1 });
 LeadSchema.index({ crmType: 1, updatedAt: -1 });
 LeadSchema.index({ crmType: 1, date: -1 });
 LeadSchema.index({ id: 1, crmType: 1 });
@@ -63,6 +71,19 @@ if (mongoose.models.Lead) {
   if (!mongoose.models.Lead.schema.path('toElios')) {
     mongoose.models.Lead.schema.add({ toElios: { type: Boolean, default: false } });
   }
+    if (!mongoose.models.Lead.schema.path('toSosProf')) {
+    mongoose.models.Lead.schema.add({ toSosProf: { type: Boolean, default: false } });
+  }
+  if (!mongoose.models.Lead.schema.path('fromSosProf')) {
+    mongoose.models.Lead.schema.add({ fromSosProf: { type: Boolean, default: false } });
+  }
+  if (!mongoose.models.Lead.schema.path('fromElios')) {
+    mongoose.models.Lead.schema.add({ fromElios: { type: Boolean, default: false } });
+  }
+  if (!mongoose.models.Lead.schema.path('assignedTeachers')) {
+    mongoose.models.Lead.schema.add({ assignedTeachers: { type: [String], default: [] } });
+  }
+
   if (!mongoose.models.Lead.schema.path('fromFormatic')) {
     mongoose.models.Lead.schema.add({ fromFormatic: { type: Boolean, default: false } });
   }
