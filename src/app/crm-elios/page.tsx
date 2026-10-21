@@ -150,7 +150,12 @@ export default function CRMEliosPage() {
   useEffect(() => {
     const cached = getClientCachedLeads('elios_cached_leads');
     if (cached && cached.length > 0) {
-      mutate((current: any) => current && current.length > 0 ? current : cached, false);
+      mutate((current: any) => {
+        if (!Array.isArray(current) || current.length === 0) return cached;
+        const currentIds = new Set(current.map((l: any) => l._id || l.id));
+        const missingFromCurrent = cached.filter((l: any) => !currentIds.has(l._id || l.id));
+        return missingFromCurrent.length > 0 ? [...missingFromCurrent, ...current] : current;
+      }, false);
     }
   }, [mutate]);
 
@@ -292,6 +297,7 @@ export default function CRMEliosPage() {
   const [editErr, setEditErr] = useState('');
   const [isDeleteArmed, setIsDeleteArmed] = useState(false);
   const [isDeletingLead, setIsDeletingLead] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Instantané des valeurs initiales pour dirty checking
@@ -488,7 +494,9 @@ export default function CRMEliosPage() {
     if (!selectedLead) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showUnsavedConfirm) {
+        if (showDeleteModal) {
+          setShowDeleteModal(false);
+        } else if (showUnsavedConfirm) {
           setShowUnsavedConfirm(false);
         } else {
           handleRequestCloseFiche();
@@ -497,7 +505,7 @@ export default function CRMEliosPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedLead, showUnsavedConfirm, hasUnsavedChanges]);
+  }, [selectedLead, showDeleteModal, showUnsavedConfirm, hasUnsavedChanges]);
 
   // Tentative de fermeture sécurisée
   const handleRequestCloseFiche = () => {
@@ -928,7 +936,7 @@ export default function CRMEliosPage() {
         source: 'From Elios',
         toSosProf: false
       });
-      broadcastCrmChange('all');
+      // Synchronisation globale différée après confirmation serveur réussie (évite tout rebond de cache)
     } else {
       mutate(
         (currentLeads: any) => {
@@ -1228,19 +1236,15 @@ export default function CRMEliosPage() {
     }
   };
 
-  // Suppression définitive d'un prospect (1 clic avec confirmation, optimiste T=0ms, sans rebond)
-  const handleDeleteLead = async () => {
+  // Suppression définitive d'un prospect (Modale in-page élégante, optimiste T=0ms, sans rebond)
+  const confirmDeleteLead = async () => {
     if (!selectedLead || isDeletingLead) return;
-
-    const leadDisplayName = [editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name || selectedLead.phone || 'ce prospect';
-    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer définitivement le prospect "${leadDisplayName}" ? Cette action est irréversible.`)) {
-      return;
-    }
 
     const targetId = selectedLead._id || selectedLead.id;
     const customId = selectedLead.id;
     setIsDeletingLead(true);
     setIsDeleteArmed(false);
+    setShowDeleteModal(false);
 
     // 1. Mise à jour optimiste instantanée (T=0ms) : ferme la fiche, purge les caches locaux
     setSelectedLead(null);
@@ -2882,12 +2886,12 @@ export default function CRMEliosPage() {
               <button 
                 className="btn text-xs py-2 px-3.5 rounded-xl font-medium transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50 !bg-white dark:!bg-[var(--card)] !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-950/30 !border !border-red-500/30 hover:!border-red-500" 
                 type="button" 
-                onClick={handleDeleteLead}
+                onClick={() => setShowDeleteModal(true)}
                 disabled={isDeletingLead}
                 title="Supprimer définitivement ce prospect"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{IC.trash}</svg>
-                <span>{isDeletingLead ? 'Suppression...' : 'Supprimer'}</span>
+                <span>Supprimer</span>
               </button>
 
               <div className="flex items-center gap-2.5 ml-auto">
@@ -2916,6 +2920,75 @@ export default function CRMEliosPage() {
                   {isSaving ? 'Enregistrement...' : 'Enregistrer'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODALE : CONFIRMATION DE SUPPRESSION DÉFINITIVE DANS LA PAGE */}
+      {/* ========================================================= */}
+      {showDeleteModal && selectedLead && (
+        <div 
+          className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingLead) setShowDeleteModal(false);
+          }}
+        >
+          <div className="max-w-md w-full p-5 sm:p-6 bg-[var(--card)] rounded-2xl sm:rounded-3xl shadow-2xl border border-red-500/30 animate-pop">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-600 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  {IC.trash}
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-[var(--ink)]">
+                  Supprimer définitivement le prospect
+                </h3>
+                <p className="text-xs text-[var(--ink2)] mt-1.5 leading-relaxed">
+                  Êtes-vous sûr de vouloir supprimer définitivement <strong className="text-[var(--ink)]">{[editFirst.trim(), editLast.trim()].filter(Boolean).join(' ') || selectedLead.name || selectedLead.phone || 'ce prospect'}</strong> ?
+                </p>
+                <div className="mt-2.5 text-[11px] font-medium text-red-600 dark:text-red-400 bg-red-500/10 px-2.5 py-1.5 rounded-lg border border-red-500/20 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    {IC.warning}
+                  </svg>
+                  <span>Cette action est irréversible et effacera l'ensemble des données et notes associées.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-[var(--line)]">
+              <button 
+                type="button" 
+                disabled={isDeletingLead}
+                className="btn text-xs py-2 px-4 rounded-xl font-medium transition hover:bg-[var(--line)]"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Annuler
+              </button>
+              <button 
+                type="button" 
+                disabled={isDeletingLead}
+                className="btn text-xs py-2 px-4 rounded-xl !bg-red-600 hover:!bg-red-700 !text-white font-bold transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 !border-red-600"
+                onClick={confirmDeleteLead}
+              >
+                {isDeletingLead ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeDashoffset="10"/>
+                    </svg>
+                    <span>Suppression...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      {IC.trash}
+                    </svg>
+                    <span>Confirmer la suppression</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

@@ -300,6 +300,193 @@ export async function PATCH(
     const pendingNote = body.pendingNote;
     delete body.pendingNote;
 
+    // =========================================================================
+    // MIGRATION CROSS-CRM ULTRA-RAPIDE (TO ELIOS ou TO SOS PROF)
+    // Exécutée en UNE SEULE ÉCRITURE ATOMIQUE pour division par 3 de la latence
+    // =========================================================================
+    const isToEliosMigration = crmType === 'formatic' && Boolean(body.toElios);
+    const isToSosProfMigration = (crmType === 'formatic' || crmType === 'elios') && Boolean(body.toSosProf);
+
+    if (isToEliosMigration || isToSosProfMigration) {
+      try {
+        const sourceDoc = await Lead.findOne({ ...query, ...crmFilter });
+        if (!sourceDoc) {
+          return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
+        }
+
+        const targetCrm: 'elios' | 'sos-prof' = isToSosProfMigration ? 'sos-prof' : 'elios';
+        const originLabel = crmType === 'elios' ? 'Elios' : 'Formatic';
+        const rawTargetPhone = body.phone || sourceDoc.phone;
+        const cleanTargetPhone = formatPhone(rawTargetPhone) || String(rawTargetPhone || '').trim();
+        const phoneRegex = buildPhoneMongoRegex(cleanTargetPhone);
+
+        const migrationNote = {
+          id: `note-from-${crmType}-${Date.now()}`,
+          text: isToSosProfMigration
+            ? `Prospect migré depuis CRM ${originLabel} vers SOS Prof par ${operator}`
+            : `Prospect migré depuis CRM Formatic vers CRM Elios par ${operator}`,
+          by: operator,
+          addedBy: operator,
+          date: now.toISOString(),
+          addedAt: now
+        };
+
+        // Requêtes parallèles ultra-rapides : vérification simultanée du numéro et du conflit d'ID
+        const [existingTarget, idClash] = await Promise.all([
+          Lead.findOne({ crmType: targetCrm, phone: phoneRegex }),
+          sourceDoc.id ? Lead.findOne({ crmType: targetCrm, id: sourceDoc.id }).select('id').lean() : null
+        ]);
+
+        if (existingTarget) {
+          // Fusion des données et des notes dans la fiche cible existante
+          if (isToSosProfMigration) {
+            if (crmType === 'formatic') existingTarget.fromFormatic = true;
+            if (crmType === 'elios') existingTarget.fromElios = true;
+            if (Array.isArray(body.assignedTeachers) && body.assignedTeachers.length > 0) {
+              existingTarget.assignedTeachers = body.assignedTeachers;
+            }
+          } else {
+            existingTarget.fromFormatic = true;
+          }
+
+          if (body.firstName !== undefined) existingTarget.firstName = body.firstName;
+          if (body.lastName !== undefined) existingTarget.lastName = body.lastName;
+          if (body.name) existingTarget.name = body.name;
+          if (body.offer) existingTarget.offer = body.offer;
+          if (body.amount !== undefined) existingTarget.amount = body.amount;
+          if (body.grade !== undefined) existingTarget.grade = body.grade;
+          if (body.section !== undefined) existingTarget.section = body.section;
+          if (body.status) existingTarget.status = body.status;
+          if (body.familyGroup !== undefined) existingTarget.familyGroup = body.familyGroup;
+          existingTarget.updatedAt = now;
+          existingTarget.lastModifiedBy = operator;
+
+          if (!existingTarget.modifiers) existingTarget.modifiers = [];
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+            if (!existingTarget.modifiers.includes(operator)) existingTarget.modifiers.push(operator);
+            if (!existingTarget.modifierLogs) existingTarget.modifierLogs = [];
+            existingTarget.modifierLogs.push({ operator, at: now, action: 'migrate' });
+            if (existingTarget.modifierLogs.length > 100) existingTarget.modifierLogs = existingTarget.modifierLogs.slice(-100);
+          }
+
+          // Fusion des notes sans doublons
+          const targetNoteTexts = new Set((existingTarget.notes || []).map((n: any) => (n.text || '').trim()));
+          const notesToMerge: any[] = [];
+          if (pendingNote) {
+            notesToMerge.push(pendingNote);
+            targetNoteTexts.add((pendingNote.text || '').trim());
+          }
+          for (const fn of (sourceDoc.notes || [])) {
+            const txt = (fn.text || '').trim();
+            if (txt && !targetNoteTexts.has(txt)) {
+              notesToMerge.push(fn);
+              targetNoteTexts.add(txt);
+            }
+          }
+          existingTarget.notes = [
+            migrationNote,
+            ...notesToMerge,
+            ...(existingTarget.notes || [])
+          ];
+          existingTarget.markModified('notes');
+
+          // Sauvegarde de la fiche cible et suppression de la fiche source en parallèle (1 seul round-trip)
+          await Promise.all([
+            existingTarget.save(),
+            Lead.deleteOne({ _id: sourceDoc._id })
+          ]);
+
+          removeCachedLeadEverywhere(String(sourceDoc._id), sourceDoc.id);
+          invalidateLeadsCache('all');
+
+          return NextResponse.json({
+            ...existingTarget.toObject(),
+            migrated: true,
+            targetCrm
+          });
+        } else {
+          // Aucun doublon dans le CRM cible : attribution d'un PRO-ID si conflit d'ID
+          let targetId = sourceDoc.id;
+          if (idClash || !targetId) {
+            const topTarget = await Lead.findOne({ crmType: targetCrm, id: /^PRO-\d+$/ }).sort({ id: -1 }).select('id').lean();
+            let nextNum = 1;
+            if (topTarget && (topTarget as any).id) {
+              const num = parseInt((topTarget as any).id.replace('PRO-', ''), 10);
+              if (!isNaN(num)) nextNum = num + 1;
+            }
+            targetId = `PRO-${nextNum.toString().padStart(5, '0')}`;
+          }
+
+          // Migration directe du document vers le CRM cible en une seule écriture
+          sourceDoc.id = targetId;
+          sourceDoc.crmType = targetCrm;
+          sourceDoc.toSosProf = false;
+          sourceDoc.toElios = false;
+          if (isToSosProfMigration) {
+            if (crmType === 'formatic') {
+              sourceDoc.fromFormatic = true;
+              sourceDoc.source = sourceDoc.source || 'From Formatic';
+            }
+            if (crmType === 'elios') {
+              sourceDoc.fromElios = true;
+              sourceDoc.source = sourceDoc.source || 'From Elios';
+            }
+            if (Array.isArray(body.assignedTeachers)) {
+              sourceDoc.assignedTeachers = body.assignedTeachers;
+            }
+          } else {
+            sourceDoc.fromFormatic = true;
+            sourceDoc.source = sourceDoc.source || 'From Formatic';
+          }
+
+          if (body.firstName !== undefined) sourceDoc.firstName = body.firstName;
+          if (body.lastName !== undefined) sourceDoc.lastName = body.lastName;
+          if (body.name) sourceDoc.name = body.name;
+          if (body.offer) sourceDoc.offer = body.offer;
+          if (body.amount !== undefined) sourceDoc.amount = body.amount;
+          if (body.grade !== undefined) sourceDoc.grade = body.grade;
+          if (body.section !== undefined) sourceDoc.section = body.section;
+          if (body.status) sourceDoc.status = body.status;
+          if (body.familyGroup !== undefined) sourceDoc.familyGroup = body.familyGroup;
+          sourceDoc.updatedAt = now;
+          sourceDoc.lastModifiedBy = operator;
+
+          if (!sourceDoc.modifiers) sourceDoc.modifiers = [];
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+            if (!sourceDoc.modifiers.includes(operator)) sourceDoc.modifiers.push(operator);
+            if (!sourceDoc.modifierLogs) sourceDoc.modifierLogs = [];
+            sourceDoc.modifierLogs.push({ operator, at: now, action: 'migrate' });
+            if (sourceDoc.modifierLogs.length > 100) sourceDoc.modifierLogs = sourceDoc.modifierLogs.slice(-100);
+          }
+
+          const notesList = [...(sourceDoc.notes || [])];
+          if (pendingNote) {
+            notesList.unshift(pendingNote);
+          }
+          notesList.unshift(migrationNote);
+          sourceDoc.notes = notesList;
+          sourceDoc.markModified('notes');
+
+          // UNE SEULE ÉCRITURE ATOMIQUE EN BASE
+          await sourceDoc.save();
+
+          removeCachedLeadEverywhere(String(sourceDoc._id), sourceDoc.id);
+          updateCachedLeadInPlace(targetCrm, sourceDoc.toObject ? sourceDoc.toObject() : sourceDoc);
+          invalidateLeadsCache('all');
+
+          return NextResponse.json({
+            ...sourceDoc.toObject(),
+            migrated: true,
+            targetCrm
+          });
+        }
+      } catch (syncErr: any) {
+        console.error('Erreur migration PATCH:', syncErr);
+        return NextResponse.json({ error: `Erreur lors de la migration: ${syncErr?.message || syncErr}` }, { status: 500 });
+      }
+    }
+
+    // CAS STANDARD : Mise à jour sans migration (1 seule opération atomique findOneAndUpdate)
     const updateQuery: any = { $set: body };
     if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
       updateQuery.$addToSet = { modifiers: operator };
@@ -321,253 +508,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Lead introuvable' }, { status: 404 });
     }
 
-    // MIGRATION To Elios : déplace définitivement le prospect de CRM Formatic vers CRM Elios (sans copie ni doublon)
-    const isToEliosActive = Boolean(body.toElios !== undefined ? body.toElios : (updated.toElios ?? (updated as any)?._doc?.toElios));
-    if (crmType === 'formatic' && isToEliosActive && updated.crmType === 'formatic') {
-      try {
-        const targetPhone = updated.phone || body.phone;
-        const migrationNote = {
-          id: `note-from-formatic-${Date.now()}`,
-          text: `Prospect migré depuis CRM Formatic par ${operator}`,
-          by: operator,
-          addedBy: operator,
-          date: now.toISOString(),
-          addedAt: now
-        };
-
-        const cleanTargetPhone = formatPhone(targetPhone) || String(targetPhone).trim();
-        const phoneRegex = buildPhoneMongoRegex(cleanTargetPhone);
-        const existingElios = await Lead.findOne({ crmType: 'elios', phone: phoneRegex });
-        if (existingElios) {
-          // Fusion des données et des notes dans la fiche Elios existante
-          existingElios.fromFormatic = true;
-          existingElios.firstName = updated.firstName || existingElios.firstName || '';
-          existingElios.lastName = updated.lastName || existingElios.lastName || '';
-          existingElios.name = updated.name || existingElios.name;
-          existingElios.offer = updated.offer || existingElios.offer;
-          existingElios.amount = updated.amount || existingElios.amount;
-          existingElios.grade = updated.grade || existingElios.grade;
-          existingElios.section = updated.section || existingElios.section;
-          existingElios.status = updated.status || existingElios.status;
-          existingElios.familyGroup = updated.familyGroup || existingElios.familyGroup || '';
-          existingElios.updatedAt = now;
-          existingElios.lastModifiedBy = operator;
-          if (!existingElios.modifiers) existingElios.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
-            if (!existingElios.modifiers.includes(operator)) existingElios.modifiers.push(operator);
-            if (!existingElios.modifierLogs) existingElios.modifierLogs = [];
-            existingElios.modifierLogs.push({ operator, at: now, action: 'migrate' });
-            if (existingElios.modifierLogs.length > 100) existingElios.modifierLogs = existingElios.modifierLogs.slice(-100);
-          }
-
-          // Fusion des notes sans doublons
-          const eliosNoteTexts = new Set((existingElios.notes || []).map((n: any) => (n.text || '').trim()));
-          const notesToMerge: any[] = [];
-          for (const fn of (updated.notes || [])) {
-            const txt = (fn.text || '').trim();
-            if (txt && !eliosNoteTexts.has(txt)) {
-              notesToMerge.push(fn);
-              eliosNoteTexts.add(txt);
-            }
-          }
-          existingElios.notes = [
-            migrationNote,
-            ...notesToMerge,
-            ...(existingElios.notes || [])
-          ];
-
-          existingElios.markModified('notes');
-          await existingElios.save();
-
-          // SUPPRESSION définitive du prospect de CRM Formatic pour garantir zéro doublon
-          await Lead.deleteOne({ _id: updated._id });
-          removeCachedLeadEverywhere(String(updated._id), updated.id);
-          invalidateLeadsCache('all');
-
-          return NextResponse.json({
-            ...existingElios.toObject(),
-            migrated: true,
-            targetCrm: 'elios'
-          });
-        } else {
-          // Aucun doublon dans Elios : attribution d'un PRO-ID Elios si conflit d'ID
-          let eliosId = updated.id;
-          const idClash = await Lead.findOne({ crmType: 'elios', id: eliosId });
-          if (idClash || !eliosId) {
-            const topElios = await Lead.findOne({ crmType: 'elios', id: /^PRO-\d+$/ }).sort({ id: -1 }).select('id').lean();
-            let nextNum = 1;
-            if (topElios && (topElios as any).id) {
-              const num = parseInt((topElios as any).id.replace('PRO-', ''), 10);
-              if (!isNaN(num)) nextNum = num + 1;
-            }
-            eliosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
-          }
-
-          // Migration directe du document vers Elios
-          updated.id = eliosId;
-          updated.crmType = 'elios';
-          updated.fromFormatic = true;
-          updated.toElios = false;
-          updated.source = updated.source || 'From Formatic';
-          updated.updatedAt = now;
-          updated.lastModifiedBy = operator;
-          if (!updated.modifiers) updated.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné' && !updated.modifiers.includes(operator)) {
-            updated.modifiers.push(operator);
-          }
-          updated.notes = [
-            migrationNote,
-            ...(updated.notes || [])
-          ];
-          updated.markModified('notes');
-          await updated.save();
-          removeCachedLeadEverywhere(String(updated._id), updated.id);
-          updateCachedLeadInPlace('elios', updated.toObject ? updated.toObject() : updated);
-          invalidateLeadsCache('all');
-
-          return NextResponse.json({
-            ...updated.toObject(),
-            migrated: true,
-            targetCrm: 'elios'
-          });
-        }
-      } catch (syncErr: any) {
-        console.error('Erreur migration PATCH To Elios:', syncErr);
-        return NextResponse.json({ error: `Erreur lors de la migration vers CRM Elios: ${syncErr?.message || syncErr}` }, { status: 500 });
-      }
-    }
-
-    
-    // MIGRATION To SOS Prof : déplace définitivement le prospect de Formatic ou Elios vers CRM SOS Prof (sans copie ni doublon)
-    const isToSosProfActive = Boolean(body.toSosProf !== undefined ? body.toSosProf : (updated.toSosProf ?? (updated as any)?._doc?.toSosProf));
-    if ((crmType === 'formatic' || crmType === 'elios') && isToSosProfActive && updated.crmType !== 'sos-prof') {
-      try {
-        const targetPhone = updated.phone || body.phone;
-        const originLabel = crmType === 'elios' ? 'Elios' : 'Formatic';
-        const migrationNote = {
-          id: `note-from-${crmType}-${Date.now()}`,
-          text: `Prospect migré depuis CRM ${originLabel} vers SOS Prof par ${operator}`,
-          by: operator,
-          addedBy: operator,
-          date: now.toISOString(),
-          addedAt: now
-        };
-
-        const cleanTargetPhone = formatPhone(targetPhone) || String(targetPhone).trim();
-        const phoneRegex = buildPhoneMongoRegex(cleanTargetPhone);
-        const existingSos = await Lead.findOne({ crmType: 'sos-prof', phone: phoneRegex });
-        if (existingSos) {
-          if (crmType === 'formatic') existingSos.fromFormatic = true;
-          if (crmType === 'elios') existingSos.fromElios = true;
-          existingSos.firstName = updated.firstName || existingSos.firstName || '';
-          existingSos.lastName = updated.lastName || existingSos.lastName || '';
-          existingSos.name = updated.name || existingSos.name;
-          existingSos.offer = updated.offer || existingSos.offer;
-          existingSos.amount = updated.amount || existingSos.amount;
-          existingSos.grade = updated.grade || existingSos.grade;
-          existingSos.section = updated.section || existingSos.section;
-          existingSos.status = updated.status || existingSos.status;
-          existingSos.familyGroup = updated.familyGroup || existingSos.familyGroup || '';
-          if (Array.isArray(body.assignedTeachers) && body.assignedTeachers.length > 0) {
-            existingSos.assignedTeachers = body.assignedTeachers;
-          }
-          existingSos.updatedAt = now;
-          existingSos.lastModifiedBy = operator;
-          if (!existingSos.modifiers) existingSos.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
-            if (!existingSos.modifiers.includes(operator)) existingSos.modifiers.push(operator);
-            if (!existingSos.modifierLogs) existingSos.modifierLogs = [];
-            existingSos.modifierLogs.push({ operator, at: now, action: 'migrate' });
-            if (existingSos.modifierLogs.length > 100) existingSos.modifierLogs = existingSos.modifierLogs.slice(-100);
-          }
-
-          // Fusion des notes sans doublons
-          const sosNoteTexts = new Set((existingSos.notes || []).map((n: any) => (n.text || '').trim()));
-          const notesToMerge: any[] = [];
-          for (const fn of (updated.notes || [])) {
-            const txt = (fn.text || '').trim();
-            if (txt && !sosNoteTexts.has(txt)) {
-              notesToMerge.push(fn);
-              sosNoteTexts.add(txt);
-            }
-          }
-          existingSos.notes = [
-            migrationNote,
-            ...notesToMerge,
-            ...(existingSos.notes || [])
-          ];
-
-          existingSos.markModified('notes');
-          await existingSos.save();
-          await Lead.deleteOne({ _id: updated._id });
-          removeCachedLeadEverywhere(String(updated._id), updated.id);
-          invalidateLeadsCache('all');
-
-          return NextResponse.json({
-            ...existingSos.toObject(),
-            migrated: true,
-            targetCrm: 'sos-prof'
-          });
-        } else {
-          let sosId = updated.id;
-          const idClash = await Lead.findOne({ crmType: 'sos-prof', id: sosId });
-          if (idClash || !sosId) {
-            const topSos = await Lead.findOne({ crmType: 'sos-prof', id: /^PRO-\d+$/ }).sort({ id: -1 }).select('id').lean();
-            let nextNum = 1;
-            if (topSos && (topSos as any).id) {
-              const num = parseInt((topSos as any).id.replace('PRO-', ''), 10);
-              if (!isNaN(num)) nextNum = num + 1;
-            }
-            sosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
-          }
-
-          updated.id = sosId;
-          updated.crmType = 'sos-prof';
-          if (crmType === 'formatic') {
-            updated.fromFormatic = true;
-            updated.source = updated.source || 'From Formatic';
-          }
-          if (crmType === 'elios') {
-            updated.fromElios = true;
-            updated.source = updated.source || 'From Elios';
-          }
-          updated.toSosProf = false;
-          if (Array.isArray(body.assignedTeachers)) {
-            updated.assignedTeachers = body.assignedTeachers;
-          }
-          updated.updatedAt = now;
-          updated.lastModifiedBy = operator;
-          if (!updated.modifiers) updated.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
-            updated.modifiers.push(operator);
-          }
-          updated.notes = [
-            migrationNote,
-            ...(updated.notes || [])
-          ];
-          updated.markModified('notes');
-          await updated.save();
-          removeCachedLeadEverywhere(String(updated._id), updated.id);
-          updateCachedLeadInPlace('sos-prof', updated.toObject ? updated.toObject() : updated);
-          invalidateLeadsCache('all');
-
-          return NextResponse.json({
-            ...updated.toObject(),
-            migrated: true,
-            targetCrm: 'sos-prof'
-          });
-        }
-      } catch (syncErr: any) {
-        console.error('Erreur migration PATCH To SOS Prof:', syncErr);
-        return NextResponse.json({ error: 'Erreur lors de la migration vers CRM SOS Prof: ' + (syncErr?.message || syncErr) }, { status: 500 });
-      }
-    }
-
-    if ((crmType === 'formatic' && isToEliosActive) || isToSosProfActive) {
-      invalidateLeadsCache('all');
-    } else {
-      updateCachedLeadInPlace(crmType as any, updated.toObject ? updated.toObject() : updated);
-    }
+    updateCachedLeadInPlace(crmType as any, updated.toObject ? updated.toObject() : updated);
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('Failed to update lead:', error);
