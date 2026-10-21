@@ -150,12 +150,7 @@ export default function CRMEliosPage() {
   useEffect(() => {
     const cached = getClientCachedLeads('elios_cached_leads');
     if (cached && cached.length > 0) {
-      mutate((current: any) => {
-        if (!Array.isArray(current) || current.length === 0) return cached;
-        const currentIds = new Set(current.map((l: any) => l._id || l.id));
-        const missingFromCurrent = cached.filter((l: any) => !currentIds.has(l._id || l.id));
-        return missingFromCurrent.length > 0 ? [...missingFromCurrent, ...current] : current;
-      }, false);
+      mutate((current: any) => (current && current.length > 0 ? current : cached), false);
     }
   }, [mutate]);
 
@@ -1242,6 +1237,9 @@ export default function CRMEliosPage() {
 
     const targetId = selectedLead._id || selectedLead.id;
     const customId = selectedLead.id;
+    const targetStr = String(targetId).trim();
+    const customStr = customId ? String(customId).trim() : null;
+
     setIsDeletingLead(true);
     setIsDeleteArmed(false);
     setShowDeleteModal(false);
@@ -1255,11 +1253,14 @@ export default function CRMEliosPage() {
     mutate(
       (currentLeads: any) => {
         if (!Array.isArray(currentLeads)) return currentLeads;
-        return currentLeads.filter((l: any) => 
-          l._id !== targetId && 
-          l.id !== targetId && 
-          (!customId || l.id !== customId)
-        );
+        return currentLeads.filter((l: any) => {
+          const lId = l._id ? String(l._id).trim() : '';
+          const lCust = l.id ? String(l.id).trim() : '';
+          if (lId && lId === targetStr) return false;
+          if (lCust && lCust === targetStr) return false;
+          if (customStr && lCust === customStr) return false;
+          return true;
+        });
       },
       false
     );

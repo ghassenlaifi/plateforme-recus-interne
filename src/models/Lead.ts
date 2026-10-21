@@ -48,6 +48,7 @@ LeadSchema.index({ crmType: 1, fromSosProf: 1 });
 LeadSchema.index({ crmType: 1, fromElios: 1 });
 LeadSchema.index({ crmType: 1, assignedTeachers: 1 });
 LeadSchema.index({ crmType: 1, updatedAt: -1 });
+LeadSchema.index({ crmType: 1, date: -1, _id: -1 });
 LeadSchema.index({ crmType: 1, date: -1 });
 LeadSchema.index({ id: 1, crmType: 1 });
 LeadSchema.index({ phone: 1 });

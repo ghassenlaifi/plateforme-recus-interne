@@ -358,6 +358,7 @@ export async function PATCH(
           if (body.section !== undefined) existingTarget.section = body.section;
           if (body.status) existingTarget.status = body.status;
           if (body.familyGroup !== undefined) existingTarget.familyGroup = body.familyGroup;
+          existingTarget.date = now;
           existingTarget.updatedAt = now;
           existingTarget.lastModifiedBy = operator;
 
@@ -397,7 +398,7 @@ export async function PATCH(
           ]);
 
           removeCachedLeadEverywhere(String(sourceDoc._id), sourceDoc.id);
-          invalidateLeadsCache('all');
+          updateCachedLeadInPlace(targetCrm, existingTarget.toObject ? existingTarget.toObject() : existingTarget);
 
           return NextResponse.json({
             ...existingTarget.toObject(),
@@ -448,6 +449,7 @@ export async function PATCH(
           if (body.section !== undefined) sourceDoc.section = body.section;
           if (body.status) sourceDoc.status = body.status;
           if (body.familyGroup !== undefined) sourceDoc.familyGroup = body.familyGroup;
+          sourceDoc.date = now;
           sourceDoc.updatedAt = now;
           sourceDoc.lastModifiedBy = operator;
 
@@ -472,7 +474,6 @@ export async function PATCH(
 
           removeCachedLeadEverywhere(String(sourceDoc._id), sourceDoc.id);
           updateCachedLeadInPlace(targetCrm, sourceDoc.toObject ? sourceDoc.toObject() : sourceDoc);
-          invalidateLeadsCache('all');
 
           return NextResponse.json({
             ...sourceDoc.toObject(),
@@ -533,21 +534,19 @@ export async function DELETE(
     if (!deleted) {
       // Idempotence : si le prospect a déjà été supprimé (double-clic ou requête concurrente), renvoyer 200 succès
       removeCachedLeadEverywhere(id);
-      invalidateLeadsCache('all');
       return NextResponse.json({ 
         message: 'Prospect déjà supprimé ou introuvable',
         alreadyDeleted: true 
       });
     }
 
-    // Éviction immédiate de tous les caches en mémoire (serveur)
+    // Éviction immédiate et atomique de tous les caches en mémoire vive (serveur) sans invalider brutalement
     const mongoIdStr = deleted._id ? deleted._id.toString() : '';
     const customIdStr = deleted.id || '';
     removeCachedLeadEverywhere(mongoIdStr || id, customIdStr);
     if (customIdStr && customIdStr !== id) {
       removeCachedLeadEverywhere(customIdStr);
     }
-    invalidateLeadsCache('all');
 
     return NextResponse.json({ 
       message: 'Prospect supprimé avec succès',
