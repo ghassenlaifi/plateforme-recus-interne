@@ -38,11 +38,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
     await connectMongo();
 
     if (crmType === 'formatic') {
-      // Pour Formatic : requêtes parallèles incluant prospects migrés vers Elios ou SOS Prof
-      const [formaticLeads, migratedToElios, migratedToSos] = await Promise.all([
+      // Pour Formatic : requêtes parallèles incluant prospects migrés vers Elios (pour la vue TO ELIOS)
+      const [formaticLeads, migratedToElios] = await Promise.all([
         Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
-        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
-        Lead.find({ crmType: 'sos-prof', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
+        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
       ]);
 
       const formattedElios = migratedToElios.map((l: any) => ({
@@ -51,13 +50,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
         toElios: true
       }));
 
-      const formattedSos = migratedToSos.map((l: any) => ({
-        ...l,
-        isMigratedToSosProf: true,
-        toSosProf: true
-      }));
-
-      const result = [...formaticLeads, ...formattedElios, ...formattedSos];
+      const result = [...formaticLeads, ...formattedElios];
       result.sort((a, b) => {
         const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
         const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
@@ -72,30 +65,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
     }
 
     if (crmType === 'elios') {
-      // Pour Elios : requêtes parallèles incluant prospects migrés vers SOS Prof
-      const [eliosLeads, migratedToSos] = await Promise.all([
-        Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
-        Lead.find({ crmType: 'sos-prof', fromElios: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
-      ]);
-
-      const formattedSos = migratedToSos.map((l: any) => ({
-        ...l,
-        isMigratedToSosProf: true,
-        toSosProf: true
-      }));
-
-      const result = [...eliosLeads, ...formattedSos];
-      result.sort((a, b) => {
-        const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-        const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        if (timeB !== timeA) return timeB - timeA;
-        const idNumB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
-        const idNumA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
-        if (idNumB !== idNumA) return idNumB - idNumA;
-        return String(b.id || b._id).localeCompare(String(a.id || a._id));
-      });
-      setCachedLeads('elios', result);
-      return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
+      // Pour Elios : strictement les prospects du CRM Elios
+      const eliosLeads = await Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
+      setCachedLeads('elios', eliosLeads);
+      return NextResponse.json(eliosLeads, { headers: NO_CACHE_HEADERS });
     }
 
     // CRM SOS Prof

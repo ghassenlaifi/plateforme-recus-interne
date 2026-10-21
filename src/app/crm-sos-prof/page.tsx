@@ -1771,8 +1771,13 @@ export default function CRMSOSProfPage() {
                             👪 {l.familyGroup}
                           </span>
                         )}
+                        {(l.fromElios || l.source === 'From Elios' || (l as any).sourceCrm === 'elios') && (
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold inline-flex items-center gap-0.5 mt-0.5" title="Prospect migré depuis CRM Elios">
+                            From Elios
+                          </span>
+                        )}
                         {(l.fromFormatic || l.source === 'From Formatic') && (
-                          <span className="text-[10px] text-indigo-600 font-bold inline-flex items-center gap-0.5 mt-0.5" title="Prospect migré depuis CRM Formatic">
+                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold inline-flex items-center gap-0.5 mt-0.5" title="Prospect migré depuis CRM Formatic">
                             From Formatic
                           </span>
                         )}
@@ -1947,8 +1952,13 @@ export default function CRMSOSProfPage() {
                             👪 {l.familyGroup}
                           </span>
                         )}
+                        {(l.fromElios || l.source === 'From Elios' || (l as any).sourceCrm === 'elios') && (
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold block truncate" title="Prospect migré depuis CRM Elios">
+                            From Elios
+                          </span>
+                        )}
                         {(l.fromFormatic || l.source === 'From Formatic') && (
-                          <span className="text-[10px] text-indigo-600 font-bold block truncate" title="Prospect migré depuis CRM Formatic">
+                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold block truncate" title="Prospect migré depuis CRM Formatic">
                             From Formatic
                           </span>
                         )}

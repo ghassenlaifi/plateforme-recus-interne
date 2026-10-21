@@ -875,6 +875,19 @@ export default function CRMEliosPage() {
     const nowIso = new Date().toISOString();
     const operatorName = activeUser || 'Système';
 
+    let pendingNoteToAdd: any = null;
+    if (newNoteText.trim()) {
+      pendingNoteToAdd = {
+        id: 'n-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        text: newNoteText.trim(),
+        by: operatorName,
+        addedBy: operatorName,
+        date: nowIso,
+        addedAt: nowIso
+      };
+      setNewNoteText('');
+    }
+
     // 1. MISE À JOUR OPTIMISTE IMMÉDIATE (T=0ms) DANS SWR ET LE CACHE CLIENT
     const updatedLeadOptimistic: LeadItem = {
       ...selectedLead,
@@ -892,7 +905,8 @@ export default function CRMEliosPage() {
       familyGroup: editFamilyGroup.trim(),
           toSosProf: editToSosProf,
       updatedAt: nowIso,
-      lastModifiedBy: operatorName
+      lastModifiedBy: operatorName,
+      ...(pendingNoteToAdd ? { notes: [pendingNoteToAdd, ...(selectedLead.notes || [])] } : {})
     };
 
     setLastInteractedLeadId(targetId);
@@ -945,7 +959,9 @@ export default function CRMEliosPage() {
           status: editStatus,
           staff: editStaff || activeUser || selectedLead.staff || 'Non assigné',
           familyGroup: editFamilyGroup.trim(),
-          lastModifiedBy: operatorName
+          toSosProf: editToSosProf,
+          lastModifiedBy: operatorName,
+          ...(pendingNoteToAdd ? { pendingNote: pendingNoteToAdd } : {})
         })
       });
 
@@ -955,16 +971,29 @@ export default function CRMEliosPage() {
       }
 
       const serverUpdated = await res.json();
-      mutate(
-        (currentLeads: any) => {
-          if (!Array.isArray(currentLeads)) return currentLeads;
-          return currentLeads.map((l: any) => 
-            (l._id === targetId || l.id === targetId) ? { ...l, ...serverUpdated } : l
-          );
-        },
-        false
-      );
-      broadcastCrmChange('elios');
+      if (editToSosProf || serverUpdated.migrated) {
+        removeClientCachedLead(targetId);
+        mutate(
+          (currentLeads: any) => {
+            if (!Array.isArray(currentLeads)) return currentLeads;
+            return currentLeads.filter((l: any) => (l._id !== targetId && l.id !== targetId));
+          },
+          false
+        );
+        broadcastCrmChange('all');
+      } else {
+        updateClientCachedLead(serverUpdated);
+        mutate(
+          (currentLeads: any) => {
+            if (!Array.isArray(currentLeads)) return currentLeads;
+            return currentLeads.map((l: any) => 
+              (l._id === targetId || l.id === targetId) ? { ...l, ...serverUpdated } : l
+            );
+          },
+          false
+        );
+        broadcastCrmChange('elios');
+      }
     } catch (err: any) {
       showToast(err.message || 'Erreur sauvegarde prospect');
       mutate();

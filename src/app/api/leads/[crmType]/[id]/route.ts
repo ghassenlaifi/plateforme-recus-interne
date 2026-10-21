@@ -23,9 +23,9 @@ export async function GET(
     await connectMongo();
     const query = id.match(/^[0-9a-fA-F]{24}$/) ? { _id: id } : { id };
     const crmFilter = crmType === 'formatic'
-      ? { $or: [{ crmType: 'formatic' }, { crmType: 'elios', fromFormatic: true }, { crmType: 'sos-prof', fromFormatic: true }] }
+      ? { $or: [{ crmType: 'formatic' }, { crmType: 'elios', fromFormatic: true }] }
       : crmType === 'elios'
-        ? { $or: [{ crmType: 'elios' }, { crmType: 'sos-prof', fromElios: true }] }
+        ? { crmType: 'elios' }
         : { crmType: 'sos-prof' };
 
     const lead = await Lead.findOne({ ...query, ...crmFilter }).lean();
@@ -53,9 +53,9 @@ export async function PATCH(
     const query = id.match(/^[0-9a-fA-F]{24}$/) ? { _id: id } : { id };
 
     const crmFilter = crmType === 'formatic'
-      ? { $or: [{ crmType: 'formatic' }, { crmType: 'elios', fromFormatic: true }, { crmType: 'sos-prof', fromFormatic: true }] }
+      ? { $or: [{ crmType: 'formatic' }, { crmType: 'elios', fromFormatic: true }] }
       : crmType === 'elios'
-        ? { $or: [{ crmType: 'elios' }, { crmType: 'sos-prof', fromElios: true }] }
+        ? { crmType: 'elios' }
         : { crmType: 'sos-prof' };
 
     // Cas 1 : Ajout atomique d'une note (évite les conflits entre opérateurs)
@@ -297,12 +297,18 @@ export async function PATCH(
       ? [{ operator, at: now, action: actionType }]
       : [];
 
+    const pendingNote = body.pendingNote;
+    delete body.pendingNote;
+
     const updateQuery: any = { $set: body };
     if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
       updateQuery.$addToSet = { modifiers: operator };
     }
-    if (logEntry.length > 0) {
-      updateQuery.$push = { modifierLogs: { $each: logEntry, $slice: -100 } };
+    if (logEntry.length > 0 || pendingNote) {
+      updateQuery.$push = {
+        ...(logEntry.length > 0 ? { modifierLogs: { $each: logEntry, $slice: -100 } } : {}),
+        ...(pendingNote ? { notes: { $each: [pendingNote], $position: 0 } } : {})
+      };
     }
 
     const updated = await Lead.findOneAndUpdate(
@@ -329,7 +335,9 @@ export async function PATCH(
           addedAt: now
         };
 
-        const existingElios = await Lead.findOne({ crmType: 'elios', phone: targetPhone });
+        const cleanTargetPhone = formatPhone(targetPhone) || String(targetPhone).trim();
+        const phoneRegex = buildPhoneMongoRegex(cleanTargetPhone);
+        const existingElios = await Lead.findOne({ crmType: 'elios', phone: phoneRegex });
         if (existingElios) {
           // Fusion des données et des notes dans la fiche Elios existante
           existingElios.fromFormatic = true;
@@ -368,10 +376,12 @@ export async function PATCH(
             ...(existingElios.notes || [])
           ];
 
+          existingElios.markModified('notes');
           await existingElios.save();
 
           // SUPPRESSION définitive du prospect de CRM Formatic pour garantir zéro doublon
           await Lead.deleteOne({ _id: updated._id });
+          removeCachedLeadEverywhere(String(updated._id), updated.id);
           invalidateLeadsCache('all');
 
           return NextResponse.json({
@@ -413,7 +423,9 @@ export async function PATCH(
             migrationNote,
             ...(updated.notes || [])
           ];
+          updated.markModified('notes');
           await updated.save();
+          removeCachedLeadEverywhere(String(updated._id), updated.id);
           invalidateLeadsCache('all');
 
           return NextResponse.json({
@@ -422,132 +434,140 @@ export async function PATCH(
             targetCrm: 'elios'
           });
         }
-      } catch (syncErr) {
+      } catch (syncErr: any) {
         console.error('Erreur migration PATCH To Elios:', syncErr);
+        return NextResponse.json({ error: `Erreur lors de la migration vers CRM Elios: ${syncErr?.message || syncErr}` }, { status: 500 });
       }
     }
 
-    
-    // MIGRATION To SOS Prof : déplace définitivement le prospect de Formatic ou Elios vers CRM SOS Prof (sans copie ni doublon)
-    const isToSosProfActive = Boolean(body.toSosProf !== undefined ? body.toSosProf : (updated.toSosProf ?? (updated as any)?._doc?.toSosProf));
-    if ((crmType === 'formatic' || crmType === 'elios') && isToSosProfActive && updated.crmType !== 'sos-prof') {
-      try {
-        const targetPhone = updated.phone || body.phone;
-        const originLabel = crmType === 'elios' ? 'Elios' : 'Formatic';
-        const migrationNote = {
-          id: `note-from-${crmType}-${Date.now()}`,
-          text: `Prospect migré depuis CRM ${originLabel} vers SOS Prof par ${operator}`,
-          by: operator,
-          addedBy: operator,
-          date: now.toISOString(),
-          addedAt: now
-        };
-
-        const existingSos = await Lead.findOne({ crmType: 'sos-prof', phone: targetPhone });
-        if (existingSos) {
-          if (crmType === 'formatic') existingSos.fromFormatic = true;
-          if (crmType === 'elios') existingSos.fromElios = true;
-          existingSos.firstName = updated.firstName || existingSos.firstName || '';
-          existingSos.lastName = updated.lastName || existingSos.lastName || '';
-          existingSos.name = updated.name || existingSos.name;
-          existingSos.offer = updated.offer || existingSos.offer;
-          existingSos.amount = updated.amount || existingSos.amount;
-          existingSos.grade = updated.grade || existingSos.grade;
-          existingSos.section = updated.section || existingSos.section;
-          existingSos.status = updated.status || existingSos.status;
-          existingSos.familyGroup = updated.familyGroup || existingSos.familyGroup || '';
-          if (Array.isArray(body.assignedTeachers) && body.assignedTeachers.length > 0) {
-            existingSos.assignedTeachers = body.assignedTeachers;
-          }
-          existingSos.updatedAt = now;
-          existingSos.lastModifiedBy = operator;
-          if (!existingSos.modifiers) existingSos.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
-            if (!existingSos.modifiers.includes(operator)) existingSos.modifiers.push(operator);
-            if (!existingSos.modifierLogs) existingSos.modifierLogs = [];
-            existingSos.modifierLogs.push({ operator, at: now, action: 'migrate' });
-            if (existingSos.modifierLogs.length > 100) existingSos.modifierLogs = existingSos.modifierLogs.slice(-100);
-          }
-
-          // Fusion des notes sans doublons
-          const sosNoteTexts = new Set((existingSos.notes || []).map((n: any) => (n.text || '').trim()));
-          const notesToMerge: any[] = [];
-          for (const fn of (updated.notes || [])) {
-            const txt = (fn.text || '').trim();
-            if (txt && !sosNoteTexts.has(txt)) {
-              notesToMerge.push(fn);
-              sosNoteTexts.add(txt);
-            }
-          }
-          existingSos.notes = [
-            migrationNote,
-            ...notesToMerge,
-            ...(existingSos.notes || [])
-          ];
-
-          await existingSos.save();
-          await Lead.deleteOne({ _id: updated._id });
-          invalidateLeadsCache('all');
-
-          return NextResponse.json({
-            ...existingSos.toObject(),
-            migrated: true,
-            targetCrm: 'sos-prof'
-          });
-        } else {
-          let sosId = updated.id;
-          const idClash = await Lead.findOne({ crmType: 'sos-prof', id: sosId });
-          if (idClash || !sosId) {
-            let nextNum = 1;
-            const lastSos = await Lead.find({ crmType: 'sos-prof', id: /^PRO-\d+$/ }, { id: 1 }).lean();
-            if (lastSos && lastSos.length > 0) {
-              let maxN = 0;
-              for (const item of lastSos) {
-                const num = parseInt(item.id.replace('PRO-', ''), 10);
-                if (!isNaN(num) && num > maxN) maxN = num;
-              }
-              nextNum = maxN + 1;
-            }
-            sosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
-          }
-
-          updated.id = sosId;
-          updated.crmType = 'sos-prof';
-          if (crmType === 'formatic') {
-            updated.fromFormatic = true;
-            updated.source = updated.source || 'From Formatic';
-          }
-          if (crmType === 'elios') {
-            updated.fromElios = true;
-            updated.source = updated.source || 'From Elios';
-          }
-          updated.toSosProf = false;
-          if (Array.isArray(body.assignedTeachers)) {
-            updated.assignedTeachers = body.assignedTeachers;
-          }
-          updated.updatedAt = now;
-          updated.lastModifiedBy = operator;
-          if (!updated.modifiers) updated.modifiers = [];
-          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
-            updated.modifiers.push(operator);
-          }
-          updated.notes = [
-            migrationNote,
-            ...(updated.notes || [])
-          ];
-          await updated.save();
-          invalidateLeadsCache('all');
-
-          return NextResponse.json({
-            ...updated.toObject(),
-            migrated: true,
-            targetCrm: 'sos-prof'
-          });
-        }
-      } catch (syncErr) {
-        console.error('Erreur migration PATCH To SOS Prof:', syncErr);
-      }
-    }
+    
+    // MIGRATION To SOS Prof : déplace définitivement le prospect de Formatic ou Elios vers CRM SOS Prof (sans copie ni doublon)
+    const isToSosProfActive = Boolean(body.toSosProf !== undefined ? body.toSosProf : (updated.toSosProf ?? (updated as any)?._doc?.toSosProf));
+    if ((crmType === 'formatic' || crmType === 'elios') && isToSosProfActive && updated.crmType !== 'sos-prof') {
+      try {
+        const targetPhone = updated.phone || body.phone;
+        const originLabel = crmType === 'elios' ? 'Elios' : 'Formatic';
+        const migrationNote = {
+          id: `note-from-${crmType}-${Date.now()}`,
+          text: `Prospect migré depuis CRM ${originLabel} vers SOS Prof par ${operator}`,
+          by: operator,
+          addedBy: operator,
+          date: now.toISOString(),
+          addedAt: now
+        };
+
+        const cleanTargetPhone = formatPhone(targetPhone) || String(targetPhone).trim();
+        const phoneRegex = buildPhoneMongoRegex(cleanTargetPhone);
+        const existingSos = await Lead.findOne({ crmType: 'sos-prof', phone: phoneRegex });
+        if (existingSos) {
+          if (crmType === 'formatic') existingSos.fromFormatic = true;
+          if (crmType === 'elios') existingSos.fromElios = true;
+          existingSos.firstName = updated.firstName || existingSos.firstName || '';
+          existingSos.lastName = updated.lastName || existingSos.lastName || '';
+          existingSos.name = updated.name || existingSos.name;
+          existingSos.offer = updated.offer || existingSos.offer;
+          existingSos.amount = updated.amount || existingSos.amount;
+          existingSos.grade = updated.grade || existingSos.grade;
+          existingSos.section = updated.section || existingSos.section;
+          existingSos.status = updated.status || existingSos.status;
+          existingSos.familyGroup = updated.familyGroup || existingSos.familyGroup || '';
+          if (Array.isArray(body.assignedTeachers) && body.assignedTeachers.length > 0) {
+            existingSos.assignedTeachers = body.assignedTeachers;
+          }
+          existingSos.updatedAt = now;
+          existingSos.lastModifiedBy = operator;
+          if (!existingSos.modifiers) existingSos.modifiers = [];
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+            if (!existingSos.modifiers.includes(operator)) existingSos.modifiers.push(operator);
+            if (!existingSos.modifierLogs) existingSos.modifierLogs = [];
+            existingSos.modifierLogs.push({ operator, at: now, action: 'migrate' });
+            if (existingSos.modifierLogs.length > 100) existingSos.modifierLogs = existingSos.modifierLogs.slice(-100);
+          }
+
+          // Fusion des notes sans doublons
+          const sosNoteTexts = new Set((existingSos.notes || []).map((n: any) => (n.text || '').trim()));
+          const notesToMerge: any[] = [];
+          for (const fn of (updated.notes || [])) {
+            const txt = (fn.text || '').trim();
+            if (txt && !sosNoteTexts.has(txt)) {
+              notesToMerge.push(fn);
+              sosNoteTexts.add(txt);
+            }
+          }
+          existingSos.notes = [
+            migrationNote,
+            ...notesToMerge,
+            ...(existingSos.notes || [])
+          ];
+
+          existingSos.markModified('notes');
+          await existingSos.save();
+          await Lead.deleteOne({ _id: updated._id });
+          removeCachedLeadEverywhere(String(updated._id), updated.id);
+          invalidateLeadsCache('all');
+
+          return NextResponse.json({
+            ...existingSos.toObject(),
+            migrated: true,
+            targetCrm: 'sos-prof'
+          });
+        } else {
+          let sosId = updated.id;
+          const idClash = await Lead.findOne({ crmType: 'sos-prof', id: sosId });
+          if (idClash || !sosId) {
+            let nextNum = 1;
+            const lastSos = await Lead.find({ crmType: 'sos-prof', id: /^PRO-\d+$/ }, { id: 1 }).lean();
+            if (lastSos && lastSos.length > 0) {
+              let maxN = 0;
+              for (const item of lastSos) {
+                const num = parseInt(item.id.replace('PRO-', ''), 10);
+                if (!isNaN(num) && num > maxN) maxN = num;
+              }
+              nextNum = maxN + 1;
+            }
+            sosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
+          }
+
+          updated.id = sosId;
+          updated.crmType = 'sos-prof';
+          if (crmType === 'formatic') {
+            updated.fromFormatic = true;
+            updated.source = updated.source || 'From Formatic';
+          }
+          if (crmType === 'elios') {
+            updated.fromElios = true;
+            updated.source = updated.source || 'From Elios';
+          }
+          updated.toSosProf = false;
+          if (Array.isArray(body.assignedTeachers)) {
+            updated.assignedTeachers = body.assignedTeachers;
+          }
+          updated.updatedAt = now;
+          updated.lastModifiedBy = operator;
+          if (!updated.modifiers) updated.modifiers = [];
+          if (operator && operator.toLowerCase() !== 'système' && operator.toLowerCase() !== 'systeme' && operator.toLowerCase() !== 'non assigné') {
+            updated.modifiers.push(operator);
+          }
+          updated.notes = [
+            migrationNote,
+            ...(updated.notes || [])
+          ];
+          updated.markModified('notes');
+          await updated.save();
+          removeCachedLeadEverywhere(String(updated._id), updated.id);
+          invalidateLeadsCache('all');
+
+          return NextResponse.json({
+            ...updated.toObject(),
+            migrated: true,
+            targetCrm: 'sos-prof'
+          });
+        }
+      } catch (syncErr: any) {
+        console.error('Erreur migration PATCH To SOS Prof:', syncErr);
+        return NextResponse.json({ error: 'Erreur lors de la migration vers CRM SOS Prof: ' + (syncErr?.message || syncErr) }, { status: 500 });
+      }
+    }
 
     if ((crmType === 'formatic' && isToEliosActive) || isToSosProfActive) {
       invalidateLeadsCache('all');
