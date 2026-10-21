@@ -291,19 +291,11 @@ export default function CRMSOSProfPage() {
   const [editAssignedTeachers, setEditAssignedTeachers] = useState<string[]>([]);
   const [teacherSearch, setTeacherSearch] = useState('');
   const [isTeacherDropdownOpen, setIsTeacherDropdownOpen] = useState(false);
-  const [newAssignedTeachers, setNewAssignedTeachers] = useState<string[]>([]);
-  const [newTeacherSearch, setNewTeacherSearch] = useState('');
-  const [isNewTeacherDropdownOpen, setIsNewTeacherDropdownOpen] = useState(false);
-
-  const newTeacherRef = useRef<HTMLDivElement>(null);
   const editTeacherRef = useRef<HTMLDivElement>(null);
 
   // Fermeture automatique des listes déroulantes Enseignants lors d'un clic extérieur
   useEffect(() => {
     function handleClickOutside(event: MouseEvent | TouchEvent) {
-      if (newTeacherRef.current && !newTeacherRef.current.contains(event.target as Node)) {
-        setIsNewTeacherDropdownOpen(false);
-      }
       if (editTeacherRef.current && !editTeacherRef.current.contains(event.target as Node)) {
         setIsTeacherDropdownOpen(false);
       }
@@ -814,7 +806,6 @@ export default function CRMSOSProfPage() {
           phone: cleanPhone,
           grade: newGrade || '',
           section: newSection || '',
-          assignedTeachers: newAssignedTeachers,
           status: 'Lead',
           source: 'Facebook',
           staff: activeUser || 'Non assigné',
@@ -835,9 +826,6 @@ export default function CRMSOSProfPage() {
       setNewGrade('');
       setNewSection('');
       setNewErr('');
-      setNewAssignedTeachers([]);
-      setNewTeacherSearch('');
-      setIsNewTeacherDropdownOpen(false);
 
       // 1. Pré-pendre immédiatement dans le cache local sessionStorage (T=0ms)
       prependClientCachedLead('sos_prof_cached_leads', created);
@@ -2280,119 +2268,6 @@ export default function CRMSOSProfPage() {
                   </select>
                 </div>
               </div>
-
-              
-              {/* ENSEIGNANT(S) ASSIGNÉ(S) DANS NOUVEAU PROSPECT */}
-              <div ref={newTeacherRef} className="space-y-1.5 p-2.5 rounded-xl bg-purple-500/5 border border-purple-500/20">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-[var(--ink3)] uppercase tracking-wider block">
-                    ENSEIGNANT(S) ASSIGNÉ(S)
-                  </label>
-                  <span className="text-[10px] text-[var(--ink3)]">
-                    {newAssignedTeachers.length} sélectionné{newAssignedTeachers.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                {/* Tags */}
-                {newAssignedTeachers.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-1.5">
-                    {newAssignedTeachers.map(t => (
-                      <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                        <span>{t}</span>
-                        <button
-                          type="button"
-                          onClick={() => setNewAssignedTeachers(prev => prev.filter(x => x !== t))}
-                          className="hover:text-red-500 font-bold text-xs ml-0.5 cursor-pointer"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Input & suggestions */}
-                <div className="relative">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={newTeacherSearch}
-                      onChange={(e) => {
-                        setNewTeacherSearch(e.target.value);
-                        setIsNewTeacherDropdownOpen(true);
-                      }}
-                      onFocus={() => setIsNewTeacherDropdownOpen(true)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const t = newTeacherSearch.trim();
-                          if (t && !newAssignedTeachers.includes(t)) {
-                            setNewAssignedTeachers(prev => [...prev, t]);
-                            setNewTeacherSearch('');
-                            setIsNewTeacherDropdownOpen(false);
-                          }
-                        }
-                      }}
-                      placeholder="Rechercher ou ajouter un enseignant..."
-                      className="w-full py-1.5 px-3 text-xs rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                    {newTeacherSearch.trim() && !newAssignedTeachers.includes(newTeacherSearch.trim()) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const t = newTeacherSearch.trim();
-                          if (t && !newAssignedTeachers.includes(t)) {
-                            setNewAssignedTeachers(prev => [...prev, t]);
-                            setNewTeacherSearch('');
-                            setIsNewTeacherDropdownOpen(false);
-                          }
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 shrink-0 transition cursor-pointer"
-                      >
-                        + Ajouter
-                      </button>
-                    )}
-                  </div>
-
-                  {isNewTeacherDropdownOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1 z-30 max-h-40 overflow-y-auto rounded-xl bg-[var(--card)] border border-[var(--line)] shadow-xl p-1.5 space-y-0.5">
-                      {availableTeachers
-                        .filter(t => (t.name || '').toLowerCase().includes(newTeacherSearch.toLowerCase()) && !newAssignedTeachers.includes(t.name))
-                        .map(teacher => (
-                          <button
-                            key={teacher._id || teacher.name}
-                            type="button"
-                            onClick={() => {
-                              if (!newAssignedTeachers.includes(teacher.name)) {
-                                setNewAssignedTeachers(prev => [...prev, teacher.name]);
-                              }
-                              setNewTeacherSearch('');
-                              setIsNewTeacherDropdownOpen(false);
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[var(--hover)] text-[var(--ink)] flex items-center justify-between group transition cursor-pointer"
-                          >
-                            <span className="font-medium group-hover:text-purple-600">{teacher.name}</span>
-                            {teacher.subject && (
-                              <span className="text-[10px] text-[var(--ink3)] bg-[var(--hover)] px-1.5 py-0.5 rounded">
-                                {teacher.subject}
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      {availableTeachers.filter(t => (t.name || '').toLowerCase().includes(newTeacherSearch.toLowerCase()) && !newAssignedTeachers.includes(t.name)).length === 0 && (
-                        <div className="py-2 px-3 text-xs text-[var(--ink3)] text-center">
-                          {newTeacherSearch.trim() ? (
-                            <span>Cliquez sur « + Ajouter » ou appuyez sur Entrée pour ajouter <strong>{newTeacherSearch.trim()}</strong>.</span>
-                          ) : (
-                            <span>Tous les enseignants sont déjà assignés ou aucun enseignant en base.</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
               {newErr && <p className="text-xs text-red-500 font-semibold">{newErr}</p>}
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--line)]">
