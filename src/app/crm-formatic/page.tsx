@@ -970,7 +970,29 @@ export default function CRMFormaticPage() {
     }
 
     if (editToElios || editToSosProf) {
+      removeClientCachedLead(targetId);
       mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
+      if (editToElios) {
+        // Pré-chargement instantané à T=0ms dans le cache Elios
+        prependClientCachedLead('elios_cached_leads', {
+          ...updatedLeadOptimistic,
+          crmType: 'elios',
+          fromFormatic: true,
+          source: 'From Formatic',
+          toElios: false
+        });
+      }
+      if (editToSosProf) {
+        // Pré-chargement instantané à T=0ms dans le cache SOS Prof
+        prependClientCachedLead('sos_prof_cached_leads', {
+          ...updatedLeadOptimistic,
+          crmType: 'sos-prof',
+          fromFormatic: true,
+          source: 'From Formatic',
+          toSosProf: false
+        });
+      }
+      broadcastCrmChange('all');
     } else {
       mutate(
         (currentLeads: any) => {

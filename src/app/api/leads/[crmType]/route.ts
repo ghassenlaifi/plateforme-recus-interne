@@ -160,17 +160,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ crm
       );
     }
 
-    // Helper pour générer un ID séquentiel (PRO-XXXXX)
+    // Helper ultra-performant pour générer un ID séquentiel (PRO-XXXXX) en ~30ms via index
     const generateSequentialId = async (targetType: string) => {
+      const topLead = await Lead.findOne({ crmType: targetType, id: /^PRO-\d+$/ })
+        .sort({ id: -1 })
+        .select('id')
+        .lean();
       let nextIdNumber = 1;
-      const allLeadsWithId = await Lead.find({ crmType: targetType, id: /^PRO-\d+$/ }, { id: 1 }).lean();
-      if (allLeadsWithId && allLeadsWithId.length > 0) {
-        let maxNum = 0;
-        for (const item of allLeadsWithId) {
-          const num = parseInt(item.id.replace('PRO-', ''), 10);
-          if (!isNaN(num) && num > maxNum) maxNum = num;
-        }
-        nextIdNumber = maxNum + 1;
+      if (topLead && (topLead as any).id) {
+        const num = parseInt((topLead as any).id.replace('PRO-', ''), 10);
+        if (!isNaN(num)) nextIdNumber = num + 1;
       }
       return `PRO-${nextIdNumber.toString().padStart(5, '0')}`;
     };

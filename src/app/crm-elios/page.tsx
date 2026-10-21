@@ -918,7 +918,17 @@ export default function CRMEliosPage() {
 
     // Éviction / Mise à jour instantanée du cache SWR (revalidate = false -> 0ms)
     if (editToSosProf) {
+      removeClientCachedLead(targetId);
       mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
+      // Pré-chargement instantané à T=0ms dans le cache SOS Prof
+      prependClientCachedLead('sos_prof_cached_leads', {
+        ...updatedLeadOptimistic,
+        crmType: 'sos-prof',
+        fromElios: true,
+        source: 'From Elios',
+        toSosProf: false
+      });
+      broadcastCrmChange('all');
     } else {
       mutate(
         (currentLeads: any) => {

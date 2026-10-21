@@ -394,15 +394,11 @@ export async function PATCH(
           let eliosId = updated.id;
           const idClash = await Lead.findOne({ crmType: 'elios', id: eliosId });
           if (idClash || !eliosId) {
+            const topElios = await Lead.findOne({ crmType: 'elios', id: /^PRO-\d+$/ }).sort({ id: -1 }).select('id').lean();
             let nextNum = 1;
-            const lastElios = await Lead.find({ crmType: 'elios', id: /^PRO-\d+$/ }, { id: 1 }).lean();
-            if (lastElios && lastElios.length > 0) {
-              let maxN = 0;
-              for (const item of lastElios) {
-                const num = parseInt(item.id.replace('PRO-', ''), 10);
-                if (!isNaN(num) && num > maxN) maxN = num;
-              }
-              nextNum = maxN + 1;
+            if (topElios && (topElios as any).id) {
+              const num = parseInt((topElios as any).id.replace('PRO-', ''), 10);
+              if (!isNaN(num)) nextNum = num + 1;
             }
             eliosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
           }
@@ -426,6 +422,7 @@ export async function PATCH(
           updated.markModified('notes');
           await updated.save();
           removeCachedLeadEverywhere(String(updated._id), updated.id);
+          updateCachedLeadInPlace('elios', updated.toObject ? updated.toObject() : updated);
           invalidateLeadsCache('all');
 
           return NextResponse.json({
@@ -515,15 +512,11 @@ export async function PATCH(
           let sosId = updated.id;
           const idClash = await Lead.findOne({ crmType: 'sos-prof', id: sosId });
           if (idClash || !sosId) {
+            const topSos = await Lead.findOne({ crmType: 'sos-prof', id: /^PRO-\d+$/ }).sort({ id: -1 }).select('id').lean();
             let nextNum = 1;
-            const lastSos = await Lead.find({ crmType: 'sos-prof', id: /^PRO-\d+$/ }, { id: 1 }).lean();
-            if (lastSos && lastSos.length > 0) {
-              let maxN = 0;
-              for (const item of lastSos) {
-                const num = parseInt(item.id.replace('PRO-', ''), 10);
-                if (!isNaN(num) && num > maxN) maxN = num;
-              }
-              nextNum = maxN + 1;
+            if (topSos && (topSos as any).id) {
+              const num = parseInt((topSos as any).id.replace('PRO-', ''), 10);
+              if (!isNaN(num)) nextNum = num + 1;
             }
             sosId = `PRO-${nextNum.toString().padStart(5, '0')}`;
           }
@@ -555,6 +548,7 @@ export async function PATCH(
           updated.markModified('notes');
           await updated.save();
           removeCachedLeadEverywhere(String(updated._id), updated.id);
+          updateCachedLeadInPlace('sos-prof', updated.toObject ? updated.toObject() : updated);
           invalidateLeadsCache('all');
 
           return NextResponse.json({
