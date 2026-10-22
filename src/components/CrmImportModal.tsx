@@ -2,7 +2,11 @@
 
 import React, { useState, useRef } from 'react';
 import * as xlsx from 'xlsx';
-import { standardizeImportRow, StandardizedLeadCandidate } from '@/lib/leadNormalizer';
+import { 
+  inferColumnsAndStandardizeRows, 
+  InferredSheetResult, 
+  StandardizedLeadCandidate 
+} from '@/lib/leadNormalizer';
 import { ELIOS_SOURCES, ELIOS_STATUSES } from '@/types/crm';
 
 interface CrmImportModalProps {
@@ -24,7 +28,8 @@ export function CrmImportModal({
 }: CrmImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
-  const [parsedRows, setParsedRows] = useState<any[]>([]);
+  const [rawMatrix, setRawMatrix] = useState<any[][]>([]);
+  const [inferenceResult, setInferenceResult] = useState<InferredSheetResult | null>(null);
   const [previewCandidates, setPreviewCandidates] = useState<StandardizedLeadCandidate[]>([]);
   const [defaultSource, setDefaultSource] = useState(crmType === 'formatic' ? 'Formatic dataBase' : 'Import Excel');
   const [defaultStatus, setDefaultStatus] = useState('Lead');
@@ -42,6 +47,36 @@ export function CrmImportModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const runInference = (matrix: any[][], sourceVal = defaultSource, statusVal = defaultStatus) => {
+    try {
+      const result = inferColumnsAndStandardizeRows(matrix, {
+        defaultSource: sourceVal,
+        defaultStatus: statusVal,
+        operator: activeUser || 'Import Système',
+        crmType
+      });
+      setInferenceResult(result);
+      setPreviewCandidates(result.candidates.slice(0, 5));
+    } catch (err: any) {
+      console.error('Erreur inférence:', err);
+      setErrorMsg('Erreur lors de l\'analyse sémantique du fichier : ' + (err.message || ''));
+    }
+  };
+
+  const handleSourceChange = (newSource: string) => {
+    setDefaultSource(newSource);
+    if (rawMatrix.length > 0) {
+      runInference(rawMatrix, newSource, defaultStatus);
+    }
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    setDefaultStatus(newStatus);
+    if (rawMatrix.length > 0) {
+      runInference(rawMatrix, defaultSource, newStatus);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -74,24 +109,21 @@ export function CrmImportModal({
         }
 
         const worksheet = workbook.Sheets[firstSheetName];
-        const raw = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
-        if (!raw || raw.length === 0) {
-          setErrorMsg('Le fichier est vide ou aucune donnée n\'a été détectée.');
+        // Lecture en matrice 2D brute : préserve la ligne 0 même si aucun en-tête n'est présent
+        const matrix = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
+        
+        // Nettoyage des lignes entièrement vides
+        const cleanMatrix = matrix.filter(row => 
+          Array.isArray(row) && row.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '')
+        );
+
+        if (!cleanMatrix || cleanMatrix.length === 0) {
+          setErrorMsg('Le fichier est vide ou aucune ligne exploitable n\'a été détectée.');
           return;
         }
 
-        setParsedRows(raw);
-
-        // Pré-analyse des 5 premières lignes avec normalisation
-        const preview = raw.slice(0, 5).map(row => 
-          standardizeImportRow(row as any, {
-            defaultSource,
-            defaultStatus,
-            operator: activeUser || 'Import Système',
-            crmType
-          })
-        );
-        setPreviewCandidates(preview);
+        setRawMatrix(cleanMatrix);
+        runInference(cleanMatrix, defaultSource, defaultStatus);
       } catch (err: any) {
         setErrorMsg('Erreur lors de la lecture du fichier : ' + (err.message || 'Fichier non pris en charge'));
       }
@@ -100,7 +132,7 @@ export function CrmImportModal({
   };
 
   const handleExecuteImport = async () => {
-    if (!file && parsedRows.length === 0) return;
+    if (!file && rawMatrix.length === 0) return;
     try {
       setIsProcessing(true);
       setErrorMsg('');
@@ -109,8 +141,7 @@ export function CrmImportModal({
       if (file) {
         formData.append('file', file);
       } else {
-        // Envoi des lignes JSON
-        formData.append('rows', JSON.stringify(parsedRows));
+        formData.append('rows', JSON.stringify(rawMatrix));
       }
       formData.append('defaultSource', defaultSource);
       formData.append('defaultStatus', defaultStatus);
@@ -138,12 +169,17 @@ export function CrmImportModal({
   const handleReset = () => {
     setFile(null);
     setFileName('');
-    setParsedRows([]);
+    setRawMatrix([]);
+    setInferenceResult(null);
     setPreviewCandidates([]);
     setImportReport(null);
     setErrorMsg('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  const totalCandidatesCount = inferenceResult ? inferenceResult.candidates.length : 0;
+  const validCandidatesCount = inferenceResult ? inferenceResult.candidates.filter(c => !c.validationError).length : 0;
+  const invalidCandidatesCount = totalCandidatesCount - validCandidatesCount;
 
   return (
     <div 
@@ -217,7 +253,7 @@ export function CrmImportModal({
           ) : (
             <>
               {/* Zone Drag & Drop si aucun fichier */}
-              {!file && parsedRows.length === 0 ? (
+              {!file && rawMatrix.length === 0 ? (
                 <div
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
@@ -242,8 +278,8 @@ export function CrmImportModal({
                       ou cliquez pour parcourir vos fichiers (.xlsx, .xls, .csv)
                     </span>
                   </div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[var(--card)] border border-[var(--line)] text-[var(--ink2)]">
-                    Format auto-détecté • Normalisation intelligente des colonnes
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[var(--card)] border border-[var(--line)] text-emerald-600">
+                    ✨ Inférence sémantique heuristique : Reconnaît les colonnes même sans en-tête !
                   </div>
                 </div>
               ) : (
@@ -255,7 +291,7 @@ export function CrmImportModal({
                       <div className="min-w-0">
                         <b className="text-xs sm:text-sm text-[var(--ink)] block truncate">{fileName}</b>
                         <span className="text-[11px] text-[var(--ink3)]">
-                          {parsedRows.length} ligne{parsedRows.length > 1 ? 's' : ''} détectée{parsedRows.length > 1 ? 's' : ''} dans le fichier
+                          {totalCandidatesCount} prospect{totalCandidatesCount > 1 ? 's' : ''} détecté{totalCandidatesCount > 1 ? 's' : ''} ({validCandidatesCount} valide{validCandidatesCount > 1 ? 's' : ''}{invalidCandidatesCount > 0 ? `, ${invalidCandidatesCount} incomplet(s)` : ''})
                         </span>
                       </div>
                     </div>
@@ -268,6 +304,45 @@ export function CrmImportModal({
                     </button>
                   </div>
 
+                  {/* État de détection heuristique et cartographie des colonnes */}
+                  {inferenceResult && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">🧠</span>
+                          <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                            {inferenceResult.hasHeader ? 'En-têtes détectés et standardisés' : 'Fichier sans noms de colonnes : Inférence sémantique automatique réussie !'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                          {inferenceResult.detectedFields.length} champ(s) cartographié(s)
+                        </span>
+                      </div>
+
+                      {/* Badges de colonnes inférées */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {Object.entries(inferenceResult.columnLabels).map(([colIdx, label]) => {
+                          const field = inferenceResult.columnMapping[Number(colIdx)];
+                          const isAssigned = Boolean(field);
+                          return (
+                            <span 
+                              key={colIdx} 
+                              className={`px-2 py-1 rounded-lg text-[10px] font-medium border flex items-center gap-1.5 ${
+                                isAssigned 
+                                  ? 'bg-[var(--card)] border-emerald-500/30 text-emerald-800 dark:text-emerald-200 shadow-xs' 
+                                  : 'bg-[var(--hover)]/60 border-[var(--line)] text-[var(--ink3)]'
+                              }`}
+                            >
+                              <strong className="text-[var(--ink)] font-mono">Col {Number(colIdx) + 1}</strong>
+                              <span>→</span>
+                              <span className={isAssigned ? 'font-bold' : ''}>{label}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Paramètres d'importation par défaut */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[var(--hover)]/40 border border-[var(--line)]">
                     <div>
@@ -276,7 +351,7 @@ export function CrmImportModal({
                       </label>
                       <select
                         value={defaultSource}
-                        onChange={(e) => setDefaultSource(e.target.value)}
+                        onChange={(e) => handleSourceChange(e.target.value)}
                         className="w-full py-1.5 px-2.5 text-xs rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
                       >
                         <option value="Import Excel">Import Excel</option>
@@ -290,7 +365,7 @@ export function CrmImportModal({
                       </label>
                       <select
                         value={defaultStatus}
-                        onChange={(e) => setDefaultStatus(e.target.value)}
+                        onChange={(e) => handleStatusChange(e.target.value)}
                         className="w-full py-1.5 px-2.5 text-xs rounded-xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)]"
                       >
                         {ELIOS_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
@@ -326,7 +401,7 @@ export function CrmImportModal({
                           {previewCandidates.map((c, i) => (
                             <tr key={i} className="hover:bg-[var(--hover)]/50">
                               <td className="py-2 px-2.5 font-semibold text-[var(--ink)] whitespace-nowrap">
-                                {c.name}
+                                {c.name || <span className="text-amber-500 italic">Sans nom</span>}
                               </td>
                               <td className="py-2 px-2.5 font-mono whitespace-nowrap">
                                 <span className={c.isValidPhone ? 'text-emerald-600 font-semibold' : 'text-red-500 font-bold'}>
@@ -399,7 +474,7 @@ export function CrmImportModal({
               </button>
               <button
                 type="button"
-                disabled={isProcessing || (!file && parsedRows.length === 0)}
+                disabled={isProcessing || (!file && rawMatrix.length === 0) || validCandidatesCount === 0}
                 onClick={handleExecuteImport}
                 className="btn pri text-xs py-2 px-4 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
               >
@@ -411,7 +486,7 @@ export function CrmImportModal({
                 ) : (
                   <>
                     <span>📥</span>
-                    <span>Lancer l'importation ({parsedRows.length} lignes)</span>
+                    <span>Lancer l'importation ({validCandidatesCount} prospects)</span>
                   </>
                 )}
               </button>

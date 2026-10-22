@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectMongo from '@/lib/mongodb';
 import Lead from '@/models/Lead';
 import * as xlsx from 'xlsx';
-import { standardizeImportRow } from '@/lib/leadNormalizer';
+import { inferColumnsAndStandardizeRows } from '@/lib/leadNormalizer';
 import { buildPhoneMongoRegex } from '@/lib/phoneUtils';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
 
@@ -48,7 +48,8 @@ export async function POST(
       }
 
       const worksheet = workbook.Sheets[firstSheetName];
-      rawRows = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
+      // Lecture sous forme de matrice brute 2D : préserve la ligne 0 même en l'absence totale d'en-tête
+      rawRows = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
     } else {
       // JSON payload
       const body = await request.json();
@@ -59,24 +60,30 @@ export async function POST(
       operator = body.operator || 'Import Système';
     }
 
-    if (!rawRows || rawRows.length === 0) {
+    // Filtrer les lignes complètement vides
+    const cleanRows = Array.isArray(rawRows[0])
+      ? (rawRows as any[][]).filter(row => 
+          Array.isArray(row) && row.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '')
+        )
+      : rawRows;
+
+    if (!cleanRows || cleanRows.length === 0) {
       return NextResponse.json({ error: 'Aucune donnée détectée dans le fichier' }, { status: 400 });
     }
 
-    // 1. Normalisation standardisée de toutes les lignes
-    const normalizedCandidates = rawRows.map((row, index) => {
-      const standardized = standardizeImportRow(row, {
-        defaultSource,
-        defaultStatus,
-        defaultOffer,
-        operator,
-        crmType: crmType as any
-      });
-      return {
-        ...standardized,
-        rowIndex: index + 2 // +2 pour correspondre au numéro de ligne réel dans Excel (ligne 1 = en-têtes)
-      };
+    // 1. Moteur d'inférence sémantique heuristique (identifie les colonnes avec ou sans en-têtes)
+    const inference = inferColumnsAndStandardizeRows(cleanRows, {
+      defaultSource,
+      defaultStatus,
+      defaultOffer,
+      operator,
+      crmType: crmType as any
     });
+
+    const normalizedCandidates = inference.candidates.map((cand, index) => ({
+      ...cand,
+      rowIndex: inference.hasHeader ? index + 2 : index + 1 // Ajustement du numéro de ligne selon présence d'en-tête
+    }));
 
     const validCandidates = normalizedCandidates.filter(c => !c.validationError && c.cleanPhone);
     const invalidCandidates = normalizedCandidates.filter(c => Boolean(c.validationError));
@@ -183,10 +190,13 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      totalRows: rawRows.length,
+      totalRows: inference.totalDataRows,
       imported: leadsToInsert.length,
       preserved: preservedCount,
       invalid: invalidCandidates.length,
+      hasHeader: inference.hasHeader,
+      detectedFields: inference.detectedFields,
+      columnLabels: inference.columnLabels,
       errors: errors.slice(0, 30),
       message: `${leadsToInsert.length} nouveau(x) prospect(s) importé(s) avec succès. ${preservedCount} prospect(s) déjà existant(s) conservé(s) intact(s) sans aucun écrasement.`
     }, { status: 200 });
