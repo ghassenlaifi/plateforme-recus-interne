@@ -1222,10 +1222,10 @@ export default function CRMSOSProfPage() {
   const confirmDeleteLead = async () => {
     if (!selectedLead || isDeletingLead) return;
 
-    const targetId = selectedLead._id || selectedLead.id;
-    const customId = selectedLead.id;
-    const targetStr = String(targetId).trim();
-    const customStr = customId ? String(customId).trim() : null;
+    const targetId = selectedLead._id ? String(selectedLead._id).trim() : String(selectedLead.id).trim();
+    const customId = selectedLead.id ? String(selectedLead.id).trim() : '';
+    const targetStr = targetId;
+    const customStr = customId || null;
 
     setIsDeletingLead(true);
     setIsDeleteArmed(false);
@@ -1246,6 +1246,7 @@ export default function CRMSOSProfPage() {
           if (lId && lId === targetStr) return false;
           if (lCust && lCust === targetStr) return false;
           if (customStr && lCust === customStr) return false;
+          if (customStr && lId === customStr) return false;
           return true;
         });
       },
@@ -1255,7 +1256,8 @@ export default function CRMSOSProfPage() {
 
     // 2. Requête réseau résiliente en arrière-plan
     try {
-      const res = await fetch(`/api/leads/sos-prof/${targetId}`, {
+      const url = `/api/leads/sos-prof/${encodeURIComponent(targetStr)}${customStr && customStr !== targetStr ? `?customId=${encodeURIComponent(customStr)}` : ''}`;
+      const res = await fetch(url, {
         method: 'DELETE'
       });
       if (!res.ok && res.status !== 404) {
@@ -1698,6 +1700,8 @@ export default function CRMSOSProfPage() {
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="200">200</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
             </select>
           </div>
         </div>

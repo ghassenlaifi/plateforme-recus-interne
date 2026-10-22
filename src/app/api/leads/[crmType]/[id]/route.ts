@@ -525,27 +525,64 @@ export async function DELETE(
   try {
     await connectMongo();
 
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
-    const deleteQuery = isMongoId ? { $or: [{ _id: id }, { id }] } : { id };
+    const url = new URL(request.url);
+    const customIdQuery = url.searchParams.get('customId');
+    const cleanCustomId = customIdQuery ? decodeURIComponent(customIdQuery).trim() : '';
+    const cleanId = decodeURIComponent(id).trim();
 
-    // Suppression universelle sans restriction sur crmType (garantit la suppression même si prospect migré/cross-CRM)
-    const deleted = await Lead.findOneAndDelete(deleteQuery);
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(cleanId);
+    const matchConditions: any[] = [];
+
+    if (isMongoId) {
+      matchConditions.push({ _id: cleanId });
+      matchConditions.push({ id: cleanId });
+    } else {
+      matchConditions.push({ id: cleanId });
+    }
+
+    if (cleanCustomId) {
+      matchConditions.push({ id: cleanCustomId });
+      if (/^[0-9a-fA-F]{24}$/.test(cleanCustomId)) {
+        matchConditions.push({ _id: cleanCustomId });
+      }
+    }
+
+    const idFilter = matchConditions.length > 1 ? { $or: matchConditions } : matchConditions[0];
+
+    // Filtre spécifique au CRM ciblé pour garantir la suppression du bon prospect même en cas de collision d'identifiant PRO-XXXXX
+    const crmFilter = crmType === 'formatic'
+      ? { $or: [{ crmType: 'formatic' }, { crmType: 'elios', fromFormatic: true }] }
+      : crmType === 'elios'
+        ? { crmType: 'elios' }
+        : { crmType: 'sos-prof' };
+
+    // 1. Suppression prioritaire dans le CRM appelant
+    let deleted = await Lead.findOneAndDelete({ $and: [idFilter, crmFilter] });
+
+    // 2. Fallback universel uniquement si non trouvé dans le CRM appelant
+    if (!deleted) {
+      deleted = await Lead.findOneAndDelete(idFilter);
+    }
 
     if (!deleted) {
       // Idempotence : si le prospect a déjà été supprimé (double-clic ou requête concurrente), renvoyer 200 succès
-      removeCachedLeadEverywhere(id);
+      removeCachedLeadEverywhere(cleanId);
+      if (cleanCustomId) removeCachedLeadEverywhere(cleanCustomId);
       return NextResponse.json({ 
         message: 'Prospect déjà supprimé ou introuvable',
         alreadyDeleted: true 
       });
     }
 
-    // Éviction immédiate et atomique de tous les caches en mémoire vive (serveur) sans invalider brutalement
+    // Éviction immédiate et atomique de tous les caches en mémoire vive (serveur)
     const mongoIdStr = deleted._id ? deleted._id.toString() : '';
     const customIdStr = deleted.id || '';
-    removeCachedLeadEverywhere(mongoIdStr || id, customIdStr);
-    if (customIdStr && customIdStr !== id) {
+    removeCachedLeadEverywhere(mongoIdStr || cleanId, customIdStr);
+    if (customIdStr && customIdStr !== cleanId) {
       removeCachedLeadEverywhere(customIdStr);
+    }
+    if (cleanCustomId && cleanCustomId !== customIdStr) {
+      removeCachedLeadEverywhere(cleanCustomId);
     }
 
     return NextResponse.json({ 

@@ -21,27 +21,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
       return NextResponse.json({ error: 'Invalid CRM type' }, { status: 400 });
     }
 
-    const validCrm = crmType as 'elios' | 'formatic' | 'sos-prof';
-    const url = new URL(request.url);
-    const forceRefresh = url.searchParams.get('refresh') === '1' || url.searchParams.get('force') === '1';
-    if (forceRefresh) {
-      invalidateLeadsCache('all');
-    }
-
-    const { data: cached, isStale } = getCachedLeads(validCrm);
-
-    // Si nous avons des données ultra-fraîches en mémoire vive (< 15s) et sans forçage : réponse instantanée (< 5ms)
-    if (cached && !isStale && !forceRefresh) {
-      return NextResponse.json(cached, { headers: NO_CACHE_HEADERS });
-    }
-
     await connectMongo();
 
     if (crmType === 'formatic') {
       // Pour Formatic : requêtes parallèles incluant prospects migrés vers Elios (pour la vue TO ELIOS)
       const [formaticLeads, migratedToElios] = await Promise.all([
-        Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean(),
-        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).batchSize(2000).lean()
+        Lead.find({ crmType: 'formatic' }).sort({ date: -1, _id: -1 }).lean(),
+        Lead.find({ crmType: 'elios', fromFormatic: true }).sort({ date: -1, _id: -1 }).lean()
       ]);
 
       const formattedElios = migratedToElios.map((l: any) => ({
@@ -60,20 +46,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ crmT
         if (idNumB !== idNumA) return idNumB - idNumA;
         return String(b.id || b._id).localeCompare(String(a.id || a._id));
       });
-      setCachedLeads('formatic', result);
       return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
     }
 
     if (crmType === 'elios') {
-      // Pour Elios : strictement les prospects du CRM Elios
-      const eliosLeads = await Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
-      setCachedLeads('elios', eliosLeads);
+      // Pour Elios : strictement et fidèlement TOUS les prospects du CRM Elios en une seule fois
+      const eliosLeads = await Lead.find({ crmType: 'elios' }).sort({ date: -1, _id: -1 }).lean();
       return NextResponse.json(eliosLeads, { headers: NO_CACHE_HEADERS });
     }
 
     // CRM SOS Prof
-    const leads = await Lead.find({ crmType: 'sos-prof' }).sort({ date: -1, _id: -1 }).batchSize(2000).lean();
-    setCachedLeads('sos-prof', leads);
+    const leads = await Lead.find({ crmType: 'sos-prof' }).sort({ date: -1, _id: -1 }).lean();
     return NextResponse.json(leads, { headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Failed to fetch leads:', error);

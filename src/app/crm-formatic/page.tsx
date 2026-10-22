@@ -976,9 +976,10 @@ export default function CRMFormaticPage() {
       removeClientCachedLead(targetId);
       mutate((current: any) => Array.isArray(current) ? current.filter((l: any) => (l._id !== targetId && l.id !== targetId)) : current, false);
       if (editToElios) {
-        // Pré-chargement instantané à T=0ms dans le cache Elios
+        // Pré-chargement instantané à T=0ms dans le cache Elios avec date actuelle pour affichage au sommet
         prependClientCachedLead('elios_cached_leads', {
           ...updatedLeadOptimistic,
+          date: nowIso,
           crmType: 'elios',
           fromFormatic: true,
           source: 'From Formatic',
@@ -986,9 +987,10 @@ export default function CRMFormaticPage() {
         });
       }
       if (editToSosProf) {
-        // Pré-chargement instantané à T=0ms dans le cache SOS Prof
+        // Pré-chargement instantané à T=0ms dans le cache SOS Prof avec date actuelle pour affichage au sommet
         prependClientCachedLead('sos_prof_cached_leads', {
           ...updatedLeadOptimistic,
+          date: nowIso,
           crmType: 'sos-prof',
           fromFormatic: true,
           source: 'From Formatic',
@@ -1297,10 +1299,10 @@ export default function CRMFormaticPage() {
   const confirmDeleteLead = async () => {
     if (!selectedLead || isDeletingLead) return;
 
-    const targetId = selectedLead._id || selectedLead.id;
-    const customId = selectedLead.id;
-    const targetStr = String(targetId).trim();
-    const customStr = customId ? String(customId).trim() : null;
+    const targetId = selectedLead._id ? String(selectedLead._id).trim() : String(selectedLead.id).trim();
+    const customId = selectedLead.id ? String(selectedLead.id).trim() : '';
+    const targetStr = targetId;
+    const customStr = customId || null;
 
     setIsDeletingLead(true);
     setIsDeleteArmed(false);
@@ -1321,6 +1323,7 @@ export default function CRMFormaticPage() {
           if (lId && lId === targetStr) return false;
           if (lCust && lCust === targetStr) return false;
           if (customStr && lCust === customStr) return false;
+          if (customStr && lId === customStr) return false;
           return true;
         });
       },
@@ -1330,7 +1333,8 @@ export default function CRMFormaticPage() {
 
     // 2. Requête réseau résiliente en arrière-plan
     try {
-      const res = await fetch(`/api/leads/formatic/${targetId}`, {
+      const url = `/api/leads/formatic/${encodeURIComponent(targetStr)}${customStr && customStr !== targetStr ? `?customId=${encodeURIComponent(customStr)}` : ''}`;
+      const res = await fetch(url, {
         method: 'DELETE'
       });
       if (!res.ok && res.status !== 404) {
@@ -1795,7 +1799,27 @@ export default function CRMFormaticPage() {
               <span>Affichage de <strong>{(leads?.length || 0).toLocaleString('fr-FR')}</strong> prospects</span>
             )}
           </div>
-          <span>Page {currentPage} sur {totalPages}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="hidden sm:inline">Par page :</span>
+              <select 
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="py-1 px-2 text-xs rounded-lg border border-[var(--line)] bg-[var(--card)]"
+              >
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+              </select>
+            </div>
+            <span>Page {currentPage} sur {totalPages}</span>
+          </div>
         </div>
 
         {/* ========================================================= */}
