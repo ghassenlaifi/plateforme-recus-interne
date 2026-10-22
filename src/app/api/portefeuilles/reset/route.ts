@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { deleteFileFromDrive } from '@/lib/googleDrive';
+import { normalizeWallet, buildWalletMongoMatch } from '@/lib/walletUtils';
 
 export async function DELETE(request: Request) {
   try {
@@ -13,29 +14,29 @@ export async function DELETE(request: Request) {
 
     await connectDB();
 
+    const { mode: cleanMode, details: cleanDetails } = normalizeWallet(mode, details);
+    const match = buildWalletMongoMatch(cleanMode, cleanDetails);
+
     // Trouver tous les reçus correspondants (PENDING, PROCESSED et ARCHIVED)
     const query: any = {
       status: { $in: ['PENDING', 'PROCESSED', 'ARCHIVED'] },
-      paymentMode: { $regex: new RegExp(`^${mode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') },
+      paymentMode: match.paymentMode,
+      paymentDetails: match.paymentDetails,
     };
-
-    if (details) {
-      query.paymentDetails = { $regex: new RegExp(`^${details.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') };
-    } else {
-      query.paymentDetails = { $in: [null, ''] };
-    }
 
     const receiptsToDelete: any[] = await Receipt.find(query);
     let deletedDriveCount = 0;
 
     for (const receipt of receiptsToDelete) {
-      if (receipt.gDriveFileId) {
+      const gId = receipt.gDriveFileId;
+      // Ne solliciter l'API Drive que pour les vrais fichiers uploadés (exclure les déductions manuelles / retraits)
+      if (gId && !gId.startsWith('retrait-') && !gId.startsWith('deduction-') && !gId.includes('system-deduction')) {
         try {
-          await deleteFileFromDrive(receipt.gDriveFileId);
+          await deleteFileFromDrive(gId);
           deletedDriveCount++;
         } catch (driveError: any) {
           if (driveError.code !== 404) {
-            console.error(`Avertissement : Impossible de supprimer le fichier Drive ${receipt.gDriveFileId}`, driveError.message);
+            console.error(`Avertissement : Impossible de supprimer le fichier Drive ${gId}`, driveError.message);
           }
         }
       }
@@ -45,7 +46,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Portefeuille ${mode} ${details || ''} réinitialisé avec succès.`,
+      message: `Portefeuille ${cleanMode} - ${cleanDetails} réinitialisé avec succès.`,
       deletedCount: deleteResult.deletedCount,
       deletedDriveCount
     });

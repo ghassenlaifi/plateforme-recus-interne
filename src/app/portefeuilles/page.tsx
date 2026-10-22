@@ -406,11 +406,20 @@ export default function PortefeuillesPage() {
           imageId: 'retrait-' + Date.now(),
           operator: activeUser || 'Elios',
           reference: `RET-${Date.now().toString().slice(-6)}`,
+          paymentMode: retraitWallet.mode,
+          paymentDetails: retraitWallet.details,
+          amount: -Math.abs(v),
+          notes: retraitMotif.trim() || 'Retrait du portefeuille',
           clientDetails: {
+            nom: 'RETRAIT',
             name: 'RETRAIT',
+            telephone: '00000000',
             phone: '00000000',
+            classe: 'Retrait',
             offer: 'Retrait',
             paymentMethod: `${retraitWallet.mode} - ${retraitWallet.details}`,
+            paymentMode: retraitWallet.mode,
+            paymentDetails: retraitWallet.details,
             amount: -Math.abs(v),
             date: new Date().toISOString().split('T')[0],
             note: retraitMotif.trim() || 'Retrait du portefeuille'
@@ -419,7 +428,8 @@ export default function PortefeuillesPage() {
       });
 
       if (!receiptRes.ok) {
-        throw new Error('Erreur lors de la déduction');
+        const errData = await receiptRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Erreur lors de la déduction');
       }
 
       await mutate();
@@ -634,7 +644,8 @@ export default function PortefeuillesPage() {
   const handleConfirmReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetWallet) return;
-    if (resetWallet.totalAmount > 0 && (!resetPin || !/^\d{6}$/.test(resetPin))) {
+    const hasTransactions = resetWallet.totalAmount !== 0 || resetWallet.count > 0;
+    if (hasTransactions && (!resetPin || !/^\d{6}$/.test(resetPin))) {
       setResetError('Le code PIN doit comporter exactement 6 chiffres.');
       return;
     }
@@ -643,8 +654,8 @@ export default function PortefeuillesPage() {
     setResetError('');
 
     try {
-      // Step 1: Verify PIN if wallet has positive balance
-      if (resetWallet.totalAmount > 0) {
+      // Step 1: Verify PIN if wallet has transactions
+      if (hasTransactions) {
         const pinRes = await fetch('/api/settings/pin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1558,8 +1569,9 @@ export default function PortefeuillesPage() {
                       const opType = isNegative ? 'Retrait' : 'Encaissement';
                       const opColor = getOperatorColor(tx.operatorName);
                       const labelText =
+                        tx.notes?.[0]?.text ||
                         tx.clientDetails?.note ||
-                        (isNegative ? 'Retrait manuel' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
+                        (isNegative ? 'Retrait du portefeuille' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
 
                       return (
                         <div key={tx._id} className="tr">
@@ -1772,8 +1784,9 @@ export default function PortefeuillesPage() {
                 const isNegative = (tx.amount || 0) < 0;
                 const opType = isNegative ? 'Retrait' : 'Encaissement';
                 const labelText =
+                  tx.notes?.[0]?.text ||
                   tx.clientDetails?.note ||
-                  (isNegative ? 'Retrait manuel' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
+                  (isNegative ? 'Retrait du portefeuille' : `Reçu ${tx.reference || tx._id.slice(-8)}`);
 
                 return (
                   <div
@@ -1876,16 +1889,16 @@ export default function PortefeuillesPage() {
             <form onSubmit={handleConfirmReset} noValidate>
               <div className="db">
                 <p className="note">
-                  {resetWallet.totalAmount > 0 ? (
+                  {resetWallet.totalAmount !== 0 || resetWallet.count > 0 ? (
                     <>
-                      Le solde de <b>{formatDT(resetWallet.totalAmount)} DT</b> sera remis à zéro.
+                      Le solde de <b>{formatDT(resetWallet.totalAmount)} DT</b> sera remis à zéro ({resetWallet.count} opération{resetWallet.count > 1 ? 's' : ''}).
                       Cette action effectuera une purge définitive : tous les reçus liés et leurs fichiers Drive seront effacés.
                     </>
                   ) : (
                     'Le solde de ce portefeuille est déjà à zéro.'
                   )}
                 </p>
-                {resetWallet.totalAmount > 0 && (
+                {(resetWallet.totalAmount !== 0 || resetWallet.count > 0) && (
                   <label>
                     Code PIN
                     <input

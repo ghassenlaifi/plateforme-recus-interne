@@ -1,18 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
-
-// Toutes les combinaisons possibles exigées par le CTO
-const PREDEFINED_WALLETS = [
-  { mode: 'Espèces', details: 'Bab Saadoun' },
-  { mode: 'Espèces', details: 'Soumaya' },
-  { mode: 'Espèces', details: 'Douar Hicher' },
-  { mode: 'Edinar - D17', details: 'Soumaya' },
-  { mode: 'Edinar - D17', details: 'Elyes' },
-  { mode: 'Virement Bancaire', details: 'ATB Safa' },
-  { mode: 'Virement Bancaire', details: 'ATB Elyes' },
-  { mode: 'Virement Bancaire', details: 'El Baraka Elios' },
-];
+import { PREDEFINED_WALLETS, normalizeWallet } from '@/lib/walletUtils';
 
 export async function GET(request: Request) {
   try {
@@ -135,21 +124,10 @@ export async function GET(request: Request) {
       }
     ]);
 
-    const normalizeMode = (m: string) => {
-      if (!m) return '';
-      const s = m.trim().toLowerCase();
-      if (s.startsWith('virement')) return 'Virement Bancaire';
-      if (s.startsWith('edinar') || s.includes('d17')) return 'Edinar - D17';
-      if (s.includes('esp')) return 'Espèces';
-      return m.trim();
-    };
-
-    // Indexation dans un Map pour un accès rapide O(1) et agrégation sécurisée
+    // Indexation dans un Map pour un accès rapide O(1) et agrégation canonique sécurisée
     const aggMap = new Map();
     aggregation.forEach((item: any) => {
-      const mode = normalizeMode(item._id.mode);
-      const details = (item._id.details || '').trim();
-      const key = `${mode}-${details}`;
+      const { mode, details, key } = normalizeWallet(item._id.mode, item._id.details);
       const existing = aggMap.get(key) || {
         totalAmount: 0,
         count: 0,
@@ -177,7 +155,18 @@ export async function GET(request: Request) {
     const usedKeys = new Set();
 
     // Mappage sur les portefeuilles prédéfinis pour s'assurer qu'ils existent tous (même avec solde 0)
-    const wallets = PREDEFINED_WALLETS.map(wallet => {
+    const wallets: Array<{
+      mode: string;
+      details: string;
+      totalAmount: number;
+      count: number;
+      currentTotalAmount: number;
+      currentCount: number;
+      dayAmount: number;
+      dayOut: number;
+      dayCount: number;
+      selectedDate: string | null;
+    }> = PREDEFINED_WALLETS.map(wallet => {
       const key = `${wallet.mode}-${wallet.details}`;
       usedKeys.add(key);
       const data = aggMap.get(key) || {
@@ -203,11 +192,9 @@ export async function GET(request: Request) {
       };
     });
 
-    // Ajouter toute autre combinaison trouvée en base (ex: anciennes données, libellés historiques)
+    // Ajouter toute autre combinaison trouvée en base (uniquement si non couverte par les portefeuilles prédéfinis)
     aggregation.forEach((item: any) => {
-      const normMode = normalizeMode(item._id.mode);
-      const normDetails = (item._id.details || '').trim();
-      const key = `${normMode}-${normDetails}`;
+      const { mode: normMode, details: normDetails, key } = normalizeWallet(item._id.mode, item._id.details);
       if (!usedKeys.has(key)) {
         usedKeys.add(key);
         const data = aggMap.get(key) || {

@@ -10,6 +10,7 @@ import { resolveExactReceiptDate } from '@/lib/dateUtils';
 import { invalidateLeadsCache } from '@/lib/leadsCache';
 import { checkMonthlyReceiptConflict } from '@/lib/receiptConflict';
 import { triggerCrmApproval } from '@/lib/receiptSync';
+import { normalizeWallet, buildWalletMongoMatch } from '@/lib/walletUtils';
 
 export async function GET(req: NextRequest) {
   try {
@@ -48,11 +49,17 @@ export async function GET(req: NextRequest) {
       query.status = { $in: ['PENDING', 'PROCESSED'] };
     }
     
-    if (paymentMode) {
-      query.paymentMode = { $regex: new RegExp(`^${paymentMode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') };
-    }
-    if (paymentDetails) {
-      query.paymentDetails = { $regex: new RegExp(`^${paymentDetails.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') };
+    if (paymentMode && paymentDetails) {
+      const match = buildWalletMongoMatch(paymentMode, paymentDetails);
+      query.paymentMode = match.paymentMode;
+      query.paymentDetails = match.paymentDetails;
+    } else {
+      if (paymentMode) {
+        query.paymentMode = { $regex: new RegExp(`^${paymentMode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') };
+      }
+      if (paymentDetails) {
+        query.paymentDetails = { $regex: new RegExp(`^${paymentDetails.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') };
+      }
     }
 
     const receipts = await Receipt.find(query).sort({ createdAt: -1 });
@@ -82,28 +89,20 @@ export async function POST(req: NextRequest) {
       await connectToDatabase();
 
       const operatorName = body.operator || body.operatorName || 'Système';
-      const amountStr = body.clientDetails?.amount || body.amount;
+      const amountStr = body.clientDetails?.amount !== undefined ? body.clientDetails.amount : body.amount;
       const amount = parseFloat(amountStr);
-      const paymentMethod = body.clientDetails?.paymentMethod || body.paymentMode || '';
 
-      let mode = paymentMethod;
-      let details = body.paymentDetails || '';
-      if (paymentMethod.includes(' - ')) {
-        const parts = paymentMethod.split(' - ');
-        mode = parts[0].trim();
-        details = parts.slice(1).join(' - ').trim();
-      }
-
-      if (mode.toLowerCase().startsWith('virement')) mode = 'Virement Bancaire';
-      else if (mode.toLowerCase().startsWith('edinar') || mode.toLowerCase().includes('d17')) mode = 'Edinar - D17';
-      else if (mode.toLowerCase().includes('esp')) mode = 'Espèces';
+      const rawMode = body.paymentMode || body.clientDetails?.paymentMode || body.clientDetails?.paymentMethod || '';
+      const rawDetails = body.paymentDetails || body.clientDetails?.paymentDetails || '';
+      const { mode, details } = normalizeWallet(rawMode, rawDetails);
 
       const rawPhone = body.clientDetails?.telephone || body.clientDetails?.phone || body.telephone || body.phone || '00000000';
       const phoneVal = formatPhone(rawPhone) || rawPhone;
-      const nameVal = body.clientDetails?.nom || body.clientDetails?.name || body.nom || body.name || 'DÉDUCTION MANUELLE';
-      const classVal = body.clientDetails?.classe || body.clientDetails?.offer || body.classe || 'N/A';
+      const nameVal = body.clientDetails?.nom || body.clientDetails?.name || body.nom || body.name || (amount < 0 ? 'RETRAIT' : 'DÉDUCTION MANUELLE');
+      const classVal = body.clientDetails?.classe || body.clientDetails?.offer || body.classe || (amount < 0 ? 'Retrait' : 'N/A');
+      const noteText = body.clientDetails?.note || (typeof body.notes === 'string' ? body.notes : (Array.isArray(body.notes) && body.notes[0]?.text ? body.notes[0].text : '')) || (amount < 0 ? 'Retrait du portefeuille' : 'Note système');
 
-      const ref = body.reference || ('DED-' + Date.now());
+      const ref = body.reference || ((amount < 0 ? 'RET-' : 'DED-') + Date.now().toString().slice(-6));
 
       // Règle d'intégrité mensuelle (sauf retraits 00000000)
       const conflict = await checkMonthlyReceiptConflict(rawPhone, new Date());
@@ -117,30 +116,33 @@ export async function POST(req: NextRequest) {
           nom: nameVal,
           telephone: phoneVal,
           classe: classVal,
+          note: noteText,
         },
         paymentMode: mode,
         paymentDetails: details,
         paymentDate: new Date(),
         amount: isNaN(amount) ? 0 : amount,
         reference: ref,
-        notes: body.clientDetails?.note || body.notes ? [{
-          text: body.clientDetails?.note || (typeof body.notes === 'string' ? body.notes : 'Note système'),
+        notes: noteText ? [{
+          text: noteText,
           addedBy: operatorName,
           addedAt: new Date(),
         }] : [],
-        gDriveFileId: body.imageId || ('deduction-' + Date.now()),
+        gDriveFileId: body.imageId || ((amount < 0 ? 'retrait-' : 'deduction-') + Date.now()),
         gDriveViewUrl: body.gDriveViewUrl || 'https://drive.google.com/system-deduction',
         status: 'PROCESSED',
       });
 
-      // Synchronisation CRM automatique
-      await triggerCrmApproval({
-        telephone: phoneVal,
-        amount: isNaN(amount) ? 0 : amount,
-        operatorName,
-        reference: ref,
-        paymentDate: new Date()
-      });
+      // Synchronisation CRM automatique (uniquement pour les vrais encaissements clients)
+      if (phoneVal && phoneVal !== '00000000' && phoneVal !== '00 000 000' && amount > 0) {
+        await triggerCrmApproval({
+          telephone: phoneVal,
+          amount: isNaN(amount) ? 0 : amount,
+          operatorName,
+          reference: ref,
+          paymentDate: new Date()
+        });
+      }
 
       return NextResponse.json(newReceipt, { status: 201 });
     }
