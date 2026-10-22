@@ -2,6 +2,7 @@
  * Global In-Memory Client Cache for CRM Leads
  * Fournit un rendu instantané à T=0ms pour l'INTÉGRALITÉ des données CRM (> 3 300 prospects)
  * Sans limitation arbitraire de taille, sans troncature à 100, et sans quota browser.
+ * Engine Version: 2.1 - Ultra-fast multi-crm data synchronization
  */
 
 // Store global persistant au sein de la session SPA du navigateur
